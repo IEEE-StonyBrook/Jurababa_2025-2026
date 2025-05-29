@@ -1,8 +1,8 @@
 #ifndef MAZEGRAPH_H
 #define MAZEGRAPH_H
 
-#include <vector>
 #include <string>
+#include <vector>
 
 #include "MazeNode.h"
 
@@ -12,11 +12,13 @@ class MazeGraph {
   ~MazeGraph();
 
   MazeNode* getNode(int nodePosX, int nodePosY);
-  void printASCIIMaze();
+  std::vector<MazeNode*> getNodeNeighbors(MazeNode* node,
+                                          bool includeDiagNeighbors = false);
 
   int getMazeWidth();
   int getMazeHeight();
-
+  void printASCIIMaze();
+  
  private:
   void createCellsInMaze();
   void linkNeighboringCellsInMaze();

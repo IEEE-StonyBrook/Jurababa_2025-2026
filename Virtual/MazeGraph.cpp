@@ -98,6 +98,32 @@ std::string MazeGraph::stringifyMazeRow(int rowIndex) {
   return rowString.str();
 }
 
+std::vector<MazeNode*> MazeGraph::getNodeNeighbors(MazeNode* node,
+                                                   bool includeDiagNeighbors) {
+  std::vector<MazeNode*> neighbors;
+  int x = node->getCellXPos();
+  int y = node->getCellYPos();
+  int w = getMazeWidth();
+  int h = getMazeHeight();
+
+  // Cardinal directions
+  if (x > 0) neighbors.push_back(cellMaze[x - 1][y]);      // West
+  if (x < w - 1) neighbors.push_back(cellMaze[x + 1][y]);  // East
+  if (y > 0) neighbors.push_back(cellMaze[x][y - 1]);      // South
+  if (y < h - 1) neighbors.push_back(cellMaze[x][y + 1]);  // North
+
+  // Diagonal directions
+  if (includeDiagNeighbors) {
+    if (x > 0 && y > 0) neighbors.push_back(cellMaze[x - 1][y - 1]);      // SW
+    if (x > 0 && y < h - 1) neighbors.push_back(cellMaze[x - 1][y + 1]);  // NW
+    if (x < w - 1 && y > 0) neighbors.push_back(cellMaze[x + 1][y - 1]);  // SE
+    if (x < w - 1 && y < h - 1)
+      neighbors.push_back(cellMaze[x + 1][y + 1]);  // NE
+  }
+
+  return neighbors;
+}
+
 int MazeGraph::getMazeWidth() { return cellMaze.size(); }
 
 int MazeGraph::getMazeHeight() { return cellMaze[0].size(); }

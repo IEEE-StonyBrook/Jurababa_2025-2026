@@ -67,6 +67,16 @@ void MazeNode::setCellInDirection(MazeNode* node, char NESWdirection) {
   }
 }
 
+void MazeNode::clearParentAndProcessed() {
+  parentNode= nullptr;
+  isProcessed = false;
+}
+
+static bool areNodesEqual(MazeNode* n1, MazeNode* n2) {
+  return n1->getCellXPos() == n2->getCellXPos() and
+         n1->getCellYPos() == n2->getCellYPos();
+}
+
 int MazeNode::getCellXPos() { return mazeXPos; }
 int MazeNode::getCellYPos() { return mazeYPos; }
 

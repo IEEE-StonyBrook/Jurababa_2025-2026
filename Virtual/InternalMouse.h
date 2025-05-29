@@ -4,12 +4,15 @@
 #include <array>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "MazeGraph.h"
 class InternalMouse {
  public:
   InternalMouse(std::array<int, 2> startingRobotPosition,
-                std::string startingRobotDirection, MazeGraph* mazeGraph);
+                std::string startingRobotDirection,
+                std::vector<std::array<int, 2>> goalCells,
+                MazeGraph* mazeGraph);
   ~InternalMouse();
 
   void moveIMForwardOneCell(int cellNumberToMoveForward);
@@ -20,12 +23,23 @@ class InternalMouse {
   void setWallExistsLFR(char LFRdirection);
   void setWallExistsNESW(char NESWdirection);
 
+  MazeNode* getCurrentRobotNode();
+  std::vector<MazeNode*> getNodeNeighbors(MazeNode* node,
+                                          bool includeDiagNeighbors = false);
+  bool getCanMoveBetweenNodes(MazeNode* from, MazeNode* to,
+                              bool diagonalsAllowed = false);
+
+  bool isAGoalCell(MazeNode* node);
+
+  void resetSolverVariables();
+
  private:
   int indexOfDirection(std::string direction);
   std::string getNewDirectionAfterAddingHalfStepsRight(int halfStepsRight);
 
   std::string currentRobotDirection;
   std::array<int, 2> currentRobotPosition;
+  std::vector<std::array<int, 2>> goalCells;
   MazeGraph* mazeGraph;
 
   const std::array<std::string, 8> possibleDirections = {"n", "ne", "e", "se",
