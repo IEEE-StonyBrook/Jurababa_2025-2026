@@ -1,6 +1,6 @@
 # Authors
 ## Lisul Elvitigala, Dennis Huang, Felix Nie, Mikolaj Pankau.
-## Made with ❤️ for IEEE.
+## Made with ❤️ by the Micromouse team.
 ## Awards:
 ### NYIT #2 Place Micromouse Classic.
 ### NYIT #1 and #3 Best Presentation.
