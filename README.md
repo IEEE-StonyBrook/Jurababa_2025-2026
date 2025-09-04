@@ -1,5 +1,4 @@
 # Authors
-## Lisul Elvitigala, Dennis Huang, Felix Nie, Mikolaj Pankau.
 ## Made with ❤️ by the Micromouse team.
 ## Awards:
 ### NYIT #2 Place Micromouse Classic.
