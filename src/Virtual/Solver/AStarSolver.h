@@ -1,12 +1,11 @@
 #ifndef ASTARSOLVER_H
 #define ASTARSOLVER_H
 
-#include "../API.h"
+#include "../../API.h"
 
 class AStarSolver {
  public:
   AStarSolver(API* api, InternalMouse* internalMouse);
-  ~AStarSolver();
 
   std::string go(std::vector<std::array<int, 2>> endCells,
                  bool diagMovementAllowed = false,

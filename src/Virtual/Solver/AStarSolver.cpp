@@ -1,7 +1,6 @@
 #include "AStarSolver.h"
 
-#include <bits/algorithmfwd.h>
-
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <queue>
@@ -25,9 +24,9 @@ std::vector<MazeNode*> AStarSolver::getBestPathToEndCell(
   float bestPathCost = std::numeric_limits<float>::infinity();
 
   for (std::array<int, 2> endCell : endCells) {
-    std::vector<MazeNode*> pathToEnd =
-        getPathFromCurrPosToCell(internalMouse->getCurrentRobotNode(),
-                                 diagMovementAllowed, passThroughGoalCells);
+    std::vector<MazeNode*> pathToEnd = getPathFromCurrPosToCell(
+        internalMouse->getNodeAtPos(endCell[0], endCell[1]),
+        diagMovementAllowed, passThroughGoalCells);
     if (pathToEnd.empty()) continue;
     if (totalPathCost < bestPathCost) {
       bestPath = pathToEnd;
@@ -66,9 +65,6 @@ std::vector<MazeNode*> AStarSolver::getPathFromCurrPosToCell(
     AStarNode currentNode = toBeProcessedCells.top();
     toBeProcessedCells.pop();
 
-    int nodeX = currentNode.node->getCellXPos();
-    int nodeY = currentNode.node->getCellYPos();
-
     // Re-construct A* path if end is reached.
     if (currentNode.node == endCell) {
       totalPathCost = currentNode.fCost;
@@ -85,8 +81,8 @@ std::vector<MazeNode*> AStarSolver::getPathFromCurrPosToCell(
       // is a goal cell (if enabled), or is unreachable.
       if (neighbor->isProcessed ||
           (!passThroughGoalCells && internalMouse->isAGoalCell(neighbor)) ||
-          internalMouse->getCanMoveBetweenNodes(currentNode.node, neighbor,
-                                                diagMovementAllowed)) {
+          !internalMouse->getCanMoveBetweenNodes(currentNode.node, neighbor,
+                                                 diagMovementAllowed)) {
         continue;
       }
 

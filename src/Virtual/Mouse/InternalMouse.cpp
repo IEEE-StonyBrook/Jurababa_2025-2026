@@ -3,17 +3,18 @@
 InternalMouse::InternalMouse(std::array<int, 2> startingRobotPosition,
                              std::string startingRobotDirection,
                              std::vector<std::array<int, 2>> goalCells,
-                             MazeGraph* mazeGraph)
+                             MazeGraph* mazeGraph, LogSystem* logSystem)
     : currentRobotPosition(startingRobotPosition),
       currentRobotDirection(startingRobotDirection),
       goalCells(goalCells),
-      mazeGraph(mazeGraph) {}
+      mazeGraph(mazeGraph),
+      logSystem(logSystem) {}
 
 void InternalMouse::moveIMForwardOneCell(int cellNumberToMoveForward) {
   std::array<int, 2> directionOffsetToAdd =
       directionStringToOffsetArrayMap.at(currentRobotDirection);
-  currentRobotPosition[0] += directionOffsetToAdd[0];
-  currentRobotDirection[1] += directionOffsetToAdd[1];
+  currentRobotPosition[0] += directionOffsetToAdd[0] * cellNumberToMoveForward;
+  currentRobotDirection[1] += directionOffsetToAdd[1] * cellNumberToMoveForward;
 }
 
 void InternalMouse::turnIM45DegreeStepsRight(int halfStepsRight) {
@@ -44,6 +45,16 @@ std::string InternalMouse::getNewDirectionAfterAddingHalfStepsRight(
   return possibleDirections[newDirectionIndex];
 }
 
+bool InternalMouse::getDirNeededForNextNode(MazeNode* nextNode) {
+  MazeNode* currNode = getCurrentRobotNode();
+  std::array<int, 2> headingNeeded = {
+      nextNode->getCellXPos() - currNode->getCellYPos(),
+      nextNode->getCellYPos() - currNode->getCellYPos()};
+
+  if (abs(headingNeeded[0]) > 1 || abs(headingNeeded[1]) > 1) {
+  }
+}
+
 void InternalMouse::setWallExistsLFR(char LFRdirection) {
   int halfStepsToAdd = 0;
   if (tolower(LFRdirection) == 'l') halfStepsToAdd = -2;
@@ -62,6 +73,10 @@ void InternalMouse::setWallExistsLFR(char LFRdirection) {
   if (directionArrayToAddWall[1] == -1) currentNode->setWallInDirection('S');
   // W
   if (directionArrayToAddWall[0] == -1) currentNode->setWallInDirection('W');
+}
+
+MazeNode* InternalMouse::getNodeAtPos(int nodeX, int nodeY) {
+  return mazeGraph->getNode(nodeX, nodeY);
 }
 
 MazeNode* InternalMouse::getCurrentRobotNode() {

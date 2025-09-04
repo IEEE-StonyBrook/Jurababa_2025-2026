@@ -2,18 +2,20 @@
 #define INTERNALMOUSE_H
 
 #include <array>
+#include <cmath>
 #include <map>
 #include <string>
 #include <vector>
 
+#include "../../Utils/LogSystem.h"
 #include "MazeGraph.h"
+
 class InternalMouse {
  public:
   InternalMouse(std::array<int, 2> startingRobotPosition,
                 std::string startingRobotDirection,
-                std::vector<std::array<int, 2>> goalCells,
-                MazeGraph* mazeGraph);
-  ~InternalMouse();
+                std::vector<std::array<int, 2>> goalCells, MazeGraph* mazeGraph,
+                LogSystem* logSystem);
 
   void moveIMForwardOneCell(int cellNumberToMoveForward);
   void turnIM45DegreeStepsRight(int halfStepsRight);
@@ -24,14 +26,17 @@ class InternalMouse {
   void setWallExistsNESW(char NESWdirection);
 
   MazeNode* getCurrentRobotNode();
+  std::array<int, 2> getCurrentRobotDir();
+  MazeNode* getNodeAtPos(int nodeX, int nodeY);
   std::vector<MazeNode*> getNodeNeighbors(MazeNode* node,
                                           bool includeDiagNeighbors = false);
   bool getCanMoveBetweenNodes(MazeNode* from, MazeNode* to,
                               bool diagonalsAllowed = false);
 
   bool isAGoalCell(MazeNode* node);
-
   void resetSolverVariables();
+
+  bool getDirNeededForNextNode(MazeNode* nextNode);
 
  private:
   int indexOfDirection(std::string direction);
@@ -41,6 +46,7 @@ class InternalMouse {
   std::array<int, 2> currentRobotPosition;
   std::vector<std::array<int, 2>> goalCells;
   MazeGraph* mazeGraph;
+  LogSystem* logSystem;
 
   const std::array<std::string, 8> possibleDirections = {"n", "ne", "e", "se",
                                                          "s", "sw", "w", "nw"};

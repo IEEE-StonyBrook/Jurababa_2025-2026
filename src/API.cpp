@@ -1,13 +1,18 @@
-#include <API.h>
+#include "API.h"
 
 #include <iostream>
 #include <sstream>
 
+API::API(InternalMouse* internalMouse, bool runOnSimulator)
+    : internalMouse(internalMouse), runOnSimulator(runOnSimulator) {}
+
+#ifdef USING_ROBOT
 API::API(Drivetrain* drivetrain, InternalMouse* internalMouse,
          bool runOnSimulator)
     : drivetrain(drivetrain),
       internalMouse(internalMouse),
       runOnSimulator(runOnSimulator) {}
+#endif
 
 int API::mazeWidth() { return internalMouse->getMazeWidth(); }
 
@@ -15,12 +20,15 @@ int API::mazeHeight() { return internalMouse->getMazeHeight(); }
 
 bool API::wallLeft() {
   if (runOnSimulator) return getSimulatorBoolResponse("wallLeft");
+  return false;
 }
 bool API::wallFront() {
   if (runOnSimulator) return getSimulatorBoolResponse("wallFront");
+  return false;
 }
 bool API::wallRight() {
   if (runOnSimulator) return getSimulatorBoolResponse("wallFront");
+  return false;
 }
 
 void API::moveForwardHalf() {

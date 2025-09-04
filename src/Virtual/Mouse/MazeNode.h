@@ -3,7 +3,6 @@
 class MazeNode {
  public:
   MazeNode(int mazeXPos, int mazeYPos);
-  ~MazeNode();
 
   int getCellXPos();
   int getCellYPos();

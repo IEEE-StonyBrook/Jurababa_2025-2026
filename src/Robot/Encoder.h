@@ -1,7 +1,7 @@
 #ifndef ENCODER_H
 #define ENCODER_H
 
-#include "QuadratureEncoder.h"
+#include "../QuadratureEncoder.h"
 
 class Encoder {
  public:

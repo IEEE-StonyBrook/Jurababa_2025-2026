@@ -25,4 +25,5 @@ class IMU {
   static float robotYawNeg180To180Degrees;
   static float resetOffSet;
 };
+
 #endif

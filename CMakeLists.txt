@@ -48,6 +48,7 @@ add_executable(Ratawolfeux
     Virtual/MazeGraph.cpp
     Virtual/MazeNode.cpp
     Solver/AStarSolver.cpp
+    API.cpp
     Main.cpp
 )
 

@@ -72,7 +72,7 @@ void MazeNode::clearParentAndProcessed() {
   isProcessed = false;
 }
 
-static bool areNodesEqual(MazeNode* n1, MazeNode* n2) {
+bool MazeNode::areNodesEqual(MazeNode* n1, MazeNode* n2) {
   return n1->getCellXPos() == n2->getCellXPos() and
          n1->getCellYPos() == n2->getCellYPos();
 }
