@@ -1,7 +1,7 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -std=c++11 -I./Robot -I./Solver -I./Virtual -I./Utils
 
-OUTDIR = out
+OUTDIR = output
 OUT = $(OUTDIR)/Micromouse.out
 
 # Make sure output directory exists

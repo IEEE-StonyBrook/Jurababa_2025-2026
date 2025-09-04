@@ -17,7 +17,7 @@ int main() {
   // Mouse logic items
   MazeGraph maze(16, 16);
   LogSystem logSystem;
-  InternalMouse mouse({0, 0}, std::string("N"),
+  InternalMouse mouse({0, 0}, std::string("n"),
                       {{7, 7}, {7, 8}, {8, 7}, {8, 8}}, &maze, &logSystem);
   API api(&mouse, RUN_ON_SIMULATOR);
 

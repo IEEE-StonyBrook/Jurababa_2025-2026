@@ -65,13 +65,9 @@ void InternalMouse::setWallExistsLFR(char LFRdirection) {
   std::array<int, 2> directionArrayToAddWall =
       directionStringToOffsetArrayMap.at(directionStringToAddWall);
   MazeNode* currentNode = getCurrentRobotNode();
-  // N
   if (directionArrayToAddWall[1] == 1) currentNode->setWallInDirection('N');
-  // E
   if (directionArrayToAddWall[0] == 1) currentNode->setWallInDirection('E');
-  // S
   if (directionArrayToAddWall[1] == -1) currentNode->setWallInDirection('S');
-  // W
   if (directionArrayToAddWall[0] == -1) currentNode->setWallInDirection('W');
 }
 
@@ -81,6 +77,10 @@ MazeNode* InternalMouse::getNodeAtPos(int nodeX, int nodeY) {
 
 MazeNode* InternalMouse::getCurrentRobotNode() {
   return mazeGraph->getNode(currentRobotPosition[0], currentRobotPosition[1]);
+}
+
+std::string InternalMouse::getCurrentRobotDir() {
+  return currentRobotDirection;
 }
 
 void InternalMouse::setWallExistsNESW(char NESWdirection) {

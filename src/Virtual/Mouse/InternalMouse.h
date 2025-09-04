@@ -26,7 +26,7 @@ class InternalMouse {
   void setWallExistsNESW(char NESWdirection);
 
   MazeNode* getCurrentRobotNode();
-  std::array<int, 2> getCurrentRobotDir();
+  std::string getCurrentRobotDir();
   MazeNode* getNodeAtPos(int nodeX, int nodeY);
   std::vector<MazeNode*> getNodeNeighbors(MazeNode* node,
                                           bool includeDiagNeighbors = false);

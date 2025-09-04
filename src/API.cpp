@@ -38,6 +38,7 @@ void API::moveForward() {
   if (runOnSimulator) getSimulatorResponse("moveForward");
   internalMouse->moveIMForwardOneCell(1);
 }
+
 void API::moveForward(int steps) {
   if (runOnSimulator) {
     std::ostringstream commandStream;
