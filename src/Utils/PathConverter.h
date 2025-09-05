@@ -1,23 +1,25 @@
 #ifndef PATHCONVERTER_H
 #define PATHCONVERTER_H
 
-#include "../../API.h"
-#include "../../Utils/LogSystem.h"
-#include "../Mouse/InternalMouse.h"
+#include "../Virtual/Mouse/InternalMouse.h"
+#include "LogSystem.h"
 
 class PathConverter {
  public:
-  PathConverter(API* api, InternalMouse* internalMouse, LogSystem* logSystem,
-                bool diagMovementAllowed = false);
-  ~PathConverter();
-
-  std::string buildLFRPath(std::vector<MazeNode*> nodePath);
+  static std::string buildLFRPath(MazeNode* currNode,
+                                  std::array<int, 2> currDir,
+                                  std::vector<MazeNode*> nodePath);
 
  private:
-  API* api;
-  InternalMouse* internalMouse;
-  LogSystem* logSystem;
-  bool diagMovementAllowed;
+  static std::string calculateMovesNeededBetweenHeadings(
+      std::array<int, 2> from, std::array<int, 2> to);
+  static std::string getMovesNeededBy4Cardinal(std::array<int, 2> from,
+                                               std::array<int, 2> to);
+  static int findIndexInVector(std::vector<std::array<int, 2>> vector,
+                               std::array<int, 2> find);
+
+  static MazeNode* currNode;
+  static std::array<int, 2> currHeading;
 };
 
 #endif

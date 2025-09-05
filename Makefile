@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++11 -I./Robot -I./Solver -I./Virtual -I./Utils
+CXXFLAGS = -Wall -Wextra -std=c++11 -I./Robot -I./Solver -I./Virtual -I./Utils -g -O0
 
 OUTDIR = output
 OUT = $(OUTDIR)/Micromouse.out
@@ -9,7 +9,7 @@ $(shell mkdir -p $(OUTDIR))
 
 # Source file groups
 VIRTUAL_SRCS = src/Virtual/Mouse/InternalMouse.cpp src/Virtual/Mouse/MazeGraph.cpp src/Virtual/Mouse/MazeNode.cpp
-UTILS_SRC = src/Utils/LogSystem.cpp
+UTILS_SRC = src/Utils/LogSystem.cpp src/Utils/PathConverter.cpp
 SOLVER_SRCS = src/Virtual/Solver/AStarSolver.cpp
 MAIN_SRCS = src/API.cpp src/Main.cpp
 

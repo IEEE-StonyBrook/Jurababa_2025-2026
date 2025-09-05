@@ -1,10 +1,5 @@
 #include "AStarSolver.h"
 
-#include <algorithm>
-#include <cmath>
-#include <limits>
-#include <queue>
-
 AStarSolver::AStarSolver(API* api, InternalMouse* internalMouse)
     : api(api), internalMouse(internalMouse) {}
 
@@ -13,8 +8,13 @@ std::string AStarSolver::go(std::vector<std::array<int, 2>> endCells,
                             bool passThroughGoalCells) {
   std::vector<MazeNode*> aStarPath =
       getBestPathToEndCell(endCells, diagMovementAllowed, passThroughGoalCells);
-
-  return getStringPath(aStarPath);
+  std::string stringPath = getStringPath(aStarPath);
+  LOG_DEBUG(stringPath);
+  std::array<int, 2> c = internalMouse->getCurrentRobotDirArray();
+  std::string lfrPath = PathConverter::buildLFRPath(
+      internalMouse->getCurrentRobotNode(),
+      internalMouse->getCurrentRobotDirArray(), aStarPath);
+  return lfrPath;
 }
 
 std::vector<MazeNode*> AStarSolver::getBestPathToEndCell(
@@ -79,6 +79,9 @@ std::vector<MazeNode*> AStarSolver::getPathFromCurrPosToCell(
              currentNode.node, diagMovementAllowed)) {
       // Continue if neighbor is already processed,
       // is a goal cell (if enabled), or is unreachable.
+      bool c = internalMouse->isAGoalCell(neighbor);
+      bool d = !internalMouse->getCanMoveBetweenNodes(
+          currentNode.node, neighbor, diagMovementAllowed);
       if (neighbor->isProcessed ||
           (!passThroughGoalCells && internalMouse->isAGoalCell(neighbor)) ||
           !internalMouse->getCanMoveBetweenNodes(currentNode.node, neighbor,
@@ -86,7 +89,7 @@ std::vector<MazeNode*> AStarSolver::getPathFromCurrPosToCell(
         continue;
       }
 
-      // Euclidean distance = [1 or sqrt(2)] for a neighbor.
+      // Euclidean distance = (1 or sqrt(2)) for a neighbor.
       float newS =
           currentNode.sCost + getHeuristicDistance(currentNode.node, neighbor);
 
@@ -102,6 +105,7 @@ std::vector<MazeNode*> AStarSolver::getPathFromCurrPosToCell(
     }
   }
 
+  LOG_ERROR("AStarSolver.cpp: No path was produced!")
   return {};
 }
 

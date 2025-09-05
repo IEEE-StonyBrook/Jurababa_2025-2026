@@ -95,10 +95,13 @@ void API::setWall(int x, int y, const std::string& direction) {
   }
 
   if (isFourCardinal)
-    internalMouse->setWallExistsNESW(direction[0]);
+    internalMouse->setWallExistsNESW(internalMouse->getNodeAtPos(x, y),
+                                     direction[0]);
   else if (isNonFourCardinal) {
-    internalMouse->setWallExistsNESW(direction[0]);
-    internalMouse->setWallExistsNESW(direction[1]);
+    internalMouse->setWallExistsNESW(internalMouse->getNodeAtPos(x, y),
+                                     direction[0]);
+    internalMouse->setWallExistsNESW(internalMouse->getNodeAtPos(x, y),
+                                     direction[1]);
   }
 }
 void API::clearWall(int x, int y, const std::string& direction) {
@@ -145,4 +148,41 @@ int API::getSimulatorIntegerResponse(std::string commmandUsed) {
 
 bool API::getSimulatorBoolResponse(std::string commandUsed) {
   return getSimulatorResponse(commandUsed) == "true";
+}
+
+void API::setUp(std::array<int, 2> startCell,
+                std::vector<std::array<int, 2>> goalCells) {
+  clearAllColor();
+  clearAllText();
+
+  // Adds boundary mazes.
+  for (int i = 0; i < internalMouse->getMazeWidth(); i++) {
+    setWall(i, 0, "s");
+    setWall(i, internalMouse->getMazeHeight() - 1, "n");
+  }
+  for (int j = 0; j < internalMouse->getMazeHeight(); j++) {
+    setWall(0, j, "w");
+    setWall(internalMouse->getMazeWidth() - 1, j, "e");
+  }
+
+  // Adds grid labels.
+  bool SHOW_GRID = true;
+  if (SHOW_GRID) {
+    for (int i = 0; i < internalMouse->getMazeWidth(); i++) {
+      for (int j = 0; j < internalMouse->getMazeHeight(); j++) {
+        setText(i, j, std::to_string(i) + "," + std::to_string(j));
+      }
+    }
+  }
+
+  LOG_DEBUG("Starting Ratawoulfie...");
+
+  // Adds color/text to start and goal cells.
+  setColor(startCell[0], startCell[1], 'B');
+  setText(startCell[0], startCell[1], "Start");
+
+  for (const auto& goalCell : goalCells) {
+    setColor(goalCell[0], goalCell[1], 'G');
+    setText(goalCell[0], goalCell[1], "End");
+  }
 }
