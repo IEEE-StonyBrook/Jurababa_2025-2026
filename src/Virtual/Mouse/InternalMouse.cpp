@@ -157,4 +157,6 @@ std::vector<std::array<int, 2>> InternalMouse::getPossibleDirectionArrays() {
        directionStringToOffsetArrayMap) {
     directionArrays.push_back(pair.second);
   };
+
+  return directionArrays;
 }

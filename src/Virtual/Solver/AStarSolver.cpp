@@ -11,10 +11,10 @@ std::string AStarSolver::go(std::vector<std::array<int, 2>> endCells,
   std::string stringPath = getStringPath(aStarPath);
   LOG_DEBUG(stringPath);
   std::array<int, 2> c = internalMouse->getCurrentRobotDirArray();
-  std::string lfrPath = PathConverter::buildLFRPath(
-      internalMouse->getCurrentRobotNode(),
-      internalMouse->getCurrentRobotDirArray(), aStarPath);
-  return lfrPath;
+  //std::string lfrPath = PathConverter::buildLFRPath(
+   //   internalMouse->getCurrentRobotNode(),
+     // internalMouse->getCurrentRobotDirArray(), aStarPath);
+  return stringPath;
 }
 
 std::vector<MazeNode*> AStarSolver::getBestPathToEndCell(
