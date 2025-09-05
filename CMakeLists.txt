@@ -36,20 +36,20 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 # Add all cpp files here
-add_executable(Ratawolfeux
-    Robot/Drivetrain.cpp
-    Robot/Motor.cpp
-    Robot/Encoder.cpp
-    Robot/IMU.cpp
-    Robot/ToF.cpp
-    Utils/PIDController.cpp
-    Utils/LogSystem.cpp
-    Virtual/InternalMouse.cpp
-    Virtual/MazeGraph.cpp
-    Virtual/MazeNode.cpp
-    Solver/AStarSolver.cpp
-    API.cpp
-    Main.cpp
+add_executable(Ratawoulfie
+    src/Robot/Drivetrain.cpp
+    src/Robot/Motor.cpp
+    src/Robot/Encoder.cpp
+    src/Robot/IMU.cpp
+    src/Robot/ToF.cpp
+    src/Utils/PIDController.cpp
+    src/Utils/LogSystem.cpp
+    src/Virtual/Mouse/InternalMouse.cpp
+    src/Virtual/Mouse/MazeGraph.cpp
+    src/Virtual/Mouse/MazeNode.cpp
+    src/Virtual/Solver/AStarSolver.cpp
+    src/API.cpp
+    src/Main.cpp
 )
 
 pico_set_program_name(Ratawolfeux "Ratawolfeux")
@@ -60,7 +60,7 @@ pico_enable_stdio_uart(Ratawolfeux 0)
 pico_enable_stdio_usb(Ratawolfeux 1)
 
 # Add the ToF library to the build
-add_subdirectory(vl53l0x_api_rp2040)
+add_subdirectory(library/vl53l0x_api_rp2040)
 
 # Add the standard library to the build
 target_link_libraries(Ratawolfeux

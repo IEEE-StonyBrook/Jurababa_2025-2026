@@ -1,8 +1,14 @@
 #ifndef ASTARSOLVER_H
 #define ASTARSOLVER_H
 
-#include "../../API.h"
+#include <algorithm>
+#include <cmath>
+#include <limits>
+#include <queue>
 
+#include "../../API.h"
+#include "../../Utils/LogSystem.h"
+#include "../../Utils/PathConverter.h"
 class AStarSolver {
  public:
   AStarSolver(API* api, InternalMouse* internalMouse);
@@ -19,8 +25,7 @@ class AStarSolver {
                                                   bool diagMovementAllowed,
                                                   bool passThroughGoalCells);
 
-  std::vector<MazeNode*> constructPath(MazeNode* startNode,
-                                              MazeNode* endNode);
+  std::vector<MazeNode*> constructPath(MazeNode* startNode, MazeNode* endNode);
   static std::string getStringPath(std::vector<MazeNode*> path);
   static float getHeuristicDistance(MazeNode* from, MazeNode* to);
 

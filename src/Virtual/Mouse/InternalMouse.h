@@ -23,10 +23,11 @@ class InternalMouse {
   int getMazeWidth();
   int getMazeHeight();
   void setWallExistsLFR(char LFRdirection);
-  void setWallExistsNESW(char NESWdirection);
+  void setWallExistsNESW(MazeNode* node, char NESWdirection);
 
   MazeNode* getCurrentRobotNode();
-  std::string getCurrentRobotDir();
+  std::string getCurrentRobotDirString();
+  std::array<int, 2> getCurrentRobotDirArray();
   MazeNode* getNodeAtPos(int nodeX, int nodeY);
   std::vector<MazeNode*> getNodeNeighbors(MazeNode* node,
                                           bool includeDiagNeighbors = false);
@@ -36,7 +37,7 @@ class InternalMouse {
   bool isAGoalCell(MazeNode* node);
   void resetSolverVariables();
 
-  bool getDirNeededForNextNode(MazeNode* nextNode);
+  std::vector<std::array<int, 2>> getPossibleDirectionArrays();
 
  private:
   int indexOfDirection(std::string direction);
@@ -52,7 +53,7 @@ class InternalMouse {
                                                          "s", "sw", "w", "nw"};
   const std::map<std::string, std::array<int, 2>>
       directionStringToOffsetArrayMap = {
-          {"n", {0, 1}},  {"ne", {1, 1}},   {"e", {1, 0}},  {"s", {1, -1}},
+          {"n", {0, 1}},  {"ne", {1, 1}},   {"e", {1, 0}},  {"se", {1, -1}},
           {"s", {0, -1}}, {"sw", {-1, -1}}, {"w", {-1, 0}}, {"n", {-1, 1}}};
 };
 
