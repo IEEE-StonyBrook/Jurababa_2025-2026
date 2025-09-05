@@ -173,6 +173,8 @@ class API {
    */
   void clearAllText();
 
+  void setUp(std::array<int, 2> startCell,
+             std::vector<std::array<int, 2>> goalCells);
   bool runOnSimulator;
 
  private:
