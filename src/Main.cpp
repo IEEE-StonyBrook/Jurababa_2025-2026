@@ -11,19 +11,26 @@
 #include "pico/stdlib.h"
 #endif
 
+void interpretLFRPath(API* apiPtr, std::string lfrPath);
+
 int main() {
   const bool RUN_ON_SIMULATOR = true;
 
-  // Mouse logic items
-  MazeGraph maze(16, 16);
+  // Universal objects
   LogSystem logSystem;
-  InternalMouse mouse({0, 0}, std::string("n"),
-                      {{7, 7}, {7, 8}, {8, 7}, {8, 8}}, &maze, &logSystem);
+  std::array<int, 2> startCell = {0, 0};
+  std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
+
+  // Mouse logic objects
+  MazeGraph maze(16, 16);
+  InternalMouse mouse(startCell, std::string("n"), goalCells, &maze,
+                      &logSystem);
   API api(&mouse, RUN_ON_SIMULATOR);
+  api.setUp(startCell, goalCells);
 
 #ifdef USING_ROBOT
   stdio_init_all();
-  // Robot items
+  // Robot objects
   Encoder leftMotorEncoder(20);
   Encoder rightMotorEncoder(7);
   Motor leftMotor(18, 19, &leftMotorEncoder, true);
@@ -34,16 +41,47 @@ int main() {
   IMU imu(5);
   Drivetrain robotDrivetrain(&leftMotor, &rightMotor, &leftToF, &frontToF,
                              &rightToF, &imu);
-  API api(&drivetrain, &api, RUN_ON_SIMULATOR)
+  API api(&drivetrain, &api, RUN_ON_SIMULATOR);
 #endif
-  // Algorithms to run
+  // Maze logic objects
   AStarSolver aStar(&api, &mouse);
-
+  std::string path = aStar.go(goalCells, false, true);
+  LOG_DEBUG(path);
+  interpretLFRPath(&api, path);
   // while (true) {
   //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
   // }
-
-  api.moveForward();
-  
   return 0;
+}
+
+void interpretLFRPath(API* apiPtr, std::string lfrPath) {
+  std::stringstream ss(lfrPath);
+  std::string token;
+
+  // Seperate into tokens.
+  std::vector<std::string> tokens;
+  while (std::getline(ss, token, '#')) {
+    if (!token.empty()) {
+      tokens.push_back(token);
+    }
+  }
+
+  // Go through each token and run movement.
+  for (std::string t : tokens) {
+    if (t == "R") {
+      apiPtr->turnRight90();
+    } else if (t == "L") {
+      apiPtr->turnLeft90();
+    } else if (t == "F") {
+      apiPtr->moveForward();
+    } else if (t == "R45") {
+      apiPtr->turnRight45();
+    } else if (t == "L45") {
+      apiPtr->turnLeft45();
+    } else if (t == "FH") {
+      apiPtr->moveForwardHalf();
+    } else {
+      LOG_ERROR("Main.cpp: Unknown token: " + t);
+    }
+  }
 }

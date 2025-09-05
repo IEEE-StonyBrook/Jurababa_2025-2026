@@ -17,13 +17,13 @@ void LogSystem::logMessage(LogPriority logPriority, std::string logMessage) {
       prefixForLogMessage = "[INFO] ";
       break;
     case LogPriority::WARN:
-      prefixForLogMessage = "[WARN]";
+      prefixForLogMessage = "[WARN] ";
       break;
     case LogPriority::ERROR:
-      prefixForLogMessage = "[ERROR]";
+      prefixForLogMessage = "[ERROR] ";
       break;
     case LogPriority::FATAL: 
-      prefixForLogMessage = "[FATAL]";
+      prefixForLogMessage = "[FATAL] ";
       break;
   }
   std::cout << prefixForLogMessage << logMessage << '\n';

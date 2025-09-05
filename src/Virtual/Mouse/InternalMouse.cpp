@@ -45,15 +45,15 @@ std::string InternalMouse::getNewDirectionAfterAddingHalfStepsRight(
   return possibleDirections[newDirectionIndex];
 }
 
-bool InternalMouse::getDirNeededForNextNode(MazeNode* nextNode) {
-  MazeNode* currNode = getCurrentRobotNode();
-  std::array<int, 2> headingNeeded = {
-      nextNode->getCellXPos() - currNode->getCellYPos(),
-      nextNode->getCellYPos() - currNode->getCellYPos()};
+// bool InternalMouse::getDirNeededForNextNode(MazeNode* nextNode) {
+//   MazeNode* currNode = getCurrentRobotNode();
+//   std::array<int, 2> headingNeeded = {
+//       nextNode->getCellXPos() - currNode->getCellYPos(),
+//       nextNode->getCellYPos() - currNode->getCellYPos()};
 
-  if (abs(headingNeeded[0]) > 1 || abs(headingNeeded[1]) > 1) {
-  }
-}
+//   if (abs(headingNeeded[0]) > 1 || abs(headingNeeded[1]) > 1) {
+//   }
+// }
 
 void InternalMouse::setWallExistsLFR(char LFRdirection) {
   int halfStepsToAdd = 0;
@@ -79,12 +79,16 @@ MazeNode* InternalMouse::getCurrentRobotNode() {
   return mazeGraph->getNode(currentRobotPosition[0], currentRobotPosition[1]);
 }
 
-std::string InternalMouse::getCurrentRobotDir() {
+std::string InternalMouse::getCurrentRobotDirString() {
   return currentRobotDirection;
 }
 
-void InternalMouse::setWallExistsNESW(char NESWdirection) {
-  MazeNode* currentNode = getCurrentRobotNode();
+std::array<int, 2> InternalMouse::getCurrentRobotDirArray() {
+  return directionStringToOffsetArrayMap.at(currentRobotDirection);
+}
+
+void InternalMouse::setWallExistsNESW(MazeNode* node, char NESWdirection) {
+  MazeNode* currentNode = node;
   currentNode->setWallInDirection(NESWdirection);
 }
 
@@ -146,3 +150,11 @@ void InternalMouse::resetSolverVariables() {
 int InternalMouse::getMazeWidth() { return mazeGraph->getMazeWidth(); }
 
 int InternalMouse::getMazeHeight() { return mazeGraph->getMazeHeight(); }
+
+std::vector<std::array<int, 2>> InternalMouse::getPossibleDirectionArrays() {
+  std::vector<std::array<int, 2>> directionArrays;
+  for (std::pair<std::string, std::array<int, 2>> pair :
+       directionStringToOffsetArrayMap) {
+    directionArrays.push_back(pair.second);
+  };
+}
