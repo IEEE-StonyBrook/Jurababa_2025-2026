@@ -37,6 +37,9 @@ void API::moveForwardHalf() {
 void API::moveForward() {
   if (runOnSimulator) getSimulatorResponse("moveForward");
   internalMouse->moveIMForwardOneCell(1);
+  int XPos = internalMouse->getCurrentRobotNode()->getCellXPos();
+  int YPos = internalMouse->getCurrentRobotNode()->getCellYPos();
+  setColor(XPos, YPos, 'y');
 }
 
 void API::moveForward(int steps) {

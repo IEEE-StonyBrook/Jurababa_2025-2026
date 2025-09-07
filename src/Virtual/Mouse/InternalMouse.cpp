@@ -14,7 +14,7 @@ void InternalMouse::moveIMForwardOneCell(int cellNumberToMoveForward) {
   std::array<int, 2> directionOffsetToAdd =
       directionStringToOffsetArrayMap.at(currentRobotDirection);
   currentRobotPosition[0] += directionOffsetToAdd[0] * cellNumberToMoveForward;
-  currentRobotDirection[1] += directionOffsetToAdd[1] * cellNumberToMoveForward;
+  currentRobotPosition[1] += directionOffsetToAdd[1] * cellNumberToMoveForward;
 }
 
 void InternalMouse::turnIM45DegreeStepsRight(int halfStepsRight) {
@@ -40,7 +40,7 @@ std::string InternalMouse::getNewDirectionAfterAddingHalfStepsRight(
 
   // Adding one to index = turning right half step in cardinal directions.
   int newDirectionIndex =
-      (currentDirectionIndex + halfStepsRight) % possibleDirections.size();
+      ((currentDirectionIndex + halfStepsRight) % possibleDirections.size() + possibleDirections.size()) % possibleDirections.size();
 
   return possibleDirections[newDirectionIndex];
 }
