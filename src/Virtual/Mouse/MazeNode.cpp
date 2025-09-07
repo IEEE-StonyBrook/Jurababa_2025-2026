@@ -11,18 +11,22 @@ void MazeNode::setWallInDirection(char NESWdirection) {
     case 'n':
       addThereIsWall('n');
       if (NCell != nullptr) NCell->addThereIsWall('s');
+      break;
 
     case 'e':
       addThereIsWall('e');
       if (ECell != nullptr) ECell->addThereIsWall('w');
+      break;
 
     case 's':
       addThereIsWall('s');
       if (SCell != nullptr) SCell->addThereIsWall('n');
+      break;
 
     case 'w':
       addThereIsWall('w');
       if (WCell != nullptr) WCell->addThereIsWall('e');
+      break;
   }
 }
 
@@ -30,12 +34,16 @@ bool MazeNode::getIsWall(char NESWdirection) {
   switch (tolower(NESWdirection)) {
     case 'n':
       return isThereNWall;
+      break;
     case 'e':
       return isThereEWall;
+      break;
     case 's':
       return isThereSWall;
+      break;
     case 'w':
       return isThereWWall;
+      break;
   }
 
   return false;
@@ -45,12 +53,16 @@ void MazeNode::addThereIsWall(char NESWdirection) {
   switch (tolower(NESWdirection)) {
     case 'n':
       isThereNWall = true;
+      break;
     case 'e':
       isThereEWall = true;
+      break;
     case 's':
       isThereSWall = true;
+      break;
     case 'w':
       isThereWWall = true;
+      break;
   }
 }
 
@@ -58,12 +70,16 @@ void MazeNode::setCellInDirection(MazeNode* node, char NESWdirection) {
   switch (tolower(NESWdirection)) {
     case 'n':
       NCell = node;
+      break;
     case 'e':
       ECell = node;
+      break;
     case 's':
       SCell = node;
+      break;
     case 'w':
       WCell = node;
+      break;
   }
 }
 
