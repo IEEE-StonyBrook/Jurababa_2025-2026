@@ -25,42 +25,50 @@ std::string PathConverter::buildLFRPath(MazeNode* startNode,
 }
 
 std::string PathConverter::calculateMovesNeededBetweenHeadings(
-    std::array<int, 2> from, std::array<int, 2> to) {
-  if (from[0] != 0 && from[1] != 0) {
+    std::array<int, 2> fromHeading, std::array<int, 2> toHeading) {
+  if (fromHeading[0] != 0 && fromHeading[1] != 0) {
     LOG_ERROR("PathConverter: Mouse on diagonal! Not allowed.");
     return "";
   }
-
+  if (toHeading[0] == 0 && toHeading[1] == 0) {
+    LOG_ERROR("PathConverter: Invalid 'to' heading.")
+    return "";
+  }
+  // Same Direction
+  if (fromHeading[0] == toHeading[0] && fromHeading[1] == toHeading[1]) {
+    return "F#";
+  }
   // N, E, S, W Directions
-  if ((to[0] == 0 || to[1] == 0) && !(to[0] == 0 && to[1] == 0)) {
-    return getMovesNeededBy4Cardinal(from, to);
-    currHeading = to;
+  else if ((toHeading[0] == 0 || toHeading[1] == 0)) {
+    currHeading = toHeading;
+    return getMovesNeededBy4Cardinal(fromHeading, toHeading);
   }
   // Diagonal Directions
   else {
-    std::array<int, 2> toVertical = {0, to[1]};
-    std::array<int, 2> toHorizontal = {to[0], 0};
+    std::array<int, 2> toVertical = {0, toHeading[1]};
+    std::array<int, 2> toHorizontal = {toHeading[0], 0};
     std::string movesNeeded;
-    movesNeeded += getMovesNeededBy4Cardinal(from, toVertical);
+    movesNeeded += getMovesNeededBy4Cardinal(fromHeading, toVertical);
     movesNeeded += getMovesNeededBy4Cardinal(toVertical, toHorizontal);
     currHeading = toHorizontal;
+    return movesNeeded;
   }
   return "";
 }
 
-std::string PathConverter::getMovesNeededBy4Cardinal(std::array<int, 2> from,
-                                                     std::array<int, 2> to) {
-  if (to[0] == 0 && to[1] == 0) return "";
+std::string PathConverter::getMovesNeededBy4Cardinal(std::array<int, 2> fromHeading,
+                                                     std::array<int, 2> toHeading) {
   const std::vector<std::array<int, 2>> directionsArray = {
       {0, 1}, {1, 0}, {0, -1}, {-1, 0}};
 
-  int fromIndex = findIndexInVector(directionsArray, from);
-  int toIndex = findIndexInVector(directionsArray, to);
+  int fromIndex = findIndexInVector(directionsArray, fromHeading);
+  int toIndex = findIndexInVector(directionsArray, toHeading);
   if (fromIndex == -1 | toIndex == -1) {
     LOG_ERROR("PathConverter: Not 4 cardinal directions!");
     return "";
   }
-  int rightTurnsNeeded = toIndex - fromIndex;
+  // Added 4 to eliminate negatives.
+  int rightTurnsNeeded = ((toIndex - fromIndex) % 4 + 4) % 4;
   if (rightTurnsNeeded == 3)
     return "L#F#";
   else if (rightTurnsNeeded == 2)

@@ -47,7 +47,7 @@ int main() {
 #endif
   // Maze logic objects
   AStarSolver aStar(&api, &mouse);
-  std::string path = aStar.go(goalCells, false, true);
+  std::string path = aStar.go(goalCells, true, true);
   LOG_DEBUG(path);
   interpretLFRPath(&api, path);
   // while (true) {

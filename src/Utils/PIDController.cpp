@@ -1,9 +1,5 @@
 #include "PIDController.h"
 
-#include <cmath>
-
-#include "pico/stdlib.h"
-
 PIDController::PIDController(float kP, float kI, float kD, float initialError,
                              float integralMaxValue, float deadbandToReturnZero)
     : kP(kP),
