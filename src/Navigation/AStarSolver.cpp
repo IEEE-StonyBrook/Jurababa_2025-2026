@@ -1,7 +1,7 @@
-#include "AStarSolver.h"
+#include "../../Include/Navigation/AStarSolver.h"
 
 AStarSolver::AStarSolver(InternalMouse* internalMouse)
-    : api(api), internalMouse(internalMouse) {}
+    : internalMouse(internalMouse) {}
 
 std::string AStarSolver::go(std::vector<std::array<int, 2>> endCells,
                             bool diagMovementAllowed,
