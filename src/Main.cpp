@@ -2,9 +2,9 @@
 // 6,7,8,9
 #include <stdio.h>
 
-#include "API.h"
-#include "Utils/LogSystem.h"
-#include "Virtual/Solver/AStarSolver.h"
+#include "../Include/Common/LogSystem.h"
+#include "../Include/Navigation/AStarSolver.h"
+#include "../Include/Platform/Simulator/API.h"
 
 #ifdef USING_ROBOT
 #include "hardware/uart.h"
@@ -29,7 +29,6 @@ int main() {
   api.setUp(startCell, goalCells);
   api.printMaze();
 
-
 #ifdef USING_ROBOT
   stdio_init_all();
   // Robot objects
@@ -46,7 +45,7 @@ int main() {
   API api(&drivetrain, &api, RUN_ON_SIMULATOR);
 #endif
   // Maze logic objects
-  AStarSolver aStar(&api, &mouse);
+  AStarSolver aStar(&mouse);
   std::string path = aStar.go(goalCells, true, true);
   LOG_DEBUG(path);
   interpretLFRPath(&api, path);
