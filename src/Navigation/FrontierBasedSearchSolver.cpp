@@ -1,4 +1,4 @@
-#include "FrontierBasedSearchSolver.h"
+#include "../../Include/Navigation/FrontierBasedSearchSolver.h"
 
 #include <queue>
 

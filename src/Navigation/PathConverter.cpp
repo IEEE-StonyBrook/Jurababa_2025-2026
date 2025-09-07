@@ -1,4 +1,4 @@
-#include "PathConverter.h"
+#include "../../Include/Navigation/PathConverter.h"
 
 MazeNode* PathConverter::currNode = nullptr;
 std::array<int, 2> PathConverter::currHeading = {0, 1};

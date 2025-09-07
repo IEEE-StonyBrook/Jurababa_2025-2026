@@ -1,4 +1,4 @@
-#include "MazeNode.h"
+#include "../../Include/Maze/MazeNode.h"
 
 #include <cctype>
 

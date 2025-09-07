@@ -1,4 +1,4 @@
-#include "LogSystem.h"
+#include "../../Include/Common/LogSystem.h"
 
 #include <iostream>
 

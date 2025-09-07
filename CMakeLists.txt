@@ -37,19 +37,19 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 # Add all cpp files here
 add_executable(Jurababa
-    src/Robot/Drivetrain.cpp
-    src/Robot/Motor.cpp
-    src/Robot/Encoder.cpp
-    src/Robot/IMU.cpp
-    src/Robot/ToF.cpp
-    src/Utils/PIDController.cpp
-    src/Utils/LogSystem.cpp
-    src/Virtual/Mouse/InternalMouse.cpp
-    src/Virtual/Mouse/MazeGraph.cpp
-    src/Virtual/Mouse/MazeNode.cpp
-    src/Virtual/Solver/AStarSolver.cpp
-    src/API.cpp
-    src/Main.cpp
+    Src/Platform/Pico/Robot/Drivetrain.cpp
+    Src/Platform/Pico/Robot/Motor.cpp
+    Src/Platform/Pico/Robot/Encoder.cpp
+    Src/Platform/Pico/Robot/IMU.cpp
+    Src/Platform/Pico/Robot/ToF.cpp
+    Src/Common/PIDController.cpp
+    Src/Common/LogSystem.cpp
+    Src/Maze/InternalMouse.cpp
+    Src/Maze/MazeGraph.cpp
+    Src/Maze/MazeNode.cpp
+    Src/Navigation/AStarSolver.cpp
+    Src/Platform/Simulator/API.cpp
+    Src/Main.cpp
 )
 
 pico_set_program_name(Jurababa "Jurababa")

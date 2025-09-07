@@ -2,7 +2,7 @@
 #define PATHCONVERTER_H
 
 #include "../Maze/InternalMouse.h"
-#include "LogSystem.h"
+#include "../Common/LogSystem.h"
 
 class PathConverter {
  public:
