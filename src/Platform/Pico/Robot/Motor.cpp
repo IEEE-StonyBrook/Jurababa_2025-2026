@@ -1,4 +1,4 @@
-#include "./../../Include/Platform/Pico/Robot/Motor.h"
+#include "../../../Include/Platform/Pico/Robot/Motor.h"
 
 #include <cmath>
 

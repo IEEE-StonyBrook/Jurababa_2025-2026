@@ -1,4 +1,4 @@
-#include "./../../Include/Platform/Pico/Robot/IMU.h"
+#include "../../../Include/Platform/Pico/Robot/IMU.h"
 
 #include <cmath>
 

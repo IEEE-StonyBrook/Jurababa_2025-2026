@@ -1,4 +1,4 @@
-#include "MazeGraph.h"
+#include "../../Include/Maze/MazeGraph.h"
 
 #include <sstream>
 
