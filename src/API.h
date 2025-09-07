@@ -175,6 +175,7 @@ class API {
 
   void setUp(std::array<int, 2> startCell,
              std::vector<std::array<int, 2>> goalCells);
+  void printMaze();
   bool runOnSimulator;
 
  private:
@@ -183,9 +184,10 @@ class API {
 #ifdef USING_ROBOT
   Drivetrain* drivetrain;
 #endif
-
   std::string getSimulatorResponse(std::string commandUsed);
   int getSimulatorIntegerResponse(std::string commandUsed);
   bool getSimulatorBoolResponse(std::string commandUsed);
+
+  std::string printMazeRow(int row);
 };
 #endif

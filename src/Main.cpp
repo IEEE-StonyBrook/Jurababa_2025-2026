@@ -27,6 +27,8 @@ int main() {
                       &logSystem);
   API api(&mouse, RUN_ON_SIMULATOR);
   api.setUp(startCell, goalCells);
+  api.printMaze();
+
 
 #ifdef USING_ROBOT
   stdio_init_all();

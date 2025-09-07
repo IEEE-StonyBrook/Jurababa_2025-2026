@@ -157,6 +157,7 @@ void API::setUp(std::array<int, 2> startCell,
 
   // Adds boundary mazes.
   for (int i = 0; i < internalMouse->getMazeWidth(); i++) {
+    printMaze();
     setWall(i, 0, "s");
     setWall(i, internalMouse->getMazeHeight() - 1, "n");
   }
@@ -185,4 +186,45 @@ void API::setUp(std::array<int, 2> startCell,
     setColor(goalCell[0], goalCell[1], 'G');
     setText(goalCell[0], goalCell[1], "End");
   }
+}
+
+void API::printMaze() {
+  std::string mazeString = "Maze:\n";
+  for (int i = 0; i < internalMouse->getMazeWidth(); ++i) {
+    mazeString += "+---";
+  }
+  mazeString += "+\n";
+
+  for (int i = internalMouse->getMazeHeight() - 1; i >= 0; --i) {
+    mazeString += printMazeRow(i);
+    mazeString += "\n";
+  }
+
+  LOG_DEBUG(mazeString);
+}
+
+std::string API::printMazeRow(int row) {
+  std::string rowString = "|";
+  std::string eastRowString = "";
+  std::string southRowString = "";
+  for (int i = 0; i < internalMouse->getMazeWidth(); ++i) {
+    MazeNode* curr = internalMouse->getNodeAtPos(i, row);
+    if (curr->getIsWall('e')) {
+      eastRowString += "   |";
+    } else {
+      eastRowString += "    ";
+    }
+
+    if (curr->getIsWall('s')) {
+      southRowString += "+---";
+    } else {
+      southRowString += "+   ";
+    }
+  }
+  rowString += eastRowString;
+  rowString += "\n";
+  rowString += southRowString;
+  rowString += "+\n";
+
+  return rowString;
 }
