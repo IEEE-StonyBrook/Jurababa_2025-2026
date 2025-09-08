@@ -27,7 +27,6 @@ int main() {
                       &logSystem);
   API api(&mouse, RUN_ON_SIMULATOR);
   api.setUp(startCell, goalCells);
-  api.printMaze();
 
 #ifdef USING_ROBOT
   stdio_init_all();
@@ -45,8 +44,8 @@ int main() {
   API api(&drivetrain, &api, RUN_ON_SIMULATOR);
 #endif
   // Maze logic objects
-  AStarSolver aStar(&mouse);
-  std::string path = aStar.go(goalCells, true, true);
+  AStarSolver aStar(&api, &mouse);
+  std::string path = aStar.go(goalCells, false, true);
   LOG_DEBUG(path);
   interpretLFRPath(&api, path);
   // while (true) {

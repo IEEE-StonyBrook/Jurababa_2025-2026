@@ -61,6 +61,7 @@ pico_enable_stdio_usb(Jurababa 1)
 
 # Add the ToF library to the build
 add_subdirectory(library/vl53l0x_api_rp2040)
+add_subdirectory(library/vl53l0x_api_rp2040)
 
 # Add the standard library to the build
 target_link_libraries(Jurababa

@@ -1,7 +1,7 @@
 #include "../../Include/Navigation/AStarSolver.h"
 
-AStarSolver::AStarSolver(InternalMouse* internalMouse)
-    : internalMouse(internalMouse) {}
+AStarSolver::AStarSolver(API* api, InternalMouse* internalMouse)
+    : api(api), internalMouse(internalMouse) {}
 
 std::string AStarSolver::go(std::vector<std::array<int, 2>> endCells,
                             bool diagMovementAllowed,
@@ -12,8 +12,8 @@ std::string AStarSolver::go(std::vector<std::array<int, 2>> endCells,
   LOG_DEBUG(stringPath);
   std::array<int, 2> c = internalMouse->getCurrentRobotDirArray();
   std::string lfrPath = PathConverter::buildLFRPath(
-     internalMouse->getCurrentRobotNode(),
-     internalMouse->getCurrentRobotDirArray(), aStarPath);
+      internalMouse->getCurrentRobotNode(),
+      internalMouse->getCurrentRobotDirArray(), aStarPath);
   return lfrPath;
 }
 

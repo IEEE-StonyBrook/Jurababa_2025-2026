@@ -26,6 +26,7 @@ class AStarSolver {
                                                   bool passThroughGoalCells);
 
   std::vector<MazeNode*> constructPath(MazeNode* startNode, MazeNode* endNode);
+  std::vector<MazeNode*> constructPath(MazeNode* startNode, MazeNode* endNode);
   static std::string getStringPath(std::vector<MazeNode*> path);
   static float getHeuristicDistance(MazeNode* from, MazeNode* to);
 
