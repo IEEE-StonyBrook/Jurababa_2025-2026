@@ -1,17 +1,18 @@
 CXX = g++
 CXXFLAGS = -Wall -Wextra -std=c++11 -I./Robot -I./Solver -I./Virtual -I./Utils -g -O0
+CXXFLAGS = -Wall -Wextra -std=c++11 -I./Robot -I./Solver -I./Virtual -I./Utils -g -O0
 
-OUTDIR = output
+OUTDIR = bin
 OUT = $(OUTDIR)/Micromouse.out
 
 # Make sure output directory exists
 $(shell mkdir -p $(OUTDIR))
 
 # Source file groups
-VIRTUAL_SRCS = src/Virtual/Mouse/InternalMouse.cpp src/Virtual/Mouse/MazeGraph.cpp src/Virtual/Mouse/MazeNode.cpp
-UTILS_SRC = src/Utils/LogSystem.cpp src/Utils/PathConverter.cpp
-SOLVER_SRCS = src/Virtual/Solver/AStarSolver.cpp
-MAIN_SRCS = src/API.cpp src/Main.cpp
+VIRTUAL_SRCS = Src/Maze/InternalMouse.cpp Src/Maze/MazeGraph.cpp Src/Maze/MazeNode.cpp
+UTILS_SRC = Src/Common/LogSystem.cpp
+SOLVER_SRCS = Src/Navigation/AStarSolver.cpp Src/Navigation/PathConverter.cpp
+MAIN_SRCS = Src/Platform/Simulator/API.cpp Src/Main.cpp
 
 # Combine all sources
 SRCS = $(VIRTUAL_SRCS) $(UTILS_SRC) $(SOLVER_SRCS) $(MAIN_SRCS)
