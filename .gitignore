@@ -2,4 +2,3 @@ build
 .fake
 .vscode
 .DS_Store
-bin

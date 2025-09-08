@@ -2,9 +2,9 @@
 // 6,7,8,9
 #include <stdio.h>
 
-#include "../Include/Common/LogSystem.h"
-#include "../Include/Navigation/AStarSolver.h"
-#include "../Include/Platform/Simulator/API.h"
+#include "API.h"
+#include "Utils/LogSystem.h"
+#include "Virtual/Solver/AStarSolver.h"
 
 #ifdef USING_ROBOT
 #include "hardware/uart.h"

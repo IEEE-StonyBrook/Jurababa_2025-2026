@@ -1,4 +1,4 @@
-# Genejated Cmake Pico project file
+# Generated Cmake Pico project file
 
 cmake_minimum_required(VERSION 3.13)
 
@@ -29,42 +29,41 @@ set(PICO_BOARD pico CACHE STRING "Board type")
 # set(PICO_SDK_PATH "/Users/elvitigalalis/pico-sdk")
 include(pico_sdk_import.cmake)
 
-project(Jurababa C CXX ASM)
+project(Ratawolfeux C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 # Add all cpp files here
-add_executable(Jurababa
-    Src/Platform/Pico/Robot/Drivetrain.cpp
-    Src/Platform/Pico/Robot/Motor.cpp
-    Src/Platform/Pico/Robot/Encoder.cpp
-    Src/Platform/Pico/Robot/IMU.cpp
-    Src/Platform/Pico/Robot/ToF.cpp
-    Src/Common/PIDController.cpp
-    Src/Common/LogSystem.cpp
-    Src/Maze/InternalMouse.cpp
-    Src/Maze/MazeGraph.cpp
-    Src/Maze/MazeNode.cpp
-    Src/Navigation/AStarSolver.cpp
-    Src/Platform/Simulator/API.cpp
-    Src/Main.cpp
+add_executable(Ratawoulfie
+    src/Robot/Drivetrain.cpp
+    src/Robot/Motor.cpp
+    src/Robot/Encoder.cpp
+    src/Robot/IMU.cpp
+    src/Robot/ToF.cpp
+    src/Utils/PIDController.cpp
+    src/Utils/LogSystem.cpp
+    src/Virtual/Mouse/InternalMouse.cpp
+    src/Virtual/Mouse/MazeGraph.cpp
+    src/Virtual/Mouse/MazeNode.cpp
+    src/Virtual/Solver/AStarSolver.cpp
+    src/API.cpp
+    src/Main.cpp
 )
 
-pico_set_program_name(Jurababa "Jurababa")
-pico_set_program_version(Jurababa "0.1")
+pico_set_program_name(Ratawolfeux "Ratawolfeux")
+pico_set_program_version(Ratawolfeux "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(Jurababa 0)
-pico_enable_stdio_usb(Jurababa 1)
+pico_enable_stdio_uart(Ratawolfeux 0)
+pico_enable_stdio_usb(Ratawolfeux 1)
 
 # Add the ToF library to the build
 add_subdirectory(library/vl53l0x_api_rp2040)
-add_subdirectory(library/vl53l0x_api_rp2040)
 
 # Add the standard library to the build
-target_link_libraries(Jurababa
+target_link_libraries(Ratawolfeux
         pico_stdlib
         hardware_gpio
         hardware_pio
@@ -76,8 +75,8 @@ target_link_libraries(Jurababa
         )
 
 # Add the standard include files to the build
-target_include_directories(Jurababa PRIVATE
+target_include_directories(Ratawolfeux PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
-pico_add_extra_outputs(Jurababa)
+pico_add_extra_outputs(Ratawolfeux)
