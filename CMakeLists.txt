@@ -48,6 +48,7 @@ add_executable(Jurababa
     Src/Maze/MazeGraph.cpp
     Src/Maze/MazeNode.cpp
     Src/Navigation/AStarSolver.cpp
+    Src/Navigation/PathConverter.cpp
     Src/Platform/Simulator/API.cpp
     Src/Main.cpp
 )
@@ -60,7 +61,7 @@ pico_enable_stdio_uart(Jurababa 0)
 pico_enable_stdio_usb(Jurababa 1)
 
 # Add the ToF library to the build
-add_subdirectory(library/vl53l0x_api_rp2040)
+add_subdirectory(External/vl53l0x_api_rp2040)
 
 # Add the standard library to the build
 target_link_libraries(Jurababa

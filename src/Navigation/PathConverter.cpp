@@ -31,7 +31,7 @@ std::string PathConverter::calculateMovesNeededBetweenHeadings(
     return "";
   }
   if (toHeading[0] == 0 && toHeading[1] == 0) {
-    LOG_ERROR("PathConverter: Invalid 'to' heading.")
+    LOG_ERROR("PathConverter: Invalid 'to' heading.");
     return "";
   }
   // Same Direction
@@ -63,7 +63,7 @@ std::string PathConverter::getMovesNeededBy4Cardinal(std::array<int, 2> fromHead
 
   int fromIndex = findIndexInVector(directionsArray, fromHeading);
   int toIndex = findIndexInVector(directionsArray, toHeading);
-  if (fromIndex == -1 | toIndex == -1) {
+  if (fromIndex == -1 || toIndex == -1) {
     LOG_ERROR("PathConverter: Not 4 cardinal directions!");
     return "";
   }

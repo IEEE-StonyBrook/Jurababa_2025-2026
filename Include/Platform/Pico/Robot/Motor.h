@@ -1,7 +1,7 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
-#include "../../Common/PIDController.h"
+#include "../../../Common/PIDController.h"
 #include "Encoder.h"
 
 class Motor {

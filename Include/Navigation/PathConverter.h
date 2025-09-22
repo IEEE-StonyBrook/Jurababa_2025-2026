@@ -3,11 +3,10 @@
 
 #include "../Maze/InternalMouse.h"
 #include "../Common/LogSystem.h"
-
 class PathConverter {
  public:
-  static std::string buildLFRPath(MazeNode* currNode,
-                                  std::array<int, 2> currDir,
+  static std::string buildLFRPath(MazeNode* startNode,
+                                  std::array<int, 2> startHeading,
                                   std::vector<MazeNode*> nodePath);
 
  private:
