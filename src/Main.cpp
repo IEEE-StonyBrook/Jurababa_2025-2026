@@ -6,10 +6,10 @@
 #include "../Include/Navigation/AStarSolver.h"
 #include "../Include/Platform/Simulator/API.h"
 
-#ifdef USING_ROBOT
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
-#endif
+#include "Include\Platform\Pico\Robot\Motor.h"
+#include "Include\Platform\Pico\Robot\Encoder.h"
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
@@ -28,6 +28,10 @@ int main() {
   API api(&mouse, RUN_ON_SIMULATOR);
   api.setUp(startCell, goalCells);
   api.printMaze();
+
+  Encoder leftMotorEncoder(20);
+  Motor leftMotor(18, 19, &leftMotorEncoder, true);
+  leftMotor.setContinuousDesiredMotorVelocityMMPerSec(50);
 
 #ifdef USING_ROBOT
   stdio_init_all();

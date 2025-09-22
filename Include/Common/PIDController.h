@@ -9,7 +9,6 @@ class PIDController {
   PIDController(float kP = 0.0f, float kI = 0.0f, float kD = 0.0f,
                 float initialError = 0.0f, float integralMaxValue = 1000000.0f,
                 float deadbandToReturnZero = 0.001f);
-  ~PIDController();
 
   float calculateOutput(float newError);
   void setInitialError(float initialError);

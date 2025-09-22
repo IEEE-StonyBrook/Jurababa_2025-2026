@@ -8,7 +8,6 @@ class Motor {
  public:
   Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Encoder* encoder,
         bool invertMotorDirection = false);
-  ~Motor();
 
   float getMotorPositionMM();
   float getMotorVelocityMMPerSec();

@@ -6,7 +6,6 @@
 class Encoder {
  public:
   Encoder(int gpioEncoderPinOne);
-  ~Encoder();
 
   int getCurrentEncoderTickCount();
 
