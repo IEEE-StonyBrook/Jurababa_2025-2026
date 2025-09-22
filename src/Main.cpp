@@ -8,12 +8,13 @@
 
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
-#include "Include\Platform\Pico\Robot\Motor.h"
-#include "Include\Platform\Pico\Robot\Encoder.h"
+#include "../Include/Platform/Pico/Robot/Motor.h"
+#include "../Include/Platform/Pico/Robot/Encoder.h"
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
 int main() {
+  stdio_init_all();
   const bool RUN_ON_SIMULATOR = true;
 
   // Universal objects
