@@ -4,18 +4,21 @@
 
 #include "../Include/Common/LogSystem.h"
 #include "../Include/Navigation/AStarSolver.h"
-#include "../Include/Platform/Simulator/API.h"
-
+#include "../Include/Platform/Pico/API.h"
+#include "../Include/Platform/Pico/Robot/Drivetrain.h"
+#include "../Include/Platform/Pico/Robot/Encoder.h"
+#include "../Include/Platform/Pico/Robot/Motor.h"
+#include "../Include/Platform/Pico/Robot/ToF.h"
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
-#include "../Include/Platform/Pico/Robot/Motor.h"
-#include "../Include/Platform/Pico/Robot/Encoder.h"
+
+// #include "../Include/Platform/Simulator/API.h"
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
 int main() {
   stdio_init_all();
-  const bool RUN_ON_SIMULATOR = true;
+  sleep_ms(3000);
 
   // Universal objects
   LogSystem logSystem;
@@ -26,16 +29,7 @@ int main() {
   MazeGraph maze(16, 16);
   InternalMouse mouse(startCell, std::string("n"), goalCells, &maze,
                       &logSystem);
-  API api(&mouse, RUN_ON_SIMULATOR);
-  api.setUp(startCell, goalCells);
-  api.printMaze();
 
-  Encoder leftMotorEncoder(20);
-  Motor leftMotor(18, 19, &leftMotorEncoder, true);
-  leftMotor.setContinuousDesiredMotorVelocityMMPerSec(50);
-
-#ifdef USING_ROBOT
-  stdio_init_all();
   // Robot objects
   Encoder leftMotorEncoder(20);
   Encoder rightMotorEncoder(7);
@@ -47,8 +41,14 @@ int main() {
   IMU imu(5);
   Drivetrain robotDrivetrain(&leftMotor, &rightMotor, &leftToF, &frontToF,
                              &rightToF, &imu);
-  API api(&drivetrain, &api, RUN_ON_SIMULATOR);
-#endif
+  API api(&robotDrivetrain, &mouse);
+
+  api.setUp(startCell, goalCells);
+  api.printMaze();
+  
+  LOG_DEBUG("Sending motor velocity request");
+  leftMotor.setContinuousDesiredMotorVelocityMMPerSec(50);
+
   // Maze logic objects
   AStarSolver aStar(&mouse);
   std::string path = aStar.go(goalCells, true, true);

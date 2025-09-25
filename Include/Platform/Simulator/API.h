@@ -1,9 +1,6 @@
-#ifndef API_H
-#define API_H
+#ifndef APISIMULATOR_H
+#define APISIMULATOR_H
 
-#ifdef USING_ROBOT
-#include "Platform/Pico/Robot/Drivetrain.h"
-#endif
 #include <string>
 
 #include "../../Maze/InternalMouse.h"
@@ -18,19 +15,6 @@ class API {
    * simulator.
    */
   API(InternalMouse* internalMouse, bool runOnSimulator);
-
-#ifdef USING_ROBOT
-  /**
-   * Constructs an API object for a physical robot.
-   *
-   * @param drivetrain Pointer to the drivetrain object.
-   * @param internalMouse Pointer to the internal mouse object.
-   * @param runOnSimulator Boolean indicating if the API should run on a
-   * simulator (default: false).
-   */
-  API(Drivetrain* drivetrain, InternalMouse* internalMouse,
-      bool runOnSimulator = false);
-#endif
 
   /**
    * Gets the width of the maze.
@@ -181,9 +165,6 @@ class API {
  private:
   InternalMouse* internalMouse;
 
-#ifdef USING_ROBOT
-  Drivetrain* drivetrain;
-#endif
   std::string getSimulatorResponse(std::string commandUsed);
   int getSimulatorIntegerResponse(std::string commandUsed);
   bool getSimulatorBoolResponse(std::string commandUsed);
