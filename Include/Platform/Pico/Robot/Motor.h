@@ -2,6 +2,8 @@
 #define MOTOR_H
 
 #include "../../../Common/PIDController.h"
+#include "../../../Common/LogSystem.h"
+
 #include "Encoder.h"
 
 class Motor {

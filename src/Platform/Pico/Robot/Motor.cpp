@@ -98,6 +98,7 @@ void Motor::setContinuousDesiredMotorVelocityMMPerSec(
   desiredVelocityMMPerSec = desiredVelMMPerSec;
 
   if (desiredVelocityMMPerSec < MIN_MOTOR_VELOCITY_MM_PER_SEC) {
+    LOG_DEBUG("Too low velocity.");
     stopMotor();
     return;
   }
@@ -115,6 +116,8 @@ void Motor::setContinuousDesiredMotorVelocityMMPerSec(
 
     float calculatedVelocityMMPerSec =
         feedforwardOutput + pidVelocityCalculatedOutput;
+    LOG_DEBUG("Calculated Velocity: " + std::to_string(calculatedVelocityMMPerSec));
+
     setMotorPWMPercentageNeg1ToPos1(calculatedVelocityMMPerSec /
                                     MAX_MOTOR_VELOCITY_MM_PER_SEC);
     sleep_ms(SLEEP_BETWEEN_PID_CYCLES_MS);
