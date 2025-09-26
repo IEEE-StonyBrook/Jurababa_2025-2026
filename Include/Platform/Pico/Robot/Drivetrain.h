@@ -9,7 +9,6 @@ class Drivetrain {
  public:
   Drivetrain(Motor* leftMotor, Motor* rightMotor, ToF* leftToF, ToF* middleToF,
              ToF* rightToF, IMU* drivetrainIMU);
-  ~Drivetrain();
 
   bool driveRobotForwardNumberOfCells(int numberOfCells);
   bool turnRobotDegreesInPlace(int degreesToTurn);

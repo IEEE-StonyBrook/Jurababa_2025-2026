@@ -41,22 +41,21 @@ int main() {
   IMU imu(5);
   Drivetrain robotDrivetrain(&leftMotor, &rightMotor, &leftToF, &frontToF,
                              &rightToF, &imu);
-  API api(&robotDrivetrain, &mouse);
+  // API api(&robotDrivetrain, &mouse);
+  // api.setUp(startCell, goalCells);
+  // api.printMaze();
 
-  api.setUp(startCell, goalCells);
-  api.printMaze();
-  
   LOG_DEBUG("Sending motor velocity request");
   leftMotor.setContinuousDesiredMotorVelocityMMPerSec(50);
 
   // Maze logic objects
-  AStarSolver aStar(&mouse);
-  std::string path = aStar.go(goalCells, true, true);
-  LOG_DEBUG(path);
-  interpretLFRPath(&api, path);
-  // while (true) {
-  //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
-  // }
+  // AStarSolver aStar(&mouse);
+  // std::string path = aStar.go(goalCells, true, true);
+  // LOG_DEBUG(path);
+  // interpretLFRPath(&api, path);
+  // // while (true) {
+  // //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
+  // // }
   return 0;
 }
 

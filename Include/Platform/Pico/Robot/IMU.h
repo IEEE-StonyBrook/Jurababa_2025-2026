@@ -8,7 +8,6 @@
 class IMU {
  public:
   IMU(int uartRXPin = 5);
-  ~IMU();
 
   float getIMUYawDegreesNeg180ToPos180();
   void resetIMUYawToZero();

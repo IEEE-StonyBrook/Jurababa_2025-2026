@@ -7,7 +7,6 @@
 class ToF {
  public:
   ToF(int xShutToFPin, char ToFPosition);
-  ~ToF();
 
   float getToFDistanceFromWallMM();
 
