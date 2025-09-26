@@ -4,7 +4,7 @@
 #include <string>
 
 #include "../../Maze/InternalMouse.h"
-#include "Platform/Pico/Robot/Drivetrain.h"
+#include "Robot/Drivetrain.h"
 
 class API {
  public:
