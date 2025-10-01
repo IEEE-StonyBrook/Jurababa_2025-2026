@@ -57,13 +57,26 @@ float Motor::getMotorPositionMM() {
 
 float Motor::getMotorVelocityMMPerSec() {
   absolute_time_t timeNow = get_absolute_time();
+  int64_t timeDifferenceMicroSec =
+      absolute_time_diff_us(timeWhenVelocityWasLastCheckedMicroSec, timeNow);
+
+  if (timeDifferenceMicroSec >= SLEEP_BETWEEN_PID_CYCLES_MS) {
+    float currentPositionMM = getMotorPositionMM();
+    velocityMMPerSec =
+      (currentPositionMM - positionWhenVelocityWasLastCheckedMM) /
+      (timeDifferenceMicroSec /
+       1e6f);
+
+    timeWhenVelocityWasLastCheckedMicroSec = timeNow;
+    positionWhenVelocityWasLastCheckedMM = currentPositionMM;
+  }
 
   // Velocity = millimeter difference / second difference.
-  float velocityMMPerSec =
-      (getMotorPositionMM() - positionWhenVelocityWasLastCheckedMM) /
-      (absolute_time_diff_us(timeWhenVelocityWasLastCheckedMicroSec, timeNow) /
-       1e6f);
-  timeWhenVelocityWasLastCheckedMicroSec = timeNow;
+  // float currentPositionMM = getMotorPositionMM();
+  // float velocityMMPerSec =
+  //     (currentPositionMM - positionWhenVelocityWasLastCheckedMM) /
+  //     (timeDifferenceMicroSec /
+  //      1e6f);
 
   return velocityMMPerSec;
 }
@@ -92,7 +105,6 @@ void Motor::setContinuousDesiredMotorVelocityMMPerSec(
     float desiredVelMMPerSec) {
   const float MAX_MOTOR_VELOCITY_ERROR_MM_PER_SEC = 1.0f;
   const float MAX_MOTOR_VELOCITY_MM_PER_SEC = 500.0f;
-  const int SLEEP_BETWEEN_PID_CYCLES_MS = 20;
   const float MIN_MOTOR_VELOCITY_MM_PER_SEC = 1.0f;
 
   desiredVelocityMMPerSec = desiredVelMMPerSec;
@@ -105,21 +117,29 @@ void Motor::setContinuousDesiredMotorVelocityMMPerSec(
 
   float feedforwardOutput =
       feedforwardkS + feedforwardkV * desiredVelocityMMPerSec;
+  LOG_DEBUG("Feedforward Output: " + std::to_string(feedforwardOutput));
+  LOG_DEBUG("Feedforward Output KS: " + std::to_string(feedforwardkS));
+  LOG_DEBUG("Feedforward Output KV: " + std::to_string(feedforwardkV));
+
 
   // Stops sending new PWM values when the actual RPM is near desired RPM.
   while (true) {
     updateVelocityErrorAndPIDOutput();
-    if (fabs(motorVelocityErrorMMPerSec) >
+    if (fabs(motorVelocityErrorMMPerSec) <=
         MAX_MOTOR_VELOCITY_ERROR_MM_PER_SEC) {
+      LOG_DEBUG("Velocity RETURNED: " + std::to_string(motorVelocityErrorMMPerSec));
       return;
     }
 
     float calculatedVelocityMMPerSec =
         feedforwardOutput + pidVelocityCalculatedOutput;
     LOG_DEBUG("Calculated Velocity: " + std::to_string(calculatedVelocityMMPerSec));
-
+    LOG_DEBUG("Current Velocity: " + std::to_string(getMotorVelocityMMPerSec()));
+    LOG_DEBUG("PWM: " + std::to_string(calculatedVelocityMMPerSec /
+                                    MAX_MOTOR_VELOCITY_MM_PER_SEC));
     setMotorPWMPercentageNeg1ToPos1(calculatedVelocityMMPerSec /
                                     MAX_MOTOR_VELOCITY_MM_PER_SEC);
+
     sleep_ms(SLEEP_BETWEEN_PID_CYCLES_MS);
   };
 }
@@ -146,7 +166,7 @@ void Motor::setUpPIDControllerWithFeedforward(float kP, float kI, float kD,
 }
 
 void Motor::setMotorPWMPercentageNeg1ToPos1(float PWMPercentage) {
-  isMovingForward = !std::signbit(PWMPercentage);
+  isMovingForward = std::signbit(PWMPercentage);
 
   // Closes PWM output to [0, 999]
   float PWMOutput = fabs(PWMPercentage * 999.0f);

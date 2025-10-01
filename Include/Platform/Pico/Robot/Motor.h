@@ -20,10 +20,13 @@ class Motor {
   void setContinuousDesiredMotorPositionMM(float desiredPositionMM);
   void setDesiredVelocityMMPerSec(float desiredVelMMPerSec);
 
-  const float WHEEL_DIAMETER_MM = 31.0f;
+  const float WHEEL_DIAMETER_MM = 39.5f;
   const float TICKS_PER_WHEEL_REVOLUTION = 1400.0f;
+  const int SLEEP_BETWEEN_PID_CYCLES_MS = 20;
 
  private:
+  float velocityMMPerSec;
+
   void setUpMotorPins();
   void setUpMotorPWM();
   void setMotorPWMPercentageNeg1ToPos1(float PWMPercentage);

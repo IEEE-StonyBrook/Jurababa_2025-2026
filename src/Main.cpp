@@ -46,7 +46,13 @@ int main() {
   // api.printMaze();
 
   LOG_DEBUG("Sending motor velocity request");
-  leftMotor.setContinuousDesiredMotorVelocityMMPerSec(50);
+  leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f, 0.0f, 0.0f);
+  leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
+
+  while(true) {
+    // leftMotor.setContinuousDesiredMotorVelocityMMPerSec(50);
+    sleep_ms(10);
+  }
 
   // Maze logic objects
   // AStarSolver aStar(&mouse);
