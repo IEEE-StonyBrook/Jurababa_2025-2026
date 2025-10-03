@@ -8,6 +8,17 @@
 #include <functional>
 #define USE_MULTICORE_SENSORS
 
+
+enum class SensorMask : uint32_t {
+    ALL = 0,
+    LEFT_ENCODER = 1 << 0,
+    RIGHT_ENCODER = 1 << 1,
+    TOF_LEFT = 1 << 2,
+    TOF_FRONT = 1 << 3,
+    TOF_RIGHT = 1 << 4,
+    IMU_YAW = 1 << 5,
+};
+
 // Shared sensor data layout. Adjust fields to match your actual sensors.
 struct MulticoreSensorData {
     int32_t left_encoder_count = 0;
@@ -16,9 +27,9 @@ struct MulticoreSensorData {
     int16_t tof_front_mm = 0;
     int16_t tof_right_mm = 0;
     float imu_yaw = 0.0f;
-    float imu_pitch = 0.0f;
-    float imu_roll = 0.0f;
     uint64_t timestamp_ms = 0;
+
+    SensorMask valid_sensors = SensorMask::ALL;
 };
 
 // Header-only singleton-style hub for publishing/snapshotting sensor data
@@ -35,16 +46,42 @@ public:
     // This copies `data` into the shared store while holding the mutex.
     static inline void publish(const MulticoreSensorData &data) {
         mutex_enter_blocking(&get_mutex());
-        get_shared() = data;
+
+        MulticoreSensorData &back = buffers[get_back_index()];
+        // Start from current front buffer to preserve unchanged fields
+        back = buffers[active_index];
+
+        SensorMask mask = data.valid_sensors;
+        if (mask == SensorMask::ALL) {
+            back = data; // full overwrite
+        } else {
+            if ((uint32_t)mask & (uint32_t)SensorMask::LEFT_ENCODER)
+                back.left_encoder_count = data.left_encoder_count;
+            if ((uint32_t)mask & (uint32_t)SensorMask::RIGHT_ENCODER)
+                back.right_encoder_count = data.right_encoder_count;
+            if ((uint32_t)mask & (uint32_t)SensorMask::TOF_LEFT)
+                back.tof_left_mm = data.tof_left_mm;
+            if ((uint32_t)mask & (uint32_t)SensorMask::TOF_FRONT)
+                back.tof_front_mm = data.tof_front_mm;
+            if ((uint32_t)mask & (uint32_t)SensorMask::TOF_RIGHT)
+                back.tof_right_mm = data.tof_right_mm;
+            if ((uint32_t)mask & (uint32_t)SensorMask::IMU_YAW)
+                back.imu_yaw = data.imu_yaw;
+        }
+
+        // Always update timestamp + mask
+        back.timestamp_ms = data.timestamp_ms;
+        back.valid_sensors = mask;
+
+        flip_buffers();
+
         mutex_exit(&get_mutex());
     }
 
     // Take a fast snapshot of the latest published data into `out`.
-    // This copies the shared struct while holding the mutex briefly.
     static inline void snapshot(MulticoreSensorData &out) {
-        mutex_enter_blocking(&get_mutex());
-        out = get_shared();
-        mutex_exit(&get_mutex());
+        uint8_t idx = active_index; // volatile, atomic on RP2040
+        out = buffers[idx];
     }
 
     // (snapshot API above remains; callers that need atomic multi-field
@@ -67,14 +104,15 @@ public:
     // }
 
 private:
-    // Store the shared data in a static variable with internal linkage.
-    static inline MulticoreSensorData &get_shared() {
-        static MulticoreSensorData s = {};
-        return s;
-    }
+    static inline MulticoreSensorData buffers[2] = {};
+    static inline volatile uint8_t active_index = 0;
+
+    static inline uint8_t get_back_index() { return active_index ^ 1; }
+
+    static inline void flip_buffers() { active_index ^= 1; }
 
     static inline mutex_t &get_mutex() {
-        static mutex_t m = {};
+        static mutex_t m;
         return m;
     }
 };

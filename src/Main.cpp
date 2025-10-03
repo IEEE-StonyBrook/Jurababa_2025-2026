@@ -19,80 +19,61 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
 // Example publisher run on core1: read sensors and publish into hub
 static void core1_publisher() {
-  // Instantiate sensors locally on core1 (do not share these objects across cores)
-  Encoder leftEncoder(20);
-  Encoder rightEncoder(7);
-  ToF leftToF(11, 'L');
-  ToF frontToF(12, 'F');
-  ToF rightToF(13, 'R');
-  IMU imu(5);
+  // Sensors
+    Encoder leftEncoder(20);
+    Encoder rightEncoder(7);
+    ToF leftToF(11, 'L');
+    ToF frontToF(12, 'F');
+    ToF rightToF(13, 'R');
+    IMU imu(5);
 
-  multicore_fifo_push_blocking(1); // signal core0 we're ready
-  while (true) {
-    MulticoreSensorData local{};
-    // Use real API names from headers
-    local.left_encoder_count = leftEncoder.getCurrentEncoderTickCount();
-    local.right_encoder_count = rightEncoder.getCurrentEncoderTickCount();
-    local.tof_left_mm = static_cast<int16_t>(leftToF.getToFDistanceFromWallMM());
-    local.tof_front_mm = static_cast<int16_t>(frontToF.getToFDistanceFromWallMM());
-    local.tof_right_mm = static_cast<int16_t>(rightToF.getToFDistanceFromWallMM());
-    local.imu_yaw = imu.getIMUYawDegreesNeg180ToPos180();
-    // IMU header doesn't expose pitch/roll; leave as zero or add methods if available
-    local.timestamp_ms = to_ms_since_boot(get_absolute_time());
+    // Motors
+    Motor leftMotor(18, 19, &leftEncoder, true);
+    Motor rightMotor(6, 7, &rightEncoder);
+    Drivetrain robotDrivetrain(&leftMotor, &rightMotor, &leftToF, &frontToF, &rightToF, &imu);
 
-    MulticoreSensorHub::publish(local);
-    // sampling rate
-    sleep_ms(5);
-  }
+    // Signal Core0 that Core1 is ready
+    multicore_fifo_push_blocking(1);
+
+    // Optional: set initial velocity
+    leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f, 0.0f, 0.0f);
+    leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
+
+    while (true) {
+        // Read sensors
+        MulticoreSensorData local{};
+        local.left_encoder_count = leftEncoder.getCurrentEncoderTickCount();
+        local.right_encoder_count = rightEncoder.getCurrentEncoderTickCount();
+        local.tof_left_mm = static_cast<int16_t>(leftToF.getToFDistanceFromWallMM());
+        local.tof_front_mm = static_cast<int16_t>(frontToF.getToFDistanceFromWallMM());
+        local.tof_right_mm = static_cast<int16_t>(rightToF.getToFDistanceFromWallMM());
+        local.imu_yaw = imu.getIMUYawDegreesNeg180ToPos180();
+        local.timestamp_ms = to_ms_since_boot(get_absolute_time());
+
+        // Publish sensor snapshot to Core0
+        MulticoreSensorHub::publish(local);
+
+        sleep_ms(5);
+    }
 }
 
 int main() {
   stdio_init_all();
   sleep_ms(3000);
 
-  // Initialize the shared hub and launch sensor publisher on core1
   MulticoreSensorHub::init();
   multicore_launch_core1(core1_publisher);
 
-  // Wait until core1 signals it finished initializing its sensors
-  uint32_t v = multicore_fifo_pop_blocking();
-  (void)v; // value ignored; presence indicates readiness
+  // Wait until Core1 signals it finished initializing its sensors
+  multicore_fifo_pop_blocking();
 
-  // Now initialize hardware that must live on core0 (encoders/motors)
-
-  // Universal objects
   LogSystem logSystem;
+
+  // Maze / planning objects
   std::array<int, 2> startCell = {0, 0};
   std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
-
-  // Mouse logic objects
   MazeGraph maze(16, 16);
-  InternalMouse mouse(startCell, std::string("n"), goalCells, &maze,
-                      &logSystem);
-
-  // Robot objects
-  Encoder leftMotorEncoder(20);
-  Encoder rightMotorEncoder(7);
-  Motor leftMotor(18, 19, &leftMotorEncoder, true);
-  Motor rightMotor(6, 7, &rightMotorEncoder);
-  ToF leftToF(11, 'L');
-  ToF frontToF(12, 'F');
-  ToF rightToF(13, 'R');
-  IMU imu(5);
-  Drivetrain robotDrivetrain(&leftMotor, &rightMotor, &leftToF, &frontToF,
-                             &rightToF, &imu);
-  // API api(&robotDrivetrain, &mouse);
-  // api.setUp(startCell, goalCells);
-  // api.printMaze();
-
-  LOG_DEBUG("Sending motor velocity request");
-  leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f, 0.0f, 0.0f);
-  leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
-
-  while(true) {
-    // leftMotor.setContinuousDesiredMotorVelocityMMPerSec(50);
-    sleep_ms(10);
-  }
+  InternalMouse mouse(startCell, std::string("n"), goalCells, &maze, &logSystem);
 
   // Maze logic objects
   // AStarSolver aStar(&mouse);
@@ -102,6 +83,18 @@ int main() {
   // // while (true) {
   // //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
   // // }
+
+  // Main loop: high-level planning, sensor reads, etc.
+  while (true) {
+      MulticoreSensorData sensors;
+      MulticoreSensorHub::snapshot(sensors); // lock-free read
+
+      // Example: print sensor values or feed into planner
+      LOG_DEBUG("Left encoder: " + std::to_string(sensors.left_encoder_count));
+      LOG_DEBUG("Front ToF: " + std::to_string(sensors.tof_front_mm));
+
+      sleep_ms(10);
+  }
   return 0;
 }
 
