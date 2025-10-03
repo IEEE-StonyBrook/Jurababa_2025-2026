@@ -3,12 +3,17 @@
 #include <cctype>
 
 #include "hardware/gpio.h"
+#include "pico/stdlib.h"
+#ifdef USE_MULTICORE_SENSORS
+#include "../../../Include/Platform/Pico/MulticoreSensors.h"
+#endif
 
 // Left (l), Front (F), Right (R)
 ToF::ToF(int xShutToFPin, char ToFPosition) {
   setUpToFPin(xShutToFPin);
   resetToFToZeroDegrees(xShutToFPin);
   setUpToFSensor(xShutToFPin, ToFPosition);
+  this->ToFPosition = ToFPosition;
   setUpToFContinuousSensing();
 }
 
@@ -61,5 +66,40 @@ float ToF::getToFDistanceFromWallMM() {
   VL53L0X_ClearInterruptMask(
       &ToFSensor, VL53L0X_REG_SYSTEM_INTERRUPT_GPIO_NEW_SAMPLE_READY);
 
-  return distanceFromWall.RangeMilliMeter;
+  float mm = distanceFromWall.RangeMilliMeter;
+  // If multicore is enabled and this is a consumer core, return the latest
+  // snapshot from the hub instead of publishing from here. If this code is
+  // running on the publisher core (core 1) we still publish so the hub has
+  // fresh data.
+#ifdef USE_MULTICORE_SENSORS
+  if (multicore_get_core_num() == 1) {
+    MulticoreSensorData s = {};
+    if (tolower(ToFPosition) == 'l')
+      s.tof_left_mm = (int16_t)mm;
+    else if (tolower(ToFPosition) == 'f')
+      s.tof_front_mm = (int16_t)mm;
+    else if (tolower(ToFPosition) == 'r')
+      s.tof_right_mm = (int16_t)mm;
+    else
+      s.tof_front_mm = (int16_t)mm;
+
+    s.timestamp_ms = to_ms_since_boot(get_absolute_time());
+    MulticoreSensorHub::publish(s);
+
+    return mm;
+  }
+
+  MulticoreSensorData s = {};
+  MulticoreSensorHub::snapshot(s);
+  if (tolower(ToFPosition) == 'l')
+    return (float)s.tof_left_mm;
+  else if (tolower(ToFPosition) == 'f')
+    return (float)s.tof_front_mm;
+  else if (tolower(ToFPosition) == 'r')
+    return (float)s.tof_right_mm;
+  else
+    return (float)s.tof_front_mm;
+#else
+  return mm;
+#endif
 }

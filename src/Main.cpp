@@ -11,14 +11,54 @@
 #include "../Include/Platform/Pico/Robot/ToF.h"
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
+#include "../Include/Platform/Pico/MulticoreSensors.h"
 
 // #include "../Include/Platform/Simulator/API.h"
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
+// Example publisher run on core1: read sensors and publish into hub
+static void core1_publisher() {
+  // Instantiate sensors locally on core1 (do not share these objects across cores)
+  Encoder leftEncoder(20);
+  Encoder rightEncoder(7);
+  ToF leftToF(11, 'L');
+  ToF frontToF(12, 'F');
+  ToF rightToF(13, 'R');
+  IMU imu(5);
+
+  multicore_fifo_push_blocking(1); // signal core0 we're ready
+  while (true) {
+    MulticoreSensorData local{};
+    // Use real API names from headers
+    local.left_encoder_count = leftEncoder.getCurrentEncoderTickCount();
+    local.right_encoder_count = rightEncoder.getCurrentEncoderTickCount();
+    local.tof_left_mm = static_cast<int16_t>(leftToF.getToFDistanceFromWallMM());
+    local.tof_front_mm = static_cast<int16_t>(frontToF.getToFDistanceFromWallMM());
+    local.tof_right_mm = static_cast<int16_t>(rightToF.getToFDistanceFromWallMM());
+    local.imu_yaw = imu.getIMUYawDegreesNeg180ToPos180();
+    // IMU header doesn't expose pitch/roll; leave as zero or add methods if available
+    local.timestamp_ms = to_ms_since_boot(get_absolute_time());
+
+    MulticoreSensorHub::publish(local);
+    // sampling rate
+    sleep_ms(5);
+  }
+}
+
 int main() {
   stdio_init_all();
   sleep_ms(3000);
+
+  // Initialize the shared hub and launch sensor publisher on core1
+  MulticoreSensorHub::init();
+  multicore_launch_core1(core1_publisher);
+
+  // Wait until core1 signals it finished initializing its sensors
+  uint32_t v = multicore_fifo_pop_blocking();
+  (void)v; // value ignored; presence indicates readiness
+
+  // Now initialize hardware that must live on core0 (encoders/motors)
 
   // Universal objects
   LogSystem logSystem;

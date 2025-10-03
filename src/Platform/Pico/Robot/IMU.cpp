@@ -5,7 +5,9 @@
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/uart.h"
-
+#ifdef USE_MULTICORE_SENSORS
+#include "../../../Include/Platform/Pico/MulticoreSensors.h"
+#endif
 #define UART_ID uart1
 #define BAUD_RATE 115200
 #define DATA_BITS 8
@@ -60,10 +62,34 @@ void IMU::convertPacketDataToUsableYaw() {
     float currentYaw0To360Degrees =
         fmod((fabs((float)currentYaw) / 100.0f), 360.0f) * negOrPos;
     robotYawNeg180To180Degrees = currentYaw0To360Degrees - 180.0f;
+
+    // When multicore hub is enabled the top-level publisher in `main.cpp`
+    // should be responsible for publishing. Here we avoid publishing from
+    // the interrupt and instead let consumers snapshot the hub. If running
+    // as the publisher core (core 1) we still publish so the hub receives
+    // fresh data.
+#ifdef USE_MULTICORE_SENSORS
+    if (multicore_get_core_num() == 1) {
+      MulticoreSensorData s = {};
+      s.imu_yaw = robotYawNeg180To180Degrees - resetOffSet;
+      s.timestamp_ms = to_ms_since_boot(get_absolute_time());
+      MulticoreSensorHub::publish(s);
+    }
+#endif
   }
 }
 
 float IMU::getIMUYawDegreesNeg180ToPos180() {
+#ifdef USE_MULTICORE_SENSORS
+  // If multicore is enabled and this is the consumer core (core 0), read
+  // the latest snapshot instead of returning the locally-updated value.
+  if (multicore_get_core_num() == 0) {
+    MulticoreSensorData s = {};
+    MulticoreSensorHub::snapshot(s);
+    return s.imu_yaw - resetOffSet;
+  }
+#endif
+
   return robotYawNeg180To180Degrees - resetOffSet;
 }
 

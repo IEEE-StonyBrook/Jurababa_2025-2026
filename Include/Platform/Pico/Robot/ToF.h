@@ -17,6 +17,8 @@ class ToF {
   void setUpToFContinuousSensing();
 
   VL53L0X_Dev_t ToFSensor;
+  // Position char supplied at construction ('l','f','r',...)
+  char ToFPosition;
 };
 
 #endif

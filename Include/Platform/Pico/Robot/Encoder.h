@@ -14,5 +14,8 @@ class Encoder {
 
   const PIO pioInstance = pio0;
   uint pioStateMachine;
+  // Remember which GPIO pin this encoder instance is using so consumers can
+  // decide which field of the MulticoreSensorData to return (left vs right).
+  int gpioEncoderPinOne;
 };
 #endif

@@ -73,6 +73,7 @@ target_link_libraries(Jurababa
         hardware_uart
         hardware_i2c
         vl53l0x_api_rp2040
+        pico_multicore
         )
 
 # Add the standard include files to the build
