@@ -16,13 +16,16 @@ class IMU {
  private:
   void setUpIMUCommunication();
   void setUpIMUInterrupts();
-  static void processIMURXInterruptData();
-  static void convertPacketDataToUsableYaw();
+  void processIMURXInterruptData();
+  void convertPacketDataToUsableYaw();
+  static void imuInterruptHandler();
+  static IMU* imuInstance;
+
 
   const int uartRXPin;
-  static std::array<uint8_t, 19> IMUBufferForYaw;
-  static float robotYawNeg180To180Degrees;
-  static float resetOffSet;
+  volatile uint8_t IMUBufferForYaw[19];
+  float robotYawNeg180To180Degrees;
+  float resetOffSet;
 };
 
 #endif

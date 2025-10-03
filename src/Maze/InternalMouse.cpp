@@ -3,12 +3,11 @@
 InternalMouse::InternalMouse(std::array<int, 2> startingRobotPosition,
                              std::string startingRobotDirection,
                              std::vector<std::array<int, 2>> goalCells,
-                             MazeGraph* mazeGraph, LogSystem* logSystem)
+                             MazeGraph* mazeGraph)
     : currentRobotPosition(startingRobotPosition),
       currentRobotDirection(startingRobotDirection),
       goalCells(goalCells),
-      mazeGraph(mazeGraph),
-      logSystem(logSystem) {}
+      mazeGraph(mazeGraph) {}
 
 void InternalMouse::moveIMForwardOneCell(int cellNumberToMoveForward) {
   std::array<int, 2> directionOffsetToAdd =

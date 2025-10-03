@@ -14,8 +14,7 @@ class InternalMouse {
  public:
   InternalMouse(std::array<int, 2> startingRobotPosition,
                 std::string startingRobotDirection,
-                std::vector<std::array<int, 2>> goalCells, MazeGraph* mazeGraph,
-                LogSystem* logSystem);
+                std::vector<std::array<int, 2>> goalCells, MazeGraph* mazeGraph);
 
   void moveIMForwardOneCell(int cellNumberToMoveForward);
   void turnIM45DegreeStepsRight(int halfStepsRight);
@@ -47,7 +46,6 @@ class InternalMouse {
   std::array<int, 2> currentRobotPosition;
   std::vector<std::array<int, 2>> goalCells;
   MazeGraph* mazeGraph;
-  LogSystem* logSystem;
 
   const std::array<std::string, 8> possibleDirections = {"n", "ne", "e", "se",
                                                          "s", "sw", "w", "nw"};

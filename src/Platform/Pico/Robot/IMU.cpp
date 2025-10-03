@@ -15,16 +15,20 @@
 #define PARITY UART_PARITY_NONE
 #define UART_IRQ UART1_IRQ
 
-std::array<uint8_t, 19> IMU::IMUBufferForYaw = {};
-float IMU::robotYawNeg180To180Degrees = 0.0f;
-float IMU::resetOffSet = 0.0f;
+#include "../../../Include/Common/LogSystem.h"
+
+IMU* IMU::imuInstance = nullptr;
 
 IMU::IMU(int uartRXPin) : uartRXPin(uartRXPin) {
+  robotYawNeg180To180Degrees = 0.0f;
+  resetOffSet = 0.0f;
   setUpIMUCommunication();
   setUpIMUInterrupts();
+  LOG_DEBUG("IMU Initialized");
 }
 
 void IMU::setUpIMUCommunication() {
+  imuInstance = this;
   uart_init(UART_ID, BAUD_RATE);
   gpio_set_function((uint)uartRXPin, GPIO_FUNC_UART);
   uart_set_baudrate(UART_ID, BAUD_RATE);
@@ -34,13 +38,22 @@ void IMU::setUpIMUCommunication() {
 }
 
 void IMU::setUpIMUInterrupts() {
-  irq_set_exclusive_handler(UART_IRQ, IMU::processIMURXInterruptData);
+  irq_set_exclusive_handler(UART_IRQ, IMU::imuInterruptHandler);
   irq_set_enabled(UART_IRQ, true);
+  LOG_DEBUG("IMU Interrupts Set");
+}
+
+void IMU::imuInterruptHandler() {
+  if (imuInstance != nullptr) {
+    imuInstance->processIMURXInterruptData();
+  }
 }
 
 void IMU::processIMURXInterruptData() {
   volatile int IMUBufferIndex = 0;
+  LOG_DEBUG("IMU RX Interrupt Start");
   while (uart_is_readable(UART_ID)) {
+    LOG_DEBUG("IMU RX Interrupt");
     uint8_t character = uart_getc(UART_ID);
     IMUBufferForYaw[IMUBufferIndex] = character;
     if (IMUBufferIndex == 18) {
@@ -68,27 +81,27 @@ void IMU::convertPacketDataToUsableYaw() {
     // the interrupt and instead let consumers snapshot the hub. If running
     // as the publisher core (core 1) we still publish so the hub receives
     // fresh data.
-#ifdef USE_MULTICORE_SENSORS
-    if (multicore_get_core_num() == 1) {
-      MulticoreSensorData s = {};
-      s.imu_yaw = robotYawNeg180To180Degrees - resetOffSet;
-      s.timestamp_ms = to_ms_since_boot(get_absolute_time());
-      MulticoreSensorHub::publish(s);
-    }
-#endif
+// #ifdef USE_MULTICORE_SENSORS
+//     if (multicore_get_core_num() == 1) {
+//       MulticoreSensorData s = {};
+//       s.imu_yaw = robotYawNeg180To180Degrees - resetOffSet;
+//       s.timestamp_ms = to_ms_since_boot(get_absolute_time());
+//       MulticoreSensorHub::publish(s);
+//     }
+// #endif
   }
 }
 
 float IMU::getIMUYawDegreesNeg180ToPos180() {
-#ifdef USE_MULTICORE_SENSORS
-  // If multicore is enabled and this is the consumer core (core 0), read
-  // the latest snapshot instead of returning the locally-updated value.
-  if (multicore_get_core_num() == 0) {
-    MulticoreSensorData s = {};
-    MulticoreSensorHub::snapshot(s);
-    return s.imu_yaw - resetOffSet;
-  }
-#endif
+// #ifdef USE_MULTICORE_SENSORS
+//   // If multicore is enabled and this is the consumer core (core 0), read
+//   // the latest snapshot instead of returning the locally-updated value.
+//   if (multicore_get_core_num() == 0) {
+//     MulticoreSensorData s = {};
+//     MulticoreSensorHub::snapshot(s);
+//     return s.imu_yaw - resetOffSet;
+//   }
+// #endif
 
   return robotYawNeg180To180Degrees - resetOffSet;
 }

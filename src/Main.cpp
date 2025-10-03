@@ -31,16 +31,17 @@ static void core1_publisher() {
     Motor leftMotor(18, 19, &leftEncoder, true);
     Motor rightMotor(6, 7, &rightEncoder);
     Drivetrain robotDrivetrain(&leftMotor, &rightMotor, &leftToF, &frontToF, &rightToF, &imu);
-
+    // LOG_DEBUG("CORE1 Init")
     // Signal Core0 that Core1 is ready
     multicore_fifo_push_blocking(1);
 
     // Optional: set initial velocity
-    leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f, 0.0f, 0.0f);
-    leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
-
+    // leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f, 0.0f, 0.0f);
+    // leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
+    // LOG_DEBUG("CORE1 Loop")
     while (true) {
         // Read sensors
+        // LOG_DEBUG("CORE1 Read")
         MulticoreSensorData local{};
         local.left_encoder_count = leftEncoder.getCurrentEncoderTickCount();
         local.right_encoder_count = rightEncoder.getCurrentEncoderTickCount();
@@ -52,8 +53,14 @@ static void core1_publisher() {
 
         // Publish sensor snapshot to Core0
         MulticoreSensorHub::publish(local);
+        // MulticoreSensorData test{};
+        // MulticoreSensorHub::snapshot(test);
+        // LOG_DEBUG("Left encoder CORE1: " + std::to_string(local.left_encoder_count));
+        // LOG_DEBUG("Front ToF CORE1: " + std::to_string(local.tof_front_mm));
+        // LOG_DEBUG("Left TEST encoder CORE1: " + std::to_string(test.left_encoder_count));
+        // LOG_DEBUG("Front TEST ToF CORE1: " + std::to_string(test.tof_front_mm));
 
-        sleep_ms(5);
+        sleep_ms(250);
     }
 }
 
@@ -67,13 +74,13 @@ int main() {
   // Wait until Core1 signals it finished initializing its sensors
   multicore_fifo_pop_blocking();
 
-  LogSystem logSystem;
+  // LOG_DEBUG("Test")
 
   // Maze / planning objects
   std::array<int, 2> startCell = {0, 0};
   std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
   MazeGraph maze(16, 16);
-  InternalMouse mouse(startCell, std::string("n"), goalCells, &maze, &logSystem);
+  InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
 
   // Maze logic objects
   // AStarSolver aStar(&mouse);
@@ -83,17 +90,19 @@ int main() {
   // // while (true) {
   // //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
   // // }
-
+  // LOG_DEBUG("Initialize")
   // Main loop: high-level planning, sensor reads, etc.
   while (true) {
+    // LOG_DEBUG("Loop")
       MulticoreSensorData sensors;
       MulticoreSensorHub::snapshot(sensors); // lock-free read
 
       // Example: print sensor values or feed into planner
-      LOG_DEBUG("Left encoder: " + std::to_string(sensors.left_encoder_count));
-      LOG_DEBUG("Front ToF: " + std::to_string(sensors.tof_front_mm));
+      // LOG_DEBUG("Left encoder: " + std::to_string(sensors.left_encoder_count));
+      // LOG_DEBUG("Front ToF: " + std::to_string(sensors.tof_front_mm));
+      // LOG_DEBUG("IMU_YAW: " + std::to_string(sensors.imu_yaw));
 
-      sleep_ms(10);
+      sleep_ms(250);
   }
   return 0;
 }
