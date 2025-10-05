@@ -7,6 +7,7 @@
 #include "../Include/Platform/Pico/Robot/Drivetrain.h"
 #include "../Include/Platform/Pico/Robot/Encoder.h"
 #include "../Include/Platform/Pico/Robot/IMU.h"
+#include "../Include/Platform/Pico/Robot/Motion.h"
 #include "../Include/Platform/Pico/Robot/Motor.h"
 #include "../Include/Platform/Pico/Robot/ToF.h"
 #include "hardware/uart.h"
@@ -24,16 +25,37 @@ int main() {
   Motor leftMotor(18, 19, nullptr, true);
   Motor rightMotor(6, 7, nullptr, false);
   Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder);
+  Motion motion(&drivetrain);
 
-  drivetrain.reset();
+  ToF leftToF(11, 'L');
+  ToF frontToF(12, 'F');
+  ToF rightToF(13, 'R');
+  IMU imu(5);
 
-  drivetrain.driveForwardMM(1000.0f, 400.0f);
-  sleep_ms(1000);
+  std::array<int, 2> startCell = {0, 0};
+  std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
+  MazeGraph maze(16, 16);
+  InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
+  API api(&drivetrain, &mouse, &motion);
+
+  motion.resetDriveSystem();
+
+  // Run test sequence: F5 L F5.
+  api.executeSequence("F5#L#F5");
+
+  // Stop everything at the end (safety).
+  motion.stop();
+
+  while (true) {
+    // Idle loop (robot finished its path).
+    LOG_DEBUG("Finished path.");
+    sleep_ms(1000);
+  }
 
   // while (true) {
   //   // Command straight forward motion at 200 mm/s.
   //   drivetrain.runControl(400.0f, 0.0f, 0.0f);
-  
+
   //   // Read actual wheel velocities.
   //   float vel = drivetrain.getOdometry()->getVelocityMMPerSec();
   //   float pos = drivetrain.getOdometry()->getDistanceMM();

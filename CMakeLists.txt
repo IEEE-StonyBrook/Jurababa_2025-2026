@@ -44,6 +44,8 @@ add_executable(Jurababa
     Src/Platform/Pico/Robot/ToF.cpp
     Src/Platform/Pico/Robot/Battery.cpp
     Src/Platform/Pico/Robot/Odometry.cpp
+    Src/Platform/Pico/Robot/Motion.cpp
+    Src/Platform/Pico/Robot/Profile.cpp
     Src/Common/PIDController.cpp
     Src/Common/LogSystem.cpp
     Src/Maze/InternalMouse.cpp
@@ -51,7 +53,8 @@ add_executable(Jurababa
     Src/Maze/MazeNode.cpp
     Src/Navigation/AStarSolver.cpp
     Src/Navigation/PathConverter.cpp
-    Src/Platform/Simulator/API.cpp
+    Src/Platform/Pico/API.cpp
+    # Src/Platform/Simulator/API.cpp
     Src/Main.cpp
 )
 

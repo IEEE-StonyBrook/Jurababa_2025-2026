@@ -1,227 +1,174 @@
 #include "../../../Include/Platform/Pico/API.h"
 
-#include <iostream>
-#include <sstream>
+API::API(Drivetrain* drivetrain, InternalMouse* internalMouse, Motion* motion)
+    : drivetrain(drivetrain), internalMouse(internalMouse), motion(motion), runOnSimulator(true) {}
 
-API::API(Drivetrain* drivetrain, InternalMouse* internalMouse)
-    : drivetrain(drivetrain),
-      internalMouse(internalMouse),
-      runOnSimulator(true) {}
-
-int API::mazeWidth() { return internalMouse->getMazeWidth(); }
-
+int API::mazeWidth()  { return internalMouse->getMazeWidth(); }
 int API::mazeHeight() { return internalMouse->getMazeHeight(); }
 
-bool API::wallLeft() {
-  if (runOnSimulator) return getSimulatorBoolResponse("wallLeft");
-  return false;
-}
-bool API::wallFront() {
-  if (runOnSimulator) return getSimulatorBoolResponse("wallFront");
-  return false;
-}
-bool API::wallRight() {
-  if (runOnSimulator) return getSimulatorBoolResponse("wallFront");
-  return false;
-}
+// Wall detection.
+bool API::wallLeft()  { return runOnSimulator ? getSimulatorBoolResponse("wallLeft") : false; }
+bool API::wallFront() { return runOnSimulator ? getSimulatorBoolResponse("wallFront") : false; }
+bool API::wallRight() { return runOnSimulator ? getSimulatorBoolResponse("wallRight") : false; }
+
+// ================== Movement Commands ================== //
 
 void API::moveForwardHalf() {
   if (runOnSimulator) getSimulatorResponse("moveForwardHalf");
+  else motion->forward(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
 }
+
 void API::moveForward() {
   if (runOnSimulator) getSimulatorResponse("moveForward");
+  else motion->forward(CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
   internalMouse->moveIMForwardOneCell(1);
-  int XPos = internalMouse->getCurrentRobotNode()->getCellXPos();
-  int YPos = internalMouse->getCurrentRobotNode()->getCellYPos();
-  setColor(XPos, YPos, 'y');
 }
 
 void API::moveForward(int steps) {
-  if (runOnSimulator) {
-    std::ostringstream commandStream;
-    commandStream << "moveForward" << steps;
-
-    getSimulatorResponse("moveForwardHalf");
-  }
+  if (runOnSimulator) getSimulatorResponse("moveForward" + std::to_string(steps));
+  else motion->forward(steps * CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
   internalMouse->moveIMForwardOneCell(steps);
 }
 
 void API::turnLeft45() {
   if (runOnSimulator) getSimulatorResponse("turnLeft45");
+  else motion->turn(-45.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
   internalMouse->turnIM45DegreeStepsRight(-1);
 }
+
 void API::turnLeft90() {
-  if (runOnSimulator) getSimulatorResponse("turnLeft");
+  if (runOnSimulator) getSimulatorResponse("turnLeft90");
+  else motion->turn(-90.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
   internalMouse->turnIM45DegreeStepsRight(-2);
 }
+
 void API::turnRight45() {
   if (runOnSimulator) getSimulatorResponse("turnRight45");
+  else motion->turn(45.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
   internalMouse->turnIM45DegreeStepsRight(1);
 }
+
 void API::turnRight90() {
-  if (runOnSimulator) getSimulatorResponse("turnRight");
+  if (runOnSimulator) getSimulatorResponse("turnRight90");
+  else motion->turn(90.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
   internalMouse->turnIM45DegreeStepsRight(2);
 }
-void API::turn(int degreesDivisibleBy45) {
-  int turnsNeeded = (int)(degreesDivisibleBy45 / 45);
-  if (runOnSimulator) {
-    for (int i = 0; i < abs(turnsNeeded); i++) {
-      if (degreesDivisibleBy45 > 0)
-        turnRight45();
-      else
-        turnLeft45();
-    }
-  }
 
-  internalMouse->turnIM45DegreeStepsRight(turnsNeeded);
+void API::turn(int degrees) {
+  if (runOnSimulator) getSimulatorResponse("turn" + std::to_string(degrees));
+  else motion->turn((float)degrees, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  internalMouse->turnIM45DegreeStepsRight(degrees / 45);
 }
 
-void API::setWall(int x, int y, const std::string& direction) {
-  bool isFourCardinal = direction == "n" || direction == "e" ||
-                        direction == "s" || direction == "w";
+// ================== Sequence Execution ================== //
 
-  bool isNonFourCardinal = direction == "ne" || direction == "se" ||
-                           direction == "sw" || direction == "nw";
-  if (runOnSimulator) {
-    if (isFourCardinal) {
-      std::cout << "setWall " << x << " " << y << " " << direction << '\n';
-    } else if (isNonFourCardinal) {
-      std::cout << "setWall " << x << " " << y << " " << direction[0] << '\n';
-      std::cout << "setWall " << x << " " << y << " " << direction[1] << '\n';
-    }
-  }
+// Parse commands like "F3#L#R90#F2".
+void API::executeSequence(const std::string& sequence) {
+  std::istringstream ss(sequence);
+  std::string token;
+  while (std::getline(ss, token, '#')) {
+    if (token.empty()) continue;
 
-  if (isFourCardinal)
-    internalMouse->setWallExistsNESW(internalMouse->getNodeAtPos(x, y),
-                                     direction[0]);
-  else if (isNonFourCardinal) {
-    internalMouse->setWallExistsNESW(internalMouse->getNodeAtPos(x, y),
-                                     direction[0]);
-    internalMouse->setWallExistsNESW(internalMouse->getNodeAtPos(x, y),
-                                     direction[1]);
+    char cmd = std::toupper(token[0]);
+    int value = token.size() > 1 ? std::stoi(token.substr(1)) : 0;
+
+    if (cmd == 'F') moveForward(value > 0 ? value : 1);
+    else if (cmd == 'L') turn(-(value > 0 ? value : 90));
+    else if (cmd == 'R') turn(value > 0 ? value : 90);
   }
 }
-void API::clearWall(int x, int y, const std::string& direction) {
-  if (runOnSimulator)
-    std::cout << "clearWall " << x << " " << y << " " << direction << '\n';
 
-  // FIXME: Add support for next few methods for internal mouse after everything
-  // works. Don't overcomplicate now.
+// ================== Maze State ================== //
+
+void API::setWall(int x, int y, const std::string& dir) {
+  if (runOnSimulator) std::cout << "setWall " << x << " " << y << " " << dir << '\n';
+  internalMouse->setWallExistsNESW(internalMouse->getNodeAtPos(x, y), dir[0]);
+  if (dir.size() > 1) internalMouse->setWallExistsNESW(internalMouse->getNodeAtPos(x, y), dir[1]);
+}
+
+void API::clearWall(int x, int y, const std::string& dir) {
+  if (runOnSimulator) std::cout << "clearWall " << x << " " << y << " " << dir << '\n';
 }
 
 void API::setColor(int x, int y, char color) {
-  if (runOnSimulator)
-    std::cout << "setColor " << x << " " << y << " " << color << '\n';
+  if (runOnSimulator) std::cout << "setColor " << x << " " << y << " " << color << '\n';
 }
-void API::clearColor(int x, int y) {
-  if (runOnSimulator) std::cout << "clearColor " << x << " " << y << '\n';
+void API::clearColor(int x, int y) { if (runOnSimulator) std::cout << "clearColor " << x << " " << y << '\n'; }
+void API::clearAllColor() { if (runOnSimulator) std::cout << "clearAllColor" << '\n'; }
+
+void API::setText(int x, int y, const std::string& text) { 
+  if (runOnSimulator) std::cout << "setText " << x << " " << y << " " << text << '\n'; 
 }
-void API::clearAllColor() {
-  if (runOnSimulator) std::cout << "clearAllColor" << '\n';
+void API::clearText(int x, int y) { if (runOnSimulator) std::cout << "clearText " << x << " " << y << '\n'; }
+void API::clearAllText() { if (runOnSimulator) std::cout << "clearAllText" << '\n'; }
+
+// ================== Simulator Helpers ================== //
+
+std::string API::getSimulatorResponse(std::string cmd) {
+  std::cout << cmd << '\n';
+  std::string resp; 
+  std::getline(std::cin, resp);
+  return resp;
 }
 
-void API::setText(int x, int y, const std::string& text) {
-  if (runOnSimulator)
-    std::cout << "setText " << x << " " << y << " " << text << '\n';
-}
-void API::clearText(int x, int y) {
-  if (runOnSimulator) std::cout << "clearText " << x << " " << y << '\n';
-}
-void API::clearAllText() {
-  if (runOnSimulator) std::cout << "clearAllText" << '\n';
+int API::getSimulatorIntegerResponse(std::string cmd) { 
+  return std::stoi(getSimulatorResponse(cmd)); 
 }
 
-std::string API::getSimulatorResponse(std::string commandUsed) {
-  std::cout << commandUsed << '\n';
-  std::string simulatorResponse;
-  std::getline(std::cin, simulatorResponse);
-
-  return simulatorResponse;
+bool API::getSimulatorBoolResponse(std::string cmd) { 
+  return getSimulatorResponse(cmd) == "true"; 
 }
 
-int API::getSimulatorIntegerResponse(std::string commmandUsed) {
-  return std::stoi(getSimulatorResponse(commmandUsed));
-}
+// ================== Maze Setup and Print ================== //
 
-bool API::getSimulatorBoolResponse(std::string commandUsed) {
-  return getSimulatorResponse(commandUsed) == "true";
-}
-
-void API::setUp(std::array<int, 2> startCell,
-                std::vector<std::array<int, 2>> goalCells) {
-  clearAllColor();
+void API::setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells) {
+  clearAllColor(); 
   clearAllText();
 
-  // Adds boundary mazes.
-  for (int i = 0; i < internalMouse->getMazeWidth(); i++) {
-    printMaze();
+  // Add boundary walls.
+  for (int i = 0; i < mazeWidth(); i++) {
     setWall(i, 0, "s");
-    setWall(i, internalMouse->getMazeHeight() - 1, "n");
+    setWall(i, mazeHeight() - 1, "n");
   }
-  for (int j = 0; j < internalMouse->getMazeHeight(); j++) {
+  for (int j = 0; j < mazeHeight(); j++) {
     setWall(0, j, "w");
-    setWall(internalMouse->getMazeWidth() - 1, j, "e");
+    setWall(mazeWidth() - 1, j, "e");
   }
 
-  // Adds grid labels.
-  bool SHOW_GRID = true;
-  if (SHOW_GRID) {
-    for (int i = 0; i < internalMouse->getMazeWidth(); i++) {
-      for (int j = 0; j < internalMouse->getMazeHeight(); j++) {
-        setText(i, j, std::to_string(i) + "," + std::to_string(j));
-      }
+  // Add grid labels.
+  for (int i = 0; i < mazeWidth(); i++) {
+    for (int j = 0; j < mazeHeight(); j++) {
+      setText(i, j, std::to_string(i) + "," + std::to_string(j));
     }
   }
 
-  LOG_DEBUG("Starting Ratawoulfie...");
-
-  // Adds color/text to start and goal cells.
+  // Mark start.
   setColor(startCell[0], startCell[1], 'B');
   setText(startCell[0], startCell[1], "Start");
 
-  for (const auto& goalCell : goalCells) {
-    setColor(goalCell[0], goalCell[1], 'G');
-    setText(goalCell[0], goalCell[1], "End");
+  // Mark goals.
+  for (auto& g : goalCells) {
+    setColor(g[0], g[1], 'G');
+    setText(g[0], g[1], "End");
   }
 }
 
 void API::printMaze() {
-  std::string mazeString = "Maze:\n";
-  for (int i = 0; i < internalMouse->getMazeWidth(); ++i) {
-    mazeString += "+---";
+  std::string maze = "Maze:\n";
+  for (int i = 0; i < mazeWidth(); i++) maze += "+---";
+  maze += "+\n";
+  for (int i = mazeHeight() - 1; i >= 0; --i) {
+    maze += printMazeRow(i) + "\n";
   }
-  mazeString += "+\n";
-
-  for (int i = internalMouse->getMazeHeight() - 1; i >= 0; --i) {
-    mazeString += printMazeRow(i);
-    mazeString += "\n";
-  }
-
-  LOG_DEBUG(mazeString);
+  std::cout << maze << std::endl;
 }
 
 std::string API::printMazeRow(int row) {
-  std::string rowString = "|";
-  std::string eastRowString = "";
-  std::string southRowString = "";
-  for (int i = 0; i < internalMouse->getMazeWidth(); ++i) {
+  std::string rowStr = "|", eastStr, southStr;
+  for (int i = 0; i < mazeWidth(); ++i) {
     MazeNode* curr = internalMouse->getNodeAtPos(i, row);
-    if (curr->getIsWall('e')) {
-      eastRowString += "   |";
-    } else {
-      eastRowString += "    ";
-    }
-
-    if (curr->getIsWall('s')) {
-      southRowString += "+---";
-    } else {
-      southRowString += "+   ";
-    }
+    eastStr += curr->getIsWall('e') ? "   |" : "    ";
+    southStr += curr->getIsWall('s') ? "+---" : "+   ";
   }
-  rowString += eastRowString;
-  rowString += "\n";
-  rowString += southRowString;
-  rowString += "+\n";
-
-  return rowString;
+  return rowStr + eastStr + "\n" + southStr + "+\n";
 }
