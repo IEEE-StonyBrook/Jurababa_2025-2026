@@ -66,13 +66,38 @@
 #define HALF_CELL_DISTANCE_MM 90.0f  // Half cell length in mm.
 
 // Linear speed/acceleration.
-#define FORWARD_TOP_SPEED 150.0f  // Max forward speed (mm/s).
-#define FORWARD_FINAL_SPEED 0.0f  // End speed for forward motions.
-#define FORWARD_ACCEL 500.0f      // Forward accel (mm/s^2).
+#define FORWARD_TOP_SPEED 400.0f    // Max forward speed (mm/s).
+#define FORWARD_FINAL_SPEED 150.0f  // End speed for forward motions.
+#define FORWARD_ACCEL 500.0f        // Forward accel (mm/s^2).
 
 // Rotational speed/acceleration.
-#define TURN_TOP_SPEED 180.0f  // Max angular speed (deg/s).
-#define TURN_FINAL_SPEED 0.0f  // End angular speed.
-#define TURN_ACCEL 720.0f      // Angular accel (deg/s^2).
+#define TURN_TOP_SPEED 400.0f    // Max angular speed (deg/s).
+#define TURN_FINAL_SPEED 200.0f  // End angular speed.
+#define TURN_ACCEL 360.0f        // Angular accel (deg/s^2).
+
+// ================= IMU UART CONFIG ================= //
+#define IMU_UART_ID uart1            // UART interface used by IMU.
+#define IMU_UART_IRQ UART1_IRQ       // Interrupt request line for IMU UART.
+#define IMU_BAUD_RATE 115200         // Baud rate for IMU communication.
+#define IMU_DATA_BITS 8              // Number of data bits per frame.
+#define IMU_STOP_BITS 1              // Stop bit length.
+#define IMU_PARITY UART_PARITY_NONE  // No parity check.
+
+// ================= IMU PACKET FORMAT (BNO085 RVC) =============== //
+#define IMU_PACKET_LEN 19    // Total bytes in each IMU packet.
+#define IMU_IDX_HDR0 0       // Start-of-packet header (0xAA).
+#define IMU_IDX_HDR1 1       // Report ID (0x01 = rotation vector).
+#define IMU_IDX_YAW_L 2      // Yaw low byte.
+#define IMU_IDX_YAW_H 3      // Yaw high byte.
+#define IMU_IDX_PITCH_L 4    // Pitch low byte.
+#define IMU_IDX_PITCH_H 5    // Pitch high byte.
+#define IMU_IDX_ROLL_L 6     // Roll low byte.
+#define IMU_IDX_ROLL_H 7     // Roll high byte.
+#define IMU_CHKSUM_FIRST 2   // First byte included in checksum.
+#define IMU_CHKSUM_LAST 14   // Last byte included in checksum.
+#define IMU_IDX_CHECKSUM 18  // Checksum byte (XOR of bytes 2 to 14).
+
+// Expected header bytes for BNO085 RVC packets.
+#define IMU_HDR0 0xFF
 
 #endif

@@ -38,17 +38,19 @@ int main() {
   InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
   API api(&drivetrain, &mouse, &motion);
 
+  LOG_DEBUG("Initialization complete.");
   motion.resetDriveSystem();
 
-  // Run test sequence: F5 L F5.
-  api.executeSequence("F5#L#F5");
+  // // Run test sequence: F5 L F5.
+  // LOG_DEBUG("Running test sequence...");
+  // api.executeSequence("L#");
 
-  // Stop everything at the end (safety).
-  motion.stop();
+  // // Stop everything at the end (safety).
+  // motion.stop();
 
   while (true) {
     // Idle loop (robot finished its path).
-    LOG_DEBUG("Finished path.");
+    // LOG_DEBUG("Finished path.");
     sleep_ms(1000);
   }
 

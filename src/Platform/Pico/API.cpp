@@ -1,7 +1,7 @@
 #include "../../../Include/Platform/Pico/API.h"
 
 API::API(Drivetrain* drivetrain, InternalMouse* internalMouse, Motion* motion)
-    : drivetrain(drivetrain), internalMouse(internalMouse), motion(motion), runOnSimulator(true) {}
+    : drivetrain(drivetrain), internalMouse(internalMouse), motion(motion), runOnSimulator(false) {}
 
 int API::mazeWidth()  { return internalMouse->getMazeWidth(); }
 int API::mazeHeight() { return internalMouse->getMazeHeight(); }
@@ -24,7 +24,7 @@ void API::moveForward() {
   internalMouse->moveIMForwardOneCell(1);
 }
 
-void API::moveForward(int steps) {
+void API::moveForward(int steps) { 
   if (runOnSimulator) getSimulatorResponse("moveForward" + std::to_string(steps));
   else motion->forward(steps * CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
   internalMouse->moveIMForwardOneCell(steps);

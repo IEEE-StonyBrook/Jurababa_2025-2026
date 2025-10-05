@@ -30,9 +30,12 @@ void Motion::startForward(float distanceMM, float topSpeed, float finalSpeed,
 // Run forward motion with option to block until finished.
 void Motion::forward(float distanceMM, float topSpeed, float finalSpeed,
                      float accel, bool blocking) {
+  LOG_DEBUG("Starting forward motion: " + std::to_string(distanceMM) + " mm");
   startForward(distanceMM, topSpeed, finalSpeed, accel);
   if (blocking) {
     while (!isForwardFinished()) {
+      LOG_DEBUG("Pos: " + std::to_string(positionMM()) +
+                " mm, Speed: " + std::to_string(velocityMMPerSec()) + " mm/s");
       update();
       sleep_ms(LOOP_INTERVAL_S * 1000);
     }
