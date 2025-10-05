@@ -26,7 +26,7 @@ static void core1_publisher() {
     ToF frontToF(12, 'F');
     ToF rightToF(13, 'R');
     IMU imu(5);
-
+  printf("Reached end of imu declaration.");
     // Motors
     Motor leftMotor(18, 19, &leftEncoder, true);
     Motor rightMotor(6, 7, &rightEncoder);
@@ -34,14 +34,14 @@ static void core1_publisher() {
     // LOG_DEBUG("CORE1 Init")
     // Signal Core0 that Core1 is ready
     multicore_fifo_push_blocking(1);
-
+    printf("reached end of multicore thing.");
     // Optional: set initial velocity
     // leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f, 0.0f, 0.0f);
     // leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
     // LOG_DEBUG("CORE1 Loop")
     while (true) {
         // Read sensors
-        // LOG_DEBUG("CORE1 Read")
+         //LOG_DEBUG("CORE1 Read")
         MulticoreSensorData local{};
         local.left_encoder_count = leftEncoder.getCurrentEncoderTickCount();
         local.right_encoder_count = rightEncoder.getCurrentEncoderTickCount();
@@ -74,7 +74,7 @@ int main() {
   // Wait until Core1 signals it finished initializing its sensors
   multicore_fifo_pop_blocking();
 
-  // LOG_DEBUG("Test")
+  LOG_DEBUG("Test")
 
   // Maze / planning objects
   std::array<int, 2> startCell = {0, 0};
@@ -98,9 +98,9 @@ int main() {
       MulticoreSensorHub::snapshot(sensors); // lock-free read
 
       // Example: print sensor values or feed into planner
-      // LOG_DEBUG("Left encoder: " + std::to_string(sensors.left_encoder_count));
-      // LOG_DEBUG("Front ToF: " + std::to_string(sensors.tof_front_mm));
-      // LOG_DEBUG("IMU_YAW: " + std::to_string(sensors.imu_yaw));
+      LOG_DEBUG("\nLeft encoder: " + std::to_string(sensors.left_encoder_count));
+      LOG_DEBUG("\nFront ToF: " + std::to_string(sensors.tof_front_mm));
+      LOG_DEBUG("\nIMU_YAW: " + std::to_string(sensors.imu_yaw));
 
       sleep_ms(250);
   }

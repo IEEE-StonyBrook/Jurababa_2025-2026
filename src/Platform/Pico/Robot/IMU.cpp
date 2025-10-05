@@ -19,7 +19,7 @@
 
 IMU* IMU::imuInstance = nullptr;
 
-IMU::IMU(int uartRXPin) : uartRXPin(uartRXPin) {
+IMU::IMU(int uartRXPin) : uartRXPin(uartRXPin), IMUBufferIndex(0) {
   robotYawNeg180To180Degrees = 0.0f;
   resetOffSet = 0.0f;
   setUpIMUCommunication();
@@ -34,26 +34,30 @@ void IMU::setUpIMUCommunication() {
   uart_set_baudrate(UART_ID, BAUD_RATE);
   uart_set_hw_flow(UART_ID, false, false);
   uart_set_format(UART_ID, DATA_BITS, STOP_BITS, PARITY);
-  uart_set_fifo_enabled(UART_ID, false);
+  uart_set_fifo_enabled(UART_ID, true);   //was false
 }
 
 void IMU::setUpIMUInterrupts() {
+  uart_set_irq_enables(UART_ID, true, false);
   irq_set_exclusive_handler(UART_IRQ, IMU::imuInterruptHandler);
   irq_set_enabled(UART_IRQ, true);
   LOG_DEBUG("IMU Interrupts Set");
 }
 
 void IMU::imuInterruptHandler() {
+  //LOG_DEBUG("In Handler");
   if (imuInstance != nullptr) {
     imuInstance->processIMURXInterruptData();
+    //LOG_DEBUG("Handler reached.");
   }
+  //LOG_DEBUG("no handler");
 }
 
 void IMU::processIMURXInterruptData() {
-  volatile int IMUBufferIndex = 0;
-  LOG_DEBUG("IMU RX Interrupt Start");
+  //volatile int IMUBufferIndex = 0;
+  //LOG_DEBUG("IMU RX Interrupt Start");
   while (uart_is_readable(UART_ID)) {
-    LOG_DEBUG("IMU RX Interrupt");
+    //LOG_DEBUG("IMU RX Interrupt");
     uint8_t character = uart_getc(UART_ID);
     IMUBufferForYaw[IMUBufferIndex] = character;
     if (IMUBufferIndex == 18) {
@@ -64,6 +68,8 @@ void IMU::processIMURXInterruptData() {
 }
 
 void IMU::convertPacketDataToUsableYaw() {
+  IMUBufferIndex = 0;
+  LOG_DEBUG("afteryawfunction");
   uint8_t sumOfByteData = 0;
   for (int i = 2; i < 15; i++) {
     sumOfByteData += IMUBufferForYaw[i];
@@ -75,6 +81,7 @@ void IMU::convertPacketDataToUsableYaw() {
     float currentYaw0To360Degrees =
         fmod((fabs((float)currentYaw) / 100.0f), 360.0f) * negOrPos;
     robotYawNeg180To180Degrees = currentYaw0To360Degrees - 180.0f;
+    LOG_DEBUG("IMU Yaw: " + std::to_string(robotYawNeg180To180Degrees));
 
     // When multicore hub is enabled the top-level publisher in `main.cpp`
     // should be responsible for publishing. Here we avoid publishing from
@@ -89,7 +96,9 @@ void IMU::convertPacketDataToUsableYaw() {
 //       MulticoreSensorHub::publish(s);
 //     }
 // #endif
-  }
+  } else {
+        //LOG_DEBUG("IMU checksum error: calculated %d, expected %d\n", sumOfByteData, IMUBufferForYaw[18]);
+    }
 }
 
 float IMU::getIMUYawDegreesNeg180ToPos180() {

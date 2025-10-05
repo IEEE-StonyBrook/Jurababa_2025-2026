@@ -21,6 +21,8 @@ class IMU {
   static void imuInterruptHandler();
   static IMU* imuInstance;
 
+  volatile int IMUBufferIndex;  //added
+
 
   const int uartRXPin;
   volatile uint8_t IMUBufferForYaw[19];
