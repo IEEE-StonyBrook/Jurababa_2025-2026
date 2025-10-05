@@ -4,51 +4,40 @@
 #include <algorithm>
 #include <cmath>
 
-#include "../../../Common/LogSystem.h"
-#include "../../../Common/PIDController.h"
-#include "Battery.h"
-#include "Encoder.h"
-#include "hardware/gpio.h"
+#include "../../../Include/Platform/Pico/Config.h"
+#include "../../../Include/Platform/Pico/Robot/Battery.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
 
 class Motor {
  public:
-  Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Encoder* encoder,
-        Battery* battery, bool invertMotorDirection = false);
+  // Constructor sets up motor pins, PWM slice, and direction inversion.
+  Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Battery* battery,
+        bool invertDirection = false);
 
-  float getWheelPositionMM();
-  float getWheelVelocityMMPerSec();
+  // Applies a duty cycle in range [-1.0, 1.0]. Positive = forward.
+  void applyPWM(float dutyCycle);
 
-  void configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KSF = 0.0f,
-                          float FF_KVF = 0.0f, float FF_KSR = 0.0f,
-                          float FF_KVR = 0.0f);
+  // Applies desired volts, automatically scaled to live battery voltage.
+  void applyVoltage(float desiredVolts);
 
-  void setDesiredVelocityMMPerSec(float velMMPerSec);
-  void controlTick();
-  void applyPWM(float duty);
+  // Immediately stops the motor.
   void stopMotor();
 
  private:
+  // Configures motor pins for PWM functionality.
   void configureMotorPins();
+
+  // Configures PWM slice and channels.
   void configureMotorPWM();
 
-  Encoder* encoder;
-  Battery* battery;
-  int gpioMotorPinOne, gpioMotorPinTwo;
-  bool invertMotorDirection;
-
+  int gpioMotorPinOne;
+  int gpioMotorPinTwo;
   int pwmSliceNumber;
-  int fChannel, bChannel;
-
-  float velMMPerSec{0.0f}, desiredVelMMPerSec{0.0f};
-
-  absolute_time_t lastTime;
-  float lastPosMM = 0.0f;
-  float dtAccum = 0.0f;
-
-  PIDController pidVelocityController;
-  float FF_KSF{0.0f}, FF_KVF{0.0f}, FF_KSR{0.0f}, FF_KVR{0.0f};
+  int forwardChannel;
+  int backwardChannel;
+  Battery* battery;
+  bool invertDirection;
 };
 
 #endif

@@ -43,6 +43,7 @@ add_executable(Jurababa
     Src/Platform/Pico/Robot/IMU.cpp
     Src/Platform/Pico/Robot/ToF.cpp
     Src/Platform/Pico/Robot/Battery.cpp
+    Src/Platform/Pico/Robot/Odometry.cpp
     Src/Common/PIDController.cpp
     Src/Common/LogSystem.cpp
     Src/Maze/InternalMouse.cpp

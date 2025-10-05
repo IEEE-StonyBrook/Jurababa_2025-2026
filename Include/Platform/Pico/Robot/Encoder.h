@@ -1,18 +1,32 @@
 #ifndef ENCODER_H
 #define ENCODER_H
 
+#include <cstdint>
+
 #include "../../../External/QuadratureEncoder.h"
+#include "../Config.h"
+#include "hardware/pio.h"
+#include "pico/stdlib.h"
 
 class Encoder {
  public:
-  Encoder(int gpioEncoderPinOne);
+  // Constructor initializes the encoder on the given PIO instance and GPIO pin.
+  Encoder(PIO pioInstance, int gpioPin, bool invertDirection = false);
 
-  int getCurrentEncoderTickCount();
+  // Reset the encoder tick count to zero.
+  void reset();
+
+  // Return the current tick count.
+  int getTickCount() const;
 
  private:
-  void loadPIOProgram();
+  // Load the quadrature decoder PIO program once into hardware.
+  void loadPIOProgram(PIO pioInstance);
 
-  const PIO pioInstance = pio0;
-  uint pioStateMachine;
+  PIO pioInstance;   // PIO block used by this encoder.
+  int stateMachine;  // State machine index for the PIO program.
+  int offsetTicks;   // Offset to allow software reset of tick count.
+  bool invertDirection; // Whether to invert the tick count direction.
 };
+
 #endif
