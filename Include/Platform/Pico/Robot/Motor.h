@@ -1,9 +1,8 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
-#include "../../../Common/PIDController.h"
 #include "../../../Common/LogSystem.h"
-
+#include "../../../Common/PIDController.h"
 #include "Encoder.h"
 
 class Motor {
@@ -11,45 +10,38 @@ class Motor {
   Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Encoder* encoder,
         bool invertMotorDirection = false);
 
-  float getMotorPositionMM();
-  float getMotorVelocityMMPerSec();
-  void setContinuousDesiredMotorVelocityMMPerSec(float desiredVelocityMMPerSec);
-  void setUpPIDControllerWithFeedforward(float kP, float kI, float kD,
-                                         float feedforwardkS = 0.0f,
-                                         float feedforwardkV = 0.0f);
-  void setContinuousDesiredMotorPositionMM(float desiredPositionMM);
-  void setDesiredVelocityMMPerSec(float desiredVelMMPerSec);
+  float getWheelPositionMM();
+  float getWheelVelocityMMPerSec();
 
-  const float WHEEL_DIAMETER_MM = 39.5f;
-  const float TICKS_PER_WHEEL_REVOLUTION = 1400.0f;
-  const int SLEEP_BETWEEN_PID_CYCLES_MS = 20;
+  void configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KS = 0.0f,
+                          float FF_KV = 0.0f);
+
+  void setDesiredVelocityMMPerSec(float velMMPerSec);
+  void controlTick();
+  void applyPWM(float duty);
+  void stopMotor();
 
  private:
-  float velocityMMPerSec;
-
-  void setUpMotorPins();
-  void setUpMotorPWM();
-  void setMotorPWMPercentageNeg1ToPos1(float PWMPercentage);
+  void configureMotorPins();
+  void configureMotorPWM();
 
   Encoder* encoder;
   int gpioMotorPinOne, gpioMotorPinTwo;
   bool invertMotorDirection;
 
   int pwmSliceNumber;
-  int forwardChannel, backwardChannel;
-  bool isMovingForward;
+  int fChannel, bChannel;
 
-  absolute_time_t timeWhenVelocityWasLastCheckedMicroSec;
-  float positionWhenVelocityWasLastCheckedMM;
+  float velMMPerSec = 0.0f;
+  float desiredVelMMPerSec = 0.0f;
+  float lastPosMM = 0.0f;
 
-  PIDController pidVelocityController, pidPositionController;
-  float desiredPositionMM, desiredVelocityMMPerSec;
-  float feedforwardkS, feedforwardkV;
-  float motorPositionErrorMM, motorVelocityErrorMMPerSec,
-      pidPositionCalculatedOutput, pidVelocityCalculatedOutput;
-  void updatePositionErrorAndPIDOutput();
-  void updateVelocityErrorAndPIDOutput();
-  void stopMotor();
+  absolute_time_t lastTime;
+  float dtAccum = 0.0f;
+
+  PIDController pidVelocityController;
+  float FF_KS = 0.0f;
+  float FF_KV = 0.0f;
 };
 
 #endif

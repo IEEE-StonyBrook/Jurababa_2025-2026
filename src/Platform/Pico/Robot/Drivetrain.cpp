@@ -13,12 +13,12 @@ bool Drivetrain::driveRobotForwardNumberOfCells(int numberOfCells) {
   const float CELL_LENGTH_MM = 167.0f;
 
   float cellsLengthMM = numberOfCells * CELL_LENGTH_MM;
-  float leftMotorCurrentPosition = leftMotor->getMotorPositionMM();
-  float rightMotorCurrentPosition = rightMotor->getMotorPositionMM();
-  leftMotor->setContinuousDesiredMotorPositionMM(leftMotorCurrentPosition +
-                                                 cellsLengthMM);
-  rightMotor->setContinuousDesiredMotorPositionMM(rightMotorCurrentPosition +
-                                                  cellsLengthMM);
+  float leftMotorCurrentPosition = leftMotor->getWheelPositionMM();
+  float rightMotorCurrentPosition = rightMotor->getWheelPositionMM();
+  // leftMotor->setContinuousDesiredMotorPositionMM(leftMotorCurrentPosition +
+  //                                                cellsLengthMM);
+  // rightMotor->setContinuousDesiredMotorPositionMM(rightMotorCurrentPosition +
+  //                                                 cellsLengthMM);
 
   return true;
 }
@@ -32,10 +32,11 @@ bool Drivetrain::turnRobotDegreesInPlace(int degreesToTurn) {
   yawController.setDeadband(MAX_ERROR_DEGREES);
 
   updateYawErrorSignsAndPIDOutput();
-  leftMotor->setContinuousDesiredMotorVelocityMMPerSec(leftPIDOutputSign *
-                                                       pidYawCalculatedOutput);
-  rightMotor->setContinuousDesiredMotorVelocityMMPerSec(-leftPIDOutputSign *
-                                                        pidYawCalculatedOutput);
+  // Continuous velocity.
+  // leftMotor->setDesiredVelocityMMPerSec(leftPIDOutputSign *
+  //                                       pidYawCalculatedOutput);
+  // rightMotor->setDesiredVelocityMMPerSec(-leftPIDOutputSign *
+  //                                        pidYawCalculatedOutput);
 
   while (true) {
     updateYawErrorSignsAndPIDOutput();

@@ -32,7 +32,7 @@ int main() {
 
   // Robot objects
   Encoder leftMotorEncoder(20);
-  Encoder rightMotorEncoder(7);
+  Encoder rightMotorEncoder(8);
   Motor leftMotor(18, 19, &leftMotorEncoder, true);
   Motor rightMotor(6, 7, &rightMotorEncoder);
   ToF leftToF(11, 'L');
@@ -45,14 +45,77 @@ int main() {
   // api.setUp(startCell, goalCells);
   // api.printMaze();
 
-  LOG_DEBUG("Sending motor velocity request");
-  leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f, 0.0f, 0.0f);
-  leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
+  LOG_DEBUG("Configuring motors...");
 
-  while(true) {
-    // leftMotor.setContinuousDesiredMotorVelocityMMPerSec(50);
-    sleep_ms(10);
+  // Tune values: start conservative, adjust later
+  leftMotor.configurePIDWithFF(0.005f, 0.0f, 0.0f, 0.00136727f, 0.252653f);
+  rightMotor.configurePIDWithFF(0.005f, 0.0f, 0.0f, 0.0012421f, 0.393111f);
+
+  leftMotor.setDesiredVelocityMMPerSec(200.0f);
+  rightMotor.setDesiredVelocityMMPerSec(200.0f);
+  // Set target velocities (mm/s)
+  // leftMotor.setDesiredVelocityMMPerSec(100.0f);
+  // rightMotor.setDesiredVelocityMMPerSec(100.0f);
+
+  LOG_DEBUG("Starting velocity test...");
+
+  while (1) {
+    leftMotor.controlTick();
+    rightMotor.controlTick();
+    LOG_DEBUG(
+        "Left vel: " + std::to_string(leftMotor.getWheelVelocityMMPerSec()) +
+        " | Right vel: " +
+        std::to_string(rightMotor.getWheelVelocityMMPerSec()));
   }
+  // const float step = 0.05f;  // smaller = more resolution
+  // for (float pwm = 0.0f; pwm <= 1.0f; pwm += step) {
+  //   LOG_DEBUG("Applying PWM: " + std::to_string(pwm));
+
+  //   leftMotor.applyPWM(pwm);
+  //   rightMotor.applyPWM(pwm);
+
+  //   // Let motors settle (2 seconds)
+  //   uint64_t startTime = time_us_64();
+  //   while ((time_us_64() - startTime) < 10000000) {  // run for 10 seconds
+  //   (10,000,000 microseconds)
+  //     leftMotor.controlTick();
+  //     rightMotor.controlTick();
+  //   }
+
+  //   // Record measured steady-state velocity
+  //   float leftVel = leftMotor.getWheelVelocityMMPerSec();
+  //   float rightVel = rightMotor.getWheelVelocityMMPerSec();
+  //   float rightPos = rightMotor.getWheelPositionMM();
+
+  //   LOG_DEBUG("PWM: " + std::to_string(pwm) +
+  //             " | LeftVel: " + std::to_string(leftVel) +
+  //             " | RightVel: " + std::to_string(rightVel) +
+  //             " | RightPos: " + std::to_string(rightPos));
+
+  //   // Short pause before next increment
+  //   sleep_ms(500);
+  // }
+
+  leftMotor.stopMotor();
+  rightMotor.stopMotor();
+
+  LOG_DEBUG("Sweep complete. Export log -> Excel or Python for analysis.");
+  while (true) {
+    sleep_ms(1000);
+  }
+  // while (true) {
+  //   leftMotor.controlTick();
+  //   // rightMotor.controlTick();
+
+  //   // Log every ~100ms instead of every 10ms to reduce spam
+  //   static int counter = 0;
+  //   if (++counter >= 10) {
+  //     LOG_DEBUG("Left vel: " +
+  //     std::to_string(leftMotor.getWheelVelocityMMPerSec())); counter = 0;
+  //   }
+
+  //   sleep_ms(10);
+  // }
 
   // Maze logic objects
   // AStarSolver aStar(&mouse);

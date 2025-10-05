@@ -1,51 +1,57 @@
 #include "../../Include/Common/PIDController.h"
 
-PIDController::PIDController(float kP, float kI, float kD, float initialError,
-                             float integralMaxValue, float deadbandToReturnZero)
-    : kP(kP),
-      kI(kI),
-      kD(kD),
-      previousCalculationError(initialError),
-      integralMaxValue(integralMaxValue),
-      deadbandToReturnZero(deadbandToReturnZero) {
-  previousCalculationTime = get_absolute_time();
-  accumulatedIntegral = 0.0f;
+PIDController::PIDController(float K_P, float K_I, float K_D,
+                             float initialError, float integralMax,
+                             float deadbandToReturnZero)
+    : K_P(K_P),
+      K_I(K_I),
+      K_D(K_D),
+      lastError(initialError),
+      integralMax(integralMax),
+      deadband(deadbandToReturnZero) {
+  lastTime = get_absolute_time();
+  integralAccum = 0.0f;
 }
 
-float PIDController::calculateOutput(float newError) {
-  // Calculations for kP error.
-  float proportionalOutput = kP * newError;
-
-  if (kI == 0.0f and kD == 0.0f) {
-    return proportionalOutput;
+float PIDController::calculateOutput(float error) {
+  float pOutput = K_P * error;
+  // Return proportion if P-controller.
+  if (K_I == 0.0f && K_D == 0.0f) {
+    return pOutput;
   }
 
-  // Calculates dt in seconds, used for integral/derivative calculations.
-  absolute_time_t timeNow = get_absolute_time();
-  float timeDifferenceSec =
-      absolute_time_diff_us(previousCalculationTime, timeNow) / 1e6f;
-  previousCalculationTime = timeNow;
+  // Calculate dt in seconds.
+  absolute_time_t now = get_absolute_time();
+  float dt = absolute_time_diff_us(lastTime, now) / 1e6f;
+  lastTime = now;
+  // Eliminate extremely small dt.
+  if (dt <= 1e-6f) dt = 1e-6f;
 
-  // Calculations for kI error; clamps integral at max values.
-  accumulatedIntegral += newError * timeDifferenceSec;
-  accumulatedIntegral =
-      fmax(fmin(accumulatedIntegral, integralMaxValue), -integralMaxValue);
-  float integralOutput = kI * accumulatedIntegral;
+  // Calculate integral error in I-controller.
+  integralAccum += error * dt;
+  integralAccum = fmax(fmin(integralAccum, integralMax), -integralMax);
+  float iOutput = K_I * integralAccum;
 
-  // Calculations for kD error.
-  float derivativeOutput =
-      kD * ((newError - previousCalculationError) / timeDifferenceSec);
+  // Calculate derivative error in D-controller.
+  // FIXME: Add alpha filter if wiggle a lt at low speed.
+  float dOutput = K_D * ((error - lastError) / dt);
+  lastError = error;
 
-  float output = proportionalOutput + integralOutput + derivativeOutput;
+  // Sum all outputs in controller.
+  float output = pOutput + iOutput + dOutput;
 
-  // If output is less than deadband, return 0.
-  return (fabs(output) < deadbandToReturnZero) ? 0.0f : output;
+  // Return 0 for small outputs.
+  return (fabs(output) < deadband) ? 0.0f : output;
 }
 
 void PIDController::setInitialError(float initialError) {
-  previousCalculationError = initialError;
+  lastError = initialError;
 }
 
-void PIDController::setDeadband(float deadband) {
-  deadbandToReturnZero = deadband;
+void PIDController::setDeadband(float db) { deadband = db; }
+
+void PIDController::reset() {
+  integralAccum = 0.0f;
+  lastError = 0.0f;
+  lastTime = get_absolute_time();
 }
