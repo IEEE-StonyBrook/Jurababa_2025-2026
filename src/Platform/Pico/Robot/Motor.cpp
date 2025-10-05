@@ -95,6 +95,11 @@ void Motor::controlTick() {
     controlPWM = (controlPWM > 0 ? MIN_DUTY_0_TO_1 : -MIN_DUTY_0_TO_1);
   }
 
+  // Scale PWM based on battery voltage.
+  float batteryVoltage = battery->readVoltage();
+  float voltageScale = std::min(6.0f / batteryVoltage, 1.0f);
+  controlPWM *= voltageScale;
+
   // Send calculated PWM to motor.
   // applyPWM(controlPWM);
 }
