@@ -13,8 +13,9 @@ class Motor {
   float getWheelPositionMM();
   float getWheelVelocityMMPerSec();
 
-  void configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KS = 0.0f,
-                          float FF_KV = 0.0f);
+  void configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KSF = 0.0f,
+                          float FF_KVF = 0.0f, float FF_KSR = 0.0f,
+                          float FF_KVR = 0.0f);
 
   void setDesiredVelocityMMPerSec(float velMMPerSec);
   void controlTick();
@@ -32,16 +33,14 @@ class Motor {
   int pwmSliceNumber;
   int fChannel, bChannel;
 
-  float velMMPerSec = 0.0f;
-  float desiredVelMMPerSec = 0.0f;
-  float lastPosMM = 0.0f;
+  float velMMPerSec{0.0f}, desiredVelMMPerSec{0.0f};
 
   absolute_time_t lastTime;
+  float lastPosMM = 0.0f;
   float dtAccum = 0.0f;
 
   PIDController pidVelocityController;
-  float FF_KS = 0.0f;
-  float FF_KV = 0.0f;
+  float FF_KSF{0.0f}, FF_KVF{0.0f}, FF_KSR{0.0f}, FF_KVR{0.0f};
 };
 
 #endif

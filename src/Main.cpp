@@ -1,5 +1,3 @@
-// 17,18,19,20
-// 6,7,8,9
 #include <stdio.h>
 
 #include "../Include/Common/LogSystem.h"
@@ -9,122 +7,63 @@
 #include "../Include/Platform/Pico/Robot/Encoder.h"
 #include "../Include/Platform/Pico/Robot/Motor.h"
 #include "../Include/Platform/Pico/Robot/ToF.h"
+#include "../Include/Platform/Pico/Robot/Battery.h"
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
 
-// #include "../Include/Platform/Simulator/API.h"
-
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
+
+// Sweep PWM values and measure velocity using the motor's controlTick.
+struct FeedforwardSample {
+  float appliedPWM;       // Applied duty ratio [-1..1].
+  float measuredVelMMps;  // Measured steady-state velocity in mm/s.
+};
+std::vector<FeedforwardSample> runPWMSweep(Motor* motor, float startPWM,
+                                           float endPWM, float stepPWM = 0.05f,
+                                           int settleTimeMs = 2000,
+                                           int controlTickPeriodMs = 25);
 
 int main() {
   stdio_init_all();
   sleep_ms(3000);
 
-  // Universal objects
   LogSystem logSystem;
+  LOG_DEBUG("Initializing robot...");
+
+  // Maze logic.
   std::array<int, 2> startCell = {0, 0};
   std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
-
-  // Mouse logic objects
   MazeGraph maze(16, 16);
-  InternalMouse mouse(startCell, std::string("n"), goalCells, &maze,
-                      &logSystem);
+  InternalMouse mouse(startCell, "n", goalCells, &maze, &logSystem);
 
-  // Robot objects
-  Encoder leftMotorEncoder(20);
-  Encoder rightMotorEncoder(8);
-  Motor leftMotor(18, 19, &leftMotorEncoder, true);
-  Motor rightMotor(6, 7, &rightMotorEncoder);
+  // Robot hardware.
+  Battery battery(26, 3.3f, 100000.0f, 33000.0f);
+  Encoder leftEncoder(20);
+  Encoder rightEncoder(8);
+  Motor leftMotor(18, 19, &leftEncoder, true);
+  Motor rightMotor(6, 7, &rightEncoder);
   ToF leftToF(11, 'L');
   ToF frontToF(12, 'F');
   ToF rightToF(13, 'R');
   IMU imu(5);
-  Drivetrain robotDrivetrain(&leftMotor, &rightMotor, &leftToF, &frontToF,
-                             &rightToF, &imu);
-  // API api(&robotDrivetrain, &mouse);
-  // api.setUp(startCell, goalCells);
-  // api.printMaze();
+  Drivetrain drivetrain(&leftMotor, &rightMotor, &leftToF, &frontToF, &rightToF,
+                        &imu);
 
-  LOG_DEBUG("Configuring motors...");
+  // leftMotor.configurePIDWithFF(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+  // rightMotor.configurePIDWithFF(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
 
-  // Tune values: start conservative, adjust later
-  leftMotor.configurePIDWithFF(0.005f, 0.0f, 0.0f, 0.00136727f, 0.252653f);
-  rightMotor.configurePIDWithFF(0.005f, 0.0f, 0.0f, 0.0012421f, 0.393111f);
-
-  leftMotor.setDesiredVelocityMMPerSec(200.0f);
-  rightMotor.setDesiredVelocityMMPerSec(200.0f);
-  // Set target velocities (mm/s)
-  // leftMotor.setDesiredVelocityMMPerSec(100.0f);
-  // rightMotor.setDesiredVelocityMMPerSec(100.0f);
-
-  LOG_DEBUG("Starting velocity test...");
-
-  while (1) {
-    leftMotor.controlTick();
-    rightMotor.controlTick();
-    LOG_DEBUG(
-        "Left vel: " + std::to_string(leftMotor.getWheelVelocityMMPerSec()) +
-        " | Right vel: " +
-        std::to_string(rightMotor.getWheelVelocityMMPerSec()));
-  }
-  // const float step = 0.05f;  // smaller = more resolution
-  // for (float pwm = 0.0f; pwm <= 1.0f; pwm += step) {
-  //   LOG_DEBUG("Applying PWM: " + std::to_string(pwm));
-
-  //   leftMotor.applyPWM(pwm);
-  //   rightMotor.applyPWM(pwm);
-
-  //   // Let motors settle (2 seconds)
-  //   uint64_t startTime = time_us_64();
-  //   while ((time_us_64() - startTime) < 10000000) {  // run for 10 seconds
-  //   (10,000,000 microseconds)
-  //     leftMotor.controlTick();
-  //     rightMotor.controlTick();
-  //   }
-
-  //   // Record measured steady-state velocity
-  //   float leftVel = leftMotor.getWheelVelocityMMPerSec();
-  //   float rightVel = rightMotor.getWheelVelocityMMPerSec();
-  //   float rightPos = rightMotor.getWheelPositionMM();
-
-  //   LOG_DEBUG("PWM: " + std::to_string(pwm) +
-  //             " | LeftVel: " + std::to_string(leftVel) +
-  //             " | RightVel: " + std::to_string(rightVel) +
-  //             " | RightPos: " + std::to_string(rightPos));
-
-  //   // Short pause before next increment
-  //   sleep_ms(500);
-  // }
+  LOG_DEBUG("Running left motor sweep...");
+  // Sweep from 0.0 to 1.0 in steps of 0.05.
+  runPWMSweep(&leftMotor, 0.0f, 1.0f, 0.05f, 10000, 25);
+  sleep_ms(2000);
+  LOG_DEBUG("Running left motor reverse sweep...");
+  // Sweep from 0.0 to -1.0 in steps of -0.05.
+  runPWMSweep(&leftMotor, 0.0f, -1.0f, -0.05f, 10000, 25);
+  sleep_ms(2000);
 
   leftMotor.stopMotor();
   rightMotor.stopMotor();
-
-  LOG_DEBUG("Sweep complete. Export log -> Excel or Python for analysis.");
-  while (true) {
-    sleep_ms(1000);
-  }
-  // while (true) {
-  //   leftMotor.controlTick();
-  //   // rightMotor.controlTick();
-
-  //   // Log every ~100ms instead of every 10ms to reduce spam
-  //   static int counter = 0;
-  //   if (++counter >= 10) {
-  //     LOG_DEBUG("Left vel: " +
-  //     std::to_string(leftMotor.getWheelVelocityMMPerSec())); counter = 0;
-  //   }
-
-  //   sleep_ms(10);
-  // }
-
-  // Maze logic objects
-  // AStarSolver aStar(&mouse);
-  // std::string path = aStar.go(goalCells, true, true);
-  // LOG_DEBUG(path);
-  // interpretLFRPath(&api, path);
-  // // while (true) {
-  // //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
-  // // }
+  LOG_DEBUG("Motors stopped.");
   return 0;
 }
 
@@ -158,4 +97,64 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath) {
       LOG_ERROR("Main.cpp: Unknown token: " + t);
     }
   }
+}
+
+/**
+ * Runs a PWM sweep on the given motor, applying PWM values from startPWM to endPWM.
+ * 
+ * @param motor Pointer to the motor to test.
+ * @param startPWM Starting PWM value (e.g., 0.0f).
+ * @param endPWM Ending PWM value (e.g., 1.0f or -1.0f).
+ * @param stepPWM Step size for PWM (e.g., 0.05f). Automatically negated if startPWM > endPWM.
+ * @param settleTimeMs Time in milliseconds to wait at each PWM step for velocity to stabilize.
+ * @param controlTickPeriodMs Period in milliseconds to call motor->controlTick() during settling.
+ * @return Vector of FeedforwardSample containing applied PWM and measured velocity.
+ */
+std::vector<FeedforwardSample> runPWMSweep(Motor* motor, float startPWM,
+                                           float endPWM, float stepPWM,
+                                           int settleTimeMs,
+                                           int controlTickPeriodMs) {
+  if (startPWM > endPWM && stepPWM > 0) stepPWM = -stepPWM;
+
+  std::vector<FeedforwardSample> sweepResults;
+
+  // Sweep PWM from startPWM to endPWM in steps of stepPWM.
+  for (float pwm = startPWM; (stepPWM > 0 ? pwm <= endPWM : pwm >= endPWM);
+       pwm += stepPWM) {
+    // Apply raw PWM to motor.
+    motor->applyPWM(pwm);
+
+    // Run control ticks during settle period so velocity updates.
+    absolute_time_t settleStart = get_absolute_time();
+    while (absolute_time_diff_us(settleStart, get_absolute_time()) <
+           settleTimeMs * 1000) {
+      motor->controlTick();
+      sleep_ms(controlTickPeriodMs);
+    }
+
+    // Read steady-state velocity from motor.
+    float velocity = motor->getWheelVelocityMMPerSec();
+
+    sweepResults.push_back({pwm, velocity});
+    LOG_DEBUG("PWM=" + std::to_string(pwm) +
+              " | Velocity=" + std::to_string(velocity) + " mm/s.");
+  }
+
+  // Log all results in one go for Desmos.
+  std::string pwmList, velList;
+  for (size_t i = 0; i < sweepResults.size(); i++) {
+    if (sweepResults[i].measuredVelMMps != 0.0f) {
+      pwmList += std::to_string(sweepResults[i].appliedPWM);
+      velList += std::to_string(sweepResults[i].measuredVelMMps);
+      if (i != sweepResults.size() - 1) {
+        pwmList += ", ";
+        velList += ", ";
+      }
+    }
+  }
+  LOG_DEBUG("Velocity Values: " + velList);
+  LOG_DEBUG("PWM Values: " + pwmList);
+
+  motor->stopMotor();
+  return sweepResults;
 }

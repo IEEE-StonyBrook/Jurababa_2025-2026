@@ -12,7 +12,7 @@
 
 #define PWM_WRAP 999u
 #define LOOP_INTERVAL_MS 25.0f
-#define MIN_DUTY_0_TO_1 0.4f
+#define MIN_DUTY_0_TO_1 0.225f
 
 Motor::Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Encoder* encoder,
              bool invertMotorDirection)
@@ -73,59 +73,36 @@ void Motor::controlTick() {
   int64_t dt_us = absolute_time_diff_us(lastTime, now);
   lastTime = now;
   float dt_s = static_cast<float>(dt_us) / 1e6f;
-  dtAccum += dt_s;
 
-  // Too little time -> accumulate dt until greater than loop frequency.
-  int maxLoops = 5;
-  const float LOOP_INTERVAL_S = LOOP_INTERVAL_MS / 1000.0f;
-  while (dtAccum >= LOOP_INTERVAL_S && maxLoops-- > 0) {
-    // Reset dt accumulator.
-    dtAccum -= LOOP_INTERVAL_S;
+  // Calculate velocity of motor wheel.
+  float currPosMM = getWheelPositionMM();
+  velMMPerSec = (currPosMM - lastPosMM) / dt_s;
+  lastPosMM = currPosMM;
 
-    // Calculate velocity of motor wheel.
-    float currPosMM = getWheelPositionMM();
-    velMMPerSec = (currPosMM - lastPosMM) / LOOP_INTERVAL_S;
-    lastPosMM = currPosMM;
+  // Calculate velocity error for correction.
+  float velocityError = desiredVelMMPerSec - velMMPerSec;
 
-    // Calculate velocity error for correction.
-    float velocityError = desiredVelMMPerSec - velMMPerSec;
+  // Use PID to correct for velocity error.
+  float pidPWM = pidVelocityController.calculateOutput(velocityError);
 
-    // Use PID to correct for velocity error.
-    float pidPWM = pidVelocityController.calculateOutput(velocityError);
-
-    // Use Feedforward to predict needed PWM.
-    float ffPWM = 0.0f;
-    if (desiredVelMMPerSec != 0.0f) {
-      // PWM to overcome static friction + velocity PWM prediction.
-      ffPWM = FF_KS * (desiredVelMMPerSec > 0 ? 1.0f : -1.0f) +
-              FF_KV * desiredVelMMPerSec;
-      LOG_DEBUG("FF PWM: " + std::to_string(ffPWM));
-      LOG_DEBUG("Desired Vel: " + std::to_string(desiredVelMMPerSec) +
-                " | FF_KS: " + std::to_string(FF_KS) +
-                " | FF_KV: " + std::to_string(FF_KV));
-    }
-
-    // Combine PID + Feedforward to calculate PWM. Add fallback for low PWM.
-    float controlPWM = std::clamp(ffPWM + pidPWM, -1.0f, 1.0f);
-    LOG_DEBUG("Control PWM: " + std::to_string(controlPWM));
-    if (fabs(controlPWM) < MIN_DUTY_0_TO_1 && desiredVelMMPerSec != 0.0f) {
-      controlPWM = (controlPWM > 0 ? MIN_DUTY_0_TO_1 : -MIN_DUTY_0_TO_1);
-    }
-
-    // LOG_DEBUG("Motor Tick | pos: " + std::to_string(currPosMM) +
-    //           " mm | vel: " + std::to_string(velMMPerSec) +
-    //           " mm/s | err: " + std::to_string(velocityError) + " | PID: " +
-    //           std::to_string(pidPWM) + " | FF: " + std::to_string(ffPWM) +
-    //           " | PWM: " + std::to_string(controlPWM));
-
-    // Send calculated PWM to motor.
-    applyPWM(controlPWM);
+  // Use Feedforward to predict needed PWM.
+  float ffPWM = 0.0f;
+  // Takes into account direction (assymetric motion).
+  if (desiredVelMMPerSec > 0.0f) {
+    ffPWM = FF_KSF + FF_KVF * desiredVelMMPerSec;
+  } else {
+    ffPWM = -(FF_KSR + FF_KVR * std::fabs(desiredVelMMPerSec));
   }
 
-  if (maxLoops <= 0) {
-    // LOG_DEBUG("Motor Tick | Warning: skipped ticks due to backlog (dtAccum="
-    // + std::to_string(dtAccum) + ")");
+  // Combine PID + Feedforward to calculate PWM. Add fallback for low PWM.
+  float controlPWM = std::clamp(ffPWM + pidPWM, -1.0f, 1.0f);
+  // LOG_DEBUG("Control PWM: " + std::to_string(controlPWM));
+  if (fabs(controlPWM) < MIN_DUTY_0_TO_1 && desiredVelMMPerSec != 0.0f) {
+    controlPWM = (controlPWM > 0 ? MIN_DUTY_0_TO_1 : -MIN_DUTY_0_TO_1);
   }
+
+  // Send calculated PWM to motor.
+  // applyPWM(controlPWM);
 }
 
 void Motor::applyPWM(float duty) {
@@ -146,8 +123,8 @@ void Motor::applyPWM(float duty) {
   pwm_set_chan_level(pwmSliceNumber, forward ? bChannel : fChannel, 0);
 }
 
-void Motor::configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KV,
-                               float FF_KS) {
+void Motor::configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KVF,
+                               float FF_KSF, float FF_KSR, float FF_KVR) {
   const float INIT_VEL_MM_PER_SEC = 0.0f;
   const float INTEGRAL_MAX_MM_PER_SEC = 1000.0f;
   const float DEADBAND_MM_PER_SEC = 0.1f;
@@ -155,8 +132,10 @@ void Motor::configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KV,
       PIDController(K_P, K_I, K_D, INIT_VEL_MM_PER_SEC, INTEGRAL_MAX_MM_PER_SEC,
                     DEADBAND_MM_PER_SEC);
 
-  this->FF_KV = FF_KV;
-  this->FF_KS = FF_KS;
+  this->FF_KVF = FF_KVF;
+  this->FF_KSF = FF_KSF;
+  this->FF_KSR = FF_KSR;
+  this->FF_KVR = FF_KVR;
 }
 
 void Motor::setDesiredVelocityMMPerSec(float velMMPerSec) {

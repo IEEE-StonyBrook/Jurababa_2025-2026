@@ -42,6 +42,7 @@ add_executable(Jurababa
     Src/Platform/Pico/Robot/Encoder.cpp
     Src/Platform/Pico/Robot/IMU.cpp
     Src/Platform/Pico/Robot/ToF.cpp
+    Src/Platform/Pico/Robot/Battery.cpp
     Src/Common/PIDController.cpp
     Src/Common/LogSystem.cpp
     Src/Maze/InternalMouse.cpp
@@ -72,6 +73,7 @@ target_link_libraries(Jurababa
         hardware_irq
         hardware_uart
         hardware_i2c
+        hardware_adc
         vl53l0x_api_rp2040
         )
 
