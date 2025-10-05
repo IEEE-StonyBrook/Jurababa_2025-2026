@@ -81,21 +81,21 @@ void Motor::controlTick() {
 
   // Use Feedforward to predict needed motor voltage.
   float ffVoltage = 0.0f;
-  if (desiredVelMMPerSec > 0.0f) {
-    ffVoltage = FF_KSF + FF_KVF * desiredVelMMPerSec;
-  } else if (desiredVelMMPerSec < 0.0f) {
-    ffVoltage = -(FF_KSR + FF_KVR * std::fabs(desiredVelMMPerSec));
+  if (desiredVelMMPerSec != 0.0f) {
+    ffVoltage = (desiredVelMMPerSec > 0.0f)
+                    ? FF_KSF + FF_KVF * desiredVelMMPerSec
+                    : -(FF_KSR + FF_KVR * std::fabs(desiredVelMMPerSec));
   }
 
   // Combine PID + Feedforward (in volts).
   float controlVoltage = ffVoltage + pidVoltage;
 
-  // Clamp voltage to safe motor max (6 V).
-  controlVoltage = std::clamp(controlVoltage, -6.0f, 6.0f);
+  // Clamp voltage to safe motor test max (6.00 V).
+  controlVoltage = std::clamp(controlVoltage, -6.00f, 6.00f);
 
   // Convert control voltage to duty cycle using live battery voltage.
   // float batteryVoltage = battery->readVoltage();
-  float batteryVoltage = 8.15f;       // FIXME: Assume fully charged battery.
+  float batteryVoltage = 8.10f;       // FIXME: Assume fully charged battery.
   if (batteryVoltage < 1.0f) return;  // Guard against bad ADC read.
   float controlPWM = controlVoltage / batteryVoltage;
 
@@ -104,8 +104,9 @@ void Motor::controlTick() {
     controlPWM = (controlPWM > 0 ? MIN_DUTY_0_TO_1 : -MIN_DUTY_0_TO_1);
   }
 
+  // LOG_DEBUG("Control PWM: " + std::to_string(controlPWM));
   // Send calculated PWM to motor.
-  // applyPWM(controlPWM);
+  applyPWM(controlPWM);
 }
 
 void Motor::applyPWM(float duty) {
@@ -115,7 +116,6 @@ void Motor::applyPWM(float duty) {
 
   // Scales duty to PWM's range.
   float pwmLevel = std::fabs(duty) * PWM_WRAP;
-
   pwmLevel = std::clamp(pwmLevel, 0.0f, (float)PWM_WRAP);
   // LOG_DEBUG("PWM Level: " + std::to_string(pwmLevel));
 
@@ -125,8 +125,8 @@ void Motor::applyPWM(float duty) {
   pwm_set_chan_level(pwmSliceNumber, forward ? bChannel : fChannel, 0);
 }
 
-void Motor::configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KVF,
-                               float FF_KSF, float FF_KSR, float FF_KVR) {
+void Motor::configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KSF,
+                               float FF_KVF, float FF_KSR, float FF_KVR) {
   const float INIT_VEL_MM_PER_SEC = 0.0f;
   const float INTEGRAL_MAX_MM_PER_SEC = 1000.0f;
   const float DEADBAND_MM_PER_SEC = 0.1f;
@@ -134,8 +134,8 @@ void Motor::configurePIDWithFF(float K_P, float K_I, float K_D, float FF_KVF,
       PIDController(K_P, K_I, K_D, INIT_VEL_MM_PER_SEC, INTEGRAL_MAX_MM_PER_SEC,
                     DEADBAND_MM_PER_SEC);
 
-  this->FF_KVF = FF_KVF;
   this->FF_KSF = FF_KSF;
+  this->FF_KVF = FF_KVF;
   this->FF_KSR = FF_KSR;
   this->FF_KVR = FF_KVR;
 }

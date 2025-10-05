@@ -23,6 +23,10 @@ std::vector<FeedforwardSample> runPWMSweep(Motor* motor, float startPWM,
                                            int settleTimeMs = 2000,
                                            int controlTickPeriodMs = 25);
 
+void runVelocityStepTest(Motor& leftMotor, Motor& rightMotor,
+                         const std::vector<float>& testVelocitiesMMps,
+                         float holdDurationSec, float loopPeriodMS);
+
 int main() {
   stdio_init_all();
   sleep_ms(3000);
@@ -50,12 +54,15 @@ int main() {
                         &imu);
 
   leftMotor.configurePIDWithFF(0.0f, 0.0f, 0.0f, 0.854946269979f,
-  0.00709180787719f, 0.449161810993f, 0.00792902201638f);
+                               0.00709180787719f, 0.449161810993f,
+                               0.00792902201638f);
   rightMotor.configurePIDWithFF(0.0f, 0.0f, 0.0f, 1.03141196143f,
-  0.0076374580692f, 0.988237679484f, 0.00736862063693f);
+                                0.0076374580692f, 0.988237679484f,
+                                0.00736862063693f);
 
   runVelocityStepTest(leftMotor, rightMotor,
-                      {100.0f, 200.0f, 300.0f, 400.0f, 500.0f, 600.0f}, 3, 25);
+                      {300.0f, -300.0f, 500.0f, -500.0f}, 10,
+                      25);
 
   return 0;
 }
