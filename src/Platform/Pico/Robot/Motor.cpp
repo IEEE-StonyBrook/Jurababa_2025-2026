@@ -76,29 +76,33 @@ void Motor::controlTick() {
   // Calculate velocity error for correction.
   float velocityError = desiredVelMMPerSec - velMMPerSec;
 
-  // Use PID to correct for velocity error.
-  float pidPWM = pidVelocityController.calculateOutput(velocityError);
+  // Use PID to correct for velocity error (output in volts).
+  float pidVoltage = pidVelocityController.calculateOutput(velocityError);
 
-  // Use Feedforward to predict needed PWM.
-  float ffPWM = 0.0f;
-  // Takes into account direction (assymetric motion).
+  // Use Feedforward to predict needed motor voltage.
+  float ffVoltage = 0.0f;
   if (desiredVelMMPerSec > 0.0f) {
-    ffPWM = FF_KSF + FF_KVF * desiredVelMMPerSec;
-  } else {
-    ffPWM = -(FF_KSR + FF_KVR * std::fabs(desiredVelMMPerSec));
+    ffVoltage = FF_KSF + FF_KVF * desiredVelMMPerSec;
+  } else if (desiredVelMMPerSec < 0.0f) {
+    ffVoltage = -(FF_KSR + FF_KVR * std::fabs(desiredVelMMPerSec));
   }
 
-  // Combine PID + Feedforward to calculate PWM. Add fallback for low PWM.
-  float controlPWM = std::clamp(ffPWM + pidPWM, -1.0f, 1.0f);
-  // LOG_DEBUG("Control PWM: " + std::to_string(controlPWM));
+  // Combine PID + Feedforward (in volts).
+  float controlVoltage = ffVoltage + pidVoltage;
+
+  // Clamp voltage to safe motor max (6 V).
+  controlVoltage = std::clamp(controlVoltage, -6.0f, 6.0f);
+
+  // Convert control voltage to duty cycle using live battery voltage.
+  // float batteryVoltage = battery->readVoltage();
+  float batteryVoltage = 8.15f;       // FIXME: Assume fully charged battery.
+  if (batteryVoltage < 1.0f) return;  // Guard against bad ADC read.
+  float controlPWM = controlVoltage / batteryVoltage;
+
+  // Add fallback for low PWM.
   if (fabs(controlPWM) < MIN_DUTY_0_TO_1 && desiredVelMMPerSec != 0.0f) {
     controlPWM = (controlPWM > 0 ? MIN_DUTY_0_TO_1 : -MIN_DUTY_0_TO_1);
   }
-
-  // Scale PWM based on battery voltage.
-  float batteryVoltage = battery->readVoltage();
-  float voltageScale = std::min(6.0f / batteryVoltage, 1.0f);
-  controlPWM *= voltageScale;
 
   // Send calculated PWM to motor.
   // applyPWM(controlPWM);
@@ -111,10 +115,9 @@ void Motor::applyPWM(float duty) {
 
   // Scales duty to PWM's range.
   float pwmLevel = std::fabs(duty) * PWM_WRAP;
-  // LOG_DEBUG("PWM Level1: " + std::to_string(pwmLevel));
 
   pwmLevel = std::clamp(pwmLevel, 0.0f, (float)PWM_WRAP);
-  // LOG_DEBUG("PWM Level2: " + std::to_string(pwmLevel));
+  // LOG_DEBUG("PWM Level: " + std::to_string(pwmLevel));
 
   // Sends the PWM signal to the channels.
   pwm_set_chan_level(pwmSliceNumber, forward ? fChannel : bChannel,

@@ -11,7 +11,6 @@
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
 
-
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
 // Sweep PWM values and measure velocity using the motor's controlTick.
@@ -41,8 +40,8 @@ int main() {
   Battery battery(26, 3.3f, 100000.0f, 33000.0f);
   Encoder leftEncoder(20);
   Encoder rightEncoder(8);
-  Motor leftMotor(18, 19, &leftEncoder, true);
-  Motor rightMotor(6, 7, &rightEncoder);
+  Motor leftMotor(18, 19, &leftEncoder, &battery, true);
+  Motor rightMotor(6, 7, &rightEncoder, &battery);
   ToF leftToF(11, 'L');
   ToF frontToF(12, 'F');
   ToF rightToF(13, 'R');
@@ -50,21 +49,14 @@ int main() {
   Drivetrain drivetrain(&leftMotor, &rightMotor, &leftToF, &frontToF, &rightToF,
                         &imu);
 
-  // leftMotor.configurePIDWithFF(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-  // rightMotor.configurePIDWithFF(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+  leftMotor.configurePIDWithFF(0.0f, 0.0f, 0.0f, 0.854946269979f,
+  0.00709180787719f, 0.449161810993f, 0.00792902201638f);
+  rightMotor.configurePIDWithFF(0.0f, 0.0f, 0.0f, 1.03141196143f,
+  0.0076374580692f, 0.988237679484f, 0.00736862063693f);
 
-  LOG_DEBUG("Running left motor sweep...");
-  // Sweep from 0.0 to 1.0 in steps of 0.05.
-  runPWMSweep(&leftMotor, 0.0f, 1.0f, 0.05f, 10000, 25);
-  sleep_ms(2000);
-  LOG_DEBUG("Running left motor reverse sweep...");
-  // Sweep from 0.0 to -1.0 in steps of -0.05.
-  runPWMSweep(&leftMotor, 0.0f, -1.0f, -0.05f, 10000, 25);
-  sleep_ms(2000);
+  runVelocityStepTest(leftMotor, rightMotor,
+                      {100.0f, 200.0f, 300.0f, 400.0f, 500.0f, 600.0f}, 3, 25);
 
-  leftMotor.stopMotor();
-  rightMotor.stopMotor();
-  LOG_DEBUG("Motors stopped.");
   return 0;
 }
 
@@ -115,6 +107,12 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath) {
  * motor->controlTick() during settling.
  * @return Vector of FeedforwardSample containing applied PWM and measured
  * velocity.
+ *
+ * Use printed values and the following calculators:
+ * https://www.desmos.com/calculator/qhiaubdod3 - kS and kV calculator
+ * Do not include 0.0 velocity values!
+ *
+ * Note: Comment Motor::controlTick() applyPWM() call to run open-loop tests.
  */
 std::vector<FeedforwardSample> runPWMSweep(Motor* motor, float startPWM,
                                            float endPWM, float stepPWM,
@@ -158,9 +156,66 @@ std::vector<FeedforwardSample> runPWMSweep(Motor* motor, float startPWM,
       }
     }
   }
-  LOG_DEBUG("Velocity Values: " + velList);
-  LOG_DEBUG("PWM Values: " + pwmList);
+  LOG_DEBUG("Velocity Values: x = [" + velList + "]");
+  LOG_DEBUG("PWM Values: p = [" + pwmList + "]");
 
   motor->stopMotor();
   return sweepResults;
+}
+/* Example Usage:
+LOG_DEBUG("Running right motor sweep...");
+// Sweep from 0.0 to 1.0 in steps of 0.05.
+runPWMSweep(&rightMotor, 0.0f, 1.0f, 0.05f, 10000, 25);
+sleep_ms(2000);
+LOG_DEBUG("Running right motor reverse sweep...");
+// Sweep from 0.0 to -1.0 in steps of -0.05.
+runPWMSweep(&rightMotor, 0.0f, -1.0f, -0.05f, 10000, 25);
+sleep_ms(2000);
+
+leftMotor.stopMotor();
+rightMotor.stopMotor();
+LOG_DEBUG("Motors stopped.");
+*/
+
+/**
+ * Run step-based velocity test on both motors at given loop frequency.
+ * Useful for checking feedforward predictions against actual velocity response.
+ * @param leftMotor Reference to left motor.
+ * @param rightMotor Reference to right motor.
+ * @param testVelocitiesMMps Vector of target velocities in mm/s to test.
+ * @param holdDurationSec Duration in seconds to hold each target velocity.
+ * @param loopPeriodMS Period in milliseconds to run control ticks and log data.
+ *
+ * Note: Motor::controlTick() must call applyPWM() to actually drive motors.
+ */
+void runVelocityStepTest(Motor& leftMotor, Motor& rightMotor,
+                         const std::vector<float>& testVelocitiesMMps,
+                         float holdDurationSec, float loopPeriodMS) {
+  // Iterate through each test velocity.
+  for (float targetVel : testVelocitiesMMps) {
+    // Apply target velocity to both motors.
+    leftMotor.setDesiredVelocityMMPerSec(targetVel);
+    rightMotor.setDesiredVelocityMMPerSec(targetVel);
+
+    absolute_time_t startTime = get_absolute_time();
+    while (absolute_time_diff_us(startTime, get_absolute_time()) <
+           static_cast<int64_t>(holdDurationSec * 1e6f)) {
+      // Run control loop tick for both motors.
+      leftMotor.controlTick();
+      rightMotor.controlTick();
+
+      // Log current results.
+      LOG_DEBUG("TargetVel=" + std::to_string(targetVel) + " | LeftVel=" +
+                std::to_string(leftMotor.getWheelVelocityMMPerSec()) +
+                " | RightVel=" +
+                std::to_string(rightMotor.getWheelVelocityMMPerSec()));
+
+      // Wait until next control cycle.
+      sleep_ms(loopPeriodMS);
+    }
+  }
+
+  // Stop motors at the end of the test.
+  leftMotor.stopMotor();
+  rightMotor.stopMotor();
 }
