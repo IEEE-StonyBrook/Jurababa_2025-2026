@@ -1,12 +1,5 @@
 #include "../../../Include/Platform/Pico/Robot/Motor.h"
 
-#include <algorithm>
-#include <cmath>
-
-#include "hardware/gpio.h"
-#include "hardware/pwm.h"
-#include "pico/stdlib.h"
-
 #define WHEEL_DIAMETER_MM 39.5f
 #define TICKS_PER_WHEEL_REVOLUTION 1400.0f
 
@@ -15,10 +8,11 @@
 #define MIN_DUTY_0_TO_1 0.225f
 
 Motor::Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Encoder* encoder,
-             bool invertMotorDirection)
+             Battery* battery, bool invertMotorDirection)
     : gpioMotorPinOne(gpioMotorPinOne),
       gpioMotorPinTwo(gpioMotorPinTwo),
       encoder(encoder),
+      battery(battery),
       invertMotorDirection(invertMotorDirection) {
   configureMotorPins();
   configureMotorPWM();

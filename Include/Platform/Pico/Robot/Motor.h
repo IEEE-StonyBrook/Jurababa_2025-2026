@@ -1,14 +1,21 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
+#include <algorithm>
+#include <cmath>
+
 #include "../../../Common/LogSystem.h"
 #include "../../../Common/PIDController.h"
+#include "Battery.h"
 #include "Encoder.h"
+#include "hardware/gpio.h"
+#include "hardware/pwm.h"
+#include "pico/stdlib.h"
 
 class Motor {
  public:
   Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Encoder* encoder,
-        bool invertMotorDirection = false);
+        Battery* battery, bool invertMotorDirection = false);
 
   float getWheelPositionMM();
   float getWheelVelocityMMPerSec();
@@ -27,6 +34,7 @@ class Motor {
   void configureMotorPWM();
 
   Encoder* encoder;
+  Battery* battery;
   int gpioMotorPinOne, gpioMotorPinTwo;
   bool invertMotorDirection;
 

@@ -3,13 +3,14 @@
 #include "../Include/Common/LogSystem.h"
 #include "../Include/Navigation/AStarSolver.h"
 #include "../Include/Platform/Pico/API.h"
+#include "../Include/Platform/Pico/Robot/Battery.h"
 #include "../Include/Platform/Pico/Robot/Drivetrain.h"
 #include "../Include/Platform/Pico/Robot/Encoder.h"
 #include "../Include/Platform/Pico/Robot/Motor.h"
 #include "../Include/Platform/Pico/Robot/ToF.h"
-#include "../Include/Platform/Pico/Robot/Battery.h"
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
+
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
@@ -100,15 +101,20 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath) {
 }
 
 /**
- * Runs a PWM sweep on the given motor, applying PWM values from startPWM to endPWM.
- * 
+ * Runs a PWM sweep on the given motor, applying PWM values from startPWM to
+ * endPWM.
+ *
  * @param motor Pointer to the motor to test.
  * @param startPWM Starting PWM value (e.g., 0.0f).
  * @param endPWM Ending PWM value (e.g., 1.0f or -1.0f).
- * @param stepPWM Step size for PWM (e.g., 0.05f). Automatically negated if startPWM > endPWM.
- * @param settleTimeMs Time in milliseconds to wait at each PWM step for velocity to stabilize.
- * @param controlTickPeriodMs Period in milliseconds to call motor->controlTick() during settling.
- * @return Vector of FeedforwardSample containing applied PWM and measured velocity.
+ * @param stepPWM Step size for PWM (e.g., 0.05f). Automatically negated if
+ * startPWM > endPWM.
+ * @param settleTimeMs Time in milliseconds to wait at each PWM step for
+ * velocity to stabilize.
+ * @param controlTickPeriodMs Period in milliseconds to call
+ * motor->controlTick() during settling.
+ * @return Vector of FeedforwardSample containing applied PWM and measured
+ * velocity.
  */
 std::vector<FeedforwardSample> runPWMSweep(Motor* motor, float startPWM,
                                            float endPWM, float stepPWM,
