@@ -98,6 +98,6 @@
 #define IMU_IDX_CHECKSUM 18  // Checksum byte (XOR of bytes 2 to 14).
 
 // Expected header bytes for BNO085 RVC packets.
-#define IMU_HDR0 0xFF
+#define IMU_HDR0 170
 
 #endif

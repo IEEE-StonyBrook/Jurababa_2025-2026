@@ -31,6 +31,7 @@ int main() {
   ToF frontToF(12, 'F');
   ToF rightToF(13, 'R');
   IMU imu(5);
+  imu.resetIMUYawToZero();
 
   std::array<int, 2> startCell = {0, 0};
   std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
@@ -43,15 +44,15 @@ int main() {
 
   // // Run test sequence: F5 L F5.
   // LOG_DEBUG("Running test sequence...");
-  // api.executeSequence("L#");
+  // api.executeSequence("F5#");
 
   // // Stop everything at the end (safety).
-  // motion.stop();
+  motion.stop();
 
   while (true) {
     // Idle loop (robot finished its path).
     // LOG_DEBUG("Finished path.");
-    sleep_ms(1000);
+    // sleep_ms(1000);
   }
 
   // while (true) {
