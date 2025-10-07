@@ -4,6 +4,8 @@
 #include "../../../Include/Platform/Pico/MulticoreSensors.h"
 #endif
 
+#include "../../../Include/Common/LogSystem.h"
+
 IMU* IMU::imuInstance = nullptr;
 
 IMU::IMU(int uartRXPin) : uartRXPin(uartRXPin), IMUBufferIndex(0) {
@@ -40,66 +42,82 @@ void IMU::imuInterruptHandler() {
   // LOG_DEBUG("no handler");
 }
 
+  
+// void IMU::processIMURXInterruptData() {
+//   // volatile int IMUBufferIndex = 0;
+//   // LOG_DEBUG("IMU RX Interrupt Start");
+//   while (uart_is_readable(IMU_UART_ID)) {
+//     // LOG_DEBUG("IMU RX Interrupt");
+//     uint8_t character = uart_getc(IMU_UART_ID);
+//     IMUBufferForYaw[IMUBufferIndex] = character;
+//     if (IMUBufferIndex == 18) {
+//       convertPacketDataToUsableYaw();
+//     }
+//     IMUBufferIndex++;
+//   }
+   
+// }
+
 void IMU::processIMURXInterruptData() {
   while (uart_is_readable(IMU_UART_ID)) {
-    uint8_t byte = uart_getc(IMU_UART_ID);
+    uint8_t character = uart_getc(IMU_UART_ID);
 
-    // Store byte in buffer.
-    IMUBufferForYaw[IMUBufferIndex++] = byte;
-
-    // If we haven't yet filled a full packet, continue.
-    if (IMUBufferIndex < IMU_PACKET_LEN) continue;
-
-    // --- Packet full, validate header ---
-    if (IMUBufferForYaw[IMU_IDX_HDR0] != IMU_HDR0) {
-      // Shift buffer left by 1 to resync and continue.
-      for (int i = 1; i < IMU_PACKET_LEN; i++) {
-        IMUBufferForYaw[i - 1] = IMUBufferForYaw[i];
-      }
-      IMUBufferIndex = IMU_PACKET_LEN - 1;  // Expect next byte to complete.
+    // --- Header Resynchronization Check ---
+    // If we're at the start of a new packet, make sure the first byte is correct
+    if (IMUBufferIndex == 0 && character != IMU_HDR0) {
+      // Wait for correct header before starting to fill the buffer
       continue;
     }
 
-    // Valid header found → parse the packet.
-    convertPacketDataToUsableYaw();
+    IMUBufferForYaw[IMUBufferIndex++] = character;
 
-    // Reset index for next packet.
-    IMUBufferIndex = 0;
+    // If we filled a full packet
+    if (IMUBufferIndex >= IMU_PACKET_LEN) {
+      // Optional: Verify header again (redundant safety)
+      if (IMUBufferForYaw[IMU_IDX_HDR0] == IMU_HDR0) {
+        convertPacketDataToUsableYaw();
+      }
+
+      // Reset buffer index for the next packet (good practice)
+      IMUBufferIndex = 0;
+    }
   }
 }
 
 
 void IMU::convertPacketDataToUsableYaw() {
   IMUBufferIndex = 0;
-
-  // Check for valid starter bytes
-  if (IMUBufferForYaw[IMU_IDX_HDR0] != IMU_HDR0) {
-    LOG_DEBUG("Invalid HDR0: " + std::to_string(IMUBufferForYaw[IMU_IDX_HDR0]));
-    return;
-  }
-
+  // LOG_DEBUG("afteryawfunction");
   uint8_t sumOfByteData = 0;
   for (int i = 2; i < 15; i++) {
     sumOfByteData += IMUBufferForYaw[i];
   }
 
   if (sumOfByteData == IMUBufferForYaw[18]) {
-    // Combine two bytes into a signed 16-bit yaw value
     int16_t currentYaw = (IMUBufferForYaw[4] << 8) | IMUBufferForYaw[3];
-    
-    // Convert to degrees (0–360 or negative)
-    float currentYawDegrees = static_cast<float>(currentYaw) / 100.0f;
+    float negOrPos = (currentYaw / fabs(currentYaw));
+    // Convert raw to degrees (assuming 100 LSB/deg)
+    float yawDegrees = static_cast<float>(currentYaw) / 100.0f;
+    // Wrap to [0, 360)
+    float yaw0To360 = fmodf(yawDegrees + 360.0f, 360.0f);
+    // Wrap to [-180, 180)
+    float yawNeg180To180 = fmodf(yawDegrees + 180.0f, 360.0f) - 180.0f;
+    robotYawNeg180To180Degrees = yawNeg180To180;
+    LOG_DEBUG("IMU Yaw: " + std::to_string(yawNeg180To180) + " deg");
 
-    // Wrap into [-180, 180]
-    float wrappedYaw = fmod(currentYawDegrees, 360.0f);
-    if (wrappedYaw > 180.0f)
-      wrappedYaw -= 360.0f;
-    else if (wrappedYaw < -180.0f)
-      wrappedYaw += 360.0f;
-
-    robotYawNeg180To180Degrees = wrappedYaw;
-
-    LOG_DEBUG("IMU Yaw: " + std::to_string(robotYawNeg180To180Degrees));
+    // When multicore hub is enabled the top-level publisher in `main.cpp`
+    // should be responsible for publishing. Here we avoid publishing from
+    // the interrupt and instead let consumers snapshot the hub. If running
+    // as the publisher core (core 1) we still publish so the hub receives
+    // fresh data.
+    // #ifdef USE_MULTICORE_SENSORS
+    //     if (multicore_get_core_num() == 1) {
+    //       MulticoreSensorData s = {};
+    //       s.imu_yaw = robotYawNeg180To180Degrees - resetOffSet;
+    //       s.timestamp_ms = to_ms_since_boot(get_absolute_time());
+    //       MulticoreSensorHub::publish(s);
+    //     }
+    // #endif
   } else {
     // LOG_DEBUG("IMU checksum error: calculated %d, expected %d\n",
     // sumOfByteData, IMUBufferForYaw[18]);
@@ -107,15 +125,15 @@ void IMU::convertPacketDataToUsableYaw() {
 }
 
 float IMU::getIMUYawDegreesNeg180ToPos180() {
-// #ifdef USE_MULTICORE_SENSORS
-//   // If multicore is enabled and this is the consumer core (core 0), read
-//   // the latest snapshot instead of returning the locally-updated value.
-//   if (multicore_get_core_num() == 0) {
-//     MulticoreSensorData s = {};
-//     MulticoreSensorHub::snapshot(s);
-//     return s.imu_yaw - resetOffSet;
-//   }
-// #endif
+  // #ifdef USE_MULTICORE_SENSORS
+  //   // If multicore is enabled and this is the consumer core (core 0), read
+  //   // the latest snapshot instead of returning the locally-updated value.
+  //   if (multicore_get_core_num() == 0) {
+  //     MulticoreSensorData s = {};
+  //     MulticoreSensorHub::snapshot(s);
+  //     return s.imu_yaw - resetOffSet;
+  //   }
+  // #endif
 
   return robotYawNeg180To180Degrees - resetOffSet;
 }

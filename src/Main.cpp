@@ -27,7 +27,8 @@ static void core1_publisher() {
     ToF frontToF(12, 'F');
     ToF rightToF(13, 'R');
     IMU imu(5);
-    
+    imu.resetIMUYawToZero();
+
     // Motors
     Motor leftMotor(18, 19, nullptr, true);
     Motor rightMotor(6, 7, nullptr, false);
@@ -45,7 +46,7 @@ static void core1_publisher() {
 
     // // Run test sequence: F5 L F5.
     // LOG_DEBUG("Running test sequence...");
-    // api.executeSequence("L#");
+    // api.executeSequence("F5#");
 
     // // Stop everything at the end (safety).
     // motion.stop();
