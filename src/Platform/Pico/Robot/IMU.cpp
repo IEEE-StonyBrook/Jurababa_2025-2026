@@ -42,19 +42,48 @@ void IMU::imuInterruptHandler() {
   // LOG_DEBUG("no handler");
 }
 
+  
+// void IMU::processIMURXInterruptData() {
+//   // volatile int IMUBufferIndex = 0;
+//   // LOG_DEBUG("IMU RX Interrupt Start");
+//   while (uart_is_readable(IMU_UART_ID)) {
+//     // LOG_DEBUG("IMU RX Interrupt");
+//     uint8_t character = uart_getc(IMU_UART_ID);
+//     IMUBufferForYaw[IMUBufferIndex] = character;
+//     if (IMUBufferIndex == 18) {
+//       convertPacketDataToUsableYaw();
+//     }
+//     IMUBufferIndex++;
+//   }
+   
+// }
+
 void IMU::processIMURXInterruptData() {
-  // volatile int IMUBufferIndex = 0;
-  // LOG_DEBUG("IMU RX Interrupt Start");
   while (uart_is_readable(IMU_UART_ID)) {
-    // LOG_DEBUG("IMU RX Interrupt");
     uint8_t character = uart_getc(IMU_UART_ID);
-    IMUBufferForYaw[IMUBufferIndex] = character;
-    if (IMUBufferIndex == 18) {
-      convertPacketDataToUsableYaw();
+
+    // --- Header Resynchronization Check ---
+    // If we're at the start of a new packet, make sure the first byte is correct
+    if (IMUBufferIndex == 0 && character != IMU_HDR0) {
+      // Wait for correct header before starting to fill the buffer
+      continue;
     }
-    IMUBufferIndex++;
+
+    IMUBufferForYaw[IMUBufferIndex++] = character;
+
+    // If we filled a full packet
+    if (IMUBufferIndex >= IMU_PACKET_LEN) {
+      // Optional: Verify header again (redundant safety)
+      if (IMUBufferForYaw[IMU_IDX_HDR0] == IMU_HDR0) {
+        convertPacketDataToUsableYaw();
+      }
+
+      // Reset buffer index for the next packet (good practice)
+      IMUBufferIndex = 0;
+    }
   }
 }
+
 
 void IMU::convertPacketDataToUsableYaw() {
   IMUBufferIndex = 0;

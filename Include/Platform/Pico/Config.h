@@ -94,7 +94,7 @@
 #define IMU_IDX_ROLL_L 6     // Roll low byte.
 #define IMU_IDX_ROLL_H 7     // Roll high byte.
 #define IMU_CHKSUM_FIRST 2   // First byte included in checksum.
-#define IMU_CHKSUM_LAST 14   // Last byte included in checksum.
+#define IMU_CHKSUM_LAST 17   // Last byte included in checksum.
 #define IMU_IDX_CHECKSUM 18  // Checksum byte (XOR of bytes 2 to 14).
 
 // Expected header bytes for BNO085 RVC packets.
