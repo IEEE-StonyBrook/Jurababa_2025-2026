@@ -1,175 +1,74 @@
 #ifndef API_H
 #define API_H
 
+#include <array>
+#include <cctype>
+#include <iostream>
+#include <sstream>
 #include <string>
+#include <vector>
 
+#include "../../../Include/Platform/Pico/Config.h"
 #include "../../Maze/InternalMouse.h"
 #include "Robot/Drivetrain.h"
+#include "Robot/Motion.h"
+
 
 class API {
  public:
-  /**
-   * Constructs an API object for a physical robot.
-   *
-   * @param drivetrain Pointer to the drivetrain object.
-   * @param internalMouse Pointer to the internal mouse object.
-   */
-  API(Drivetrain* drivetrain, InternalMouse* internalMouse);
+  API(Drivetrain* drivetrain, InternalMouse* internalMouse, Motion* motion);
 
-  /**
-   * Gets the width of the maze.
-   *
-   * @return The width of the maze as an integer.
-   */
+  // Maze dimensions.
   int mazeWidth();
-
-  /**
-   * Gets the height of the maze.
-   *
-   * @return The height of the maze as an integer.
-   */
   int mazeHeight();
 
-  /**
-   * Checks if there is a wall to the left of the mouse.
-   *
-   * @return True if there is a wall to the left, false otherwise.
-   */
+  // Wall queries.
   bool wallLeft();
-
-  /**
-   * Checks if there is a wall in front of the mouse.
-   *
-   * @return True if there is a wall in front, false otherwise.
-   */
   bool wallFront();
-
-  /**
-   * Checks if there is a wall to the right of the mouse.
-   *
-   * @return True if there is a wall to the right, false otherwise.
-   */
   bool wallRight();
 
-  /**
-   * Moves the mouse forward by half a cell.
-   */
+  // Movement.
   void moveForwardHalf();
-
-  /**
-   * Moves the mouse forward by one cell.
-   */
   void moveForward();
-
-  /**
-   * Moves the mouse forward by a specified number of steps.
-   *
-   * @param steps The number of steps to move forward.
-   */
   void moveForward(int steps);
-
-  /**
-   * Turns the mouse left by 45 degrees.
-   */
   void turnLeft45();
-
-  /**
-   * Turns the mouse left by 90 degrees.
-   */
   void turnLeft90();
-
-  /**
-   * Turns the mouse right by 45 degrees.
-   */
   void turnRight45();
-
-  /**
-   * Turns the mouse right by 90 degrees.
-   */
   void turnRight90();
+  void turn(int degrees);
 
-  /**
-   * Turns the mouse by a specified angle divisible by 45 degrees.
-   *
-   * @param degreesDivisibleBy45 The angle to turn, must be divisible by 45.
-   */
-  void turn(int degreesDivisibleBy45);
+  // Execute command sequence like "L90#F5#R45".
+  void executeSequence(const std::string& sequence);
 
-  /**
-   * Sets a wall at the specified coordinates and direction.
-   *
-   * @param x The x-coordinate of the cell.
-   * @param y The y-coordinate of the cell.
-   * @param direction The direction of the wall (e.g., "N", "E", "S", "W").
-   */
-  void setWall(int x, int y, const std::string& direction);
+  // Maze walls.
+  void setWall(int x, int y, const std::string& dir);
+  void clearWall(int x, int y, const std::string& dir);
 
-  /**
-   * Clears a wall at the specified coordinates and direction.
-   *
-   * @param x The x-coordinate of the cell.
-   * @param y The y-coordinate of the cell.
-   * @param direction The direction of the wall (e.g., "N", "E", "S", "W").
-   */
-  void clearWall(int x, int y, const std::string& direction);
-
-  /**
-   * Sets the color of a cell at the specified coordinates.
-   *
-   * @param x The x-coordinate of the cell.
-   * @param y The y-coordinate of the cell.
-   * @param color The color to set (e.g., 'R', 'G', 'B').
-   */
+  // Cell coloring and labels.
   void setColor(int x, int y, char color);
-
-  /**
-   * Clears the color of a cell at the specified coordinates.
-   *
-   * @param x The x-coordinate of the cell.
-   * @param y The y-coordinate of the cell.
-   */
   void clearColor(int x, int y);
-
-  /**
-   * Clears the color of all cells in the maze.
-   */
   void clearAllColor();
-
-  /**
-   * Sets the text of a cell at the specified coordinates.
-   *
-   * @param x The x-coordinate of the cell.
-   * @param y The y-coordinate of the cell.
-   * @param text The text to set.
-   */
   void setText(int x, int y, const std::string& text);
-
-  /**
-   * Clears the text of a cell at the specified coordinates.
-   *
-   * @param x The x-coordinate of the cell.
-   * @param y The y-coordinate of the cell.
-   */
   void clearText(int x, int y);
-
-  /**
-   * Clears the text of all cells in the maze.
-   */
   void clearAllText();
 
+  // Setup and print.
   void setUp(std::array<int, 2> startCell,
              std::vector<std::array<int, 2>> goalCells);
   void printMaze();
+  std::string printMazeRow(int row);
+
+  // Simulator IO.
+  std::string getSimulatorResponse(std::string cmd);
+  int getSimulatorIntegerResponse(std::string cmd);
+  bool getSimulatorBoolResponse(std::string cmd);
+
   bool runOnSimulator;
 
  private:
-  InternalMouse* internalMouse;
   Drivetrain* drivetrain;
-
-  std::string getSimulatorResponse(std::string commandUsed);
-  int getSimulatorIntegerResponse(std::string commandUsed);
-  bool getSimulatorBoolResponse(std::string commandUsed);
-
-  std::string printMazeRow(int row);
+  InternalMouse* internalMouse;
+  Motion* motion;
 };
+
 #endif

@@ -1,55 +1,43 @@
 #ifndef MOTOR_H
 #define MOTOR_H
 
-#include "../../../Common/PIDController.h"
-#include "../../../Common/LogSystem.h"
+#include <algorithm>
+#include <cmath>
 
-#include "Encoder.h"
+#include "../../../Include/Platform/Pico/Config.h"
+#include "../../../Include/Platform/Pico/Robot/Battery.h"
+#include "hardware/pwm.h"
+#include "pico/stdlib.h"
 
 class Motor {
  public:
-  Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Encoder* encoder,
-        bool invertMotorDirection = false);
+  // Constructor sets up motor pins, PWM slice, and direction inversion.
+  Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Battery* battery,
+        bool invertDirection = false);
 
-  float getMotorPositionMM();
-  float getMotorVelocityMMPerSec();
-  void setContinuousDesiredMotorVelocityMMPerSec(float desiredVelocityMMPerSec);
-  void setUpPIDControllerWithFeedforward(float kP, float kI, float kD,
-                                         float feedforwardkS = 0.0f,
-                                         float feedforwardkV = 0.0f);
-  void setContinuousDesiredMotorPositionMM(float desiredPositionMM);
-  void setDesiredVelocityMMPerSec(float desiredVelMMPerSec);
+  // Applies a duty cycle in range [-1.0, 1.0]. Positive = forward.
+  void applyPWM(float dutyCycle);
 
-  const float WHEEL_DIAMETER_MM = 39.5f;
-  const float TICKS_PER_WHEEL_REVOLUTION = 1400.0f;
-  const int SLEEP_BETWEEN_PID_CYCLES_MS = 20;
+  // Applies desired volts, automatically scaled to live battery voltage.
+  void applyVoltage(float desiredVolts);
+
+  // Immediately stops the motor.
+  void stopMotor();
 
  private:
-  float velocityMMPerSec;
+  // Configures motor pins for PWM functionality.
+  void configureMotorPins();
 
-  void setUpMotorPins();
-  void setUpMotorPWM();
-  void setMotorPWMPercentageNeg1ToPos1(float PWMPercentage);
+  // Configures PWM slice and channels.
+  void configureMotorPWM();
 
-  Encoder* encoder;
-  int gpioMotorPinOne, gpioMotorPinTwo;
-  bool invertMotorDirection;
-
+  int gpioMotorPinOne;
+  int gpioMotorPinTwo;
   int pwmSliceNumber;
-  int forwardChannel, backwardChannel;
-  bool isMovingForward;
-
-  absolute_time_t timeWhenVelocityWasLastCheckedMicroSec;
-  float positionWhenVelocityWasLastCheckedMM;
-
-  PIDController pidVelocityController, pidPositionController;
-  float desiredPositionMM, desiredVelocityMMPerSec;
-  float feedforwardkS, feedforwardkV;
-  float motorPositionErrorMM, motorVelocityErrorMMPerSec,
-      pidPositionCalculatedOutput, pidVelocityCalculatedOutput;
-  void updatePositionErrorAndPIDOutput();
-  void updateVelocityErrorAndPIDOutput();
-  void stopMotor();
+  int forwardChannel;
+  int backwardChannel;
+  Battery* battery;
+  bool invertDirection;
 };
 
 #endif

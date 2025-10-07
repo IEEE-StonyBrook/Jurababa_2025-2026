@@ -1,57 +1,138 @@
 #include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
 
-Drivetrain::Drivetrain(Motor* leftMotor, Motor* rightMotor, ToF* leftToF,
-                       ToF* middleToF, ToF* rightToF, IMU* drivetrainIMU)
+Drivetrain::Drivetrain(Motor* leftMotor, Motor* rightMotor,
+                       Encoder* leftEncoder, Encoder* rightEncoder)
     : leftMotor(leftMotor),
       rightMotor(rightMotor),
-      leftToF(leftToF),
-      middleToF(middleToF),
-      rightToF(rightToF),
-      drivetrainIMU(drivetrainIMU) {}
+      odometry(leftEncoder, rightEncoder),
+      targetForwardVel(0.0f),
+      targetAngularVel(0.0f),
+      forwardError(0.0f),
+      rotationError(0.0f),
+      prevForwardError(0.0f),
+      prevRotationError(0.0f) {}
 
-bool Drivetrain::driveRobotForwardNumberOfCells(int numberOfCells) {
-  const float CELL_LENGTH_MM = 167.0f;
-
-  float cellsLengthMM = numberOfCells * CELL_LENGTH_MM;
-  float leftMotorCurrentPosition = leftMotor->getMotorPositionMM();
-  float rightMotorCurrentPosition = rightMotor->getMotorPositionMM();
-  leftMotor->setContinuousDesiredMotorPositionMM(leftMotorCurrentPosition +
-                                                 cellsLengthMM);
-  rightMotor->setContinuousDesiredMotorPositionMM(rightMotorCurrentPosition +
-                                                  cellsLengthMM);
-
-  return true;
+void Drivetrain::reset() {
+  odometry.reset();
+  stop();
+  forwardError = rotationError = 0.0f;
+  prevForwardError = prevRotationError = 0.0f;
+  targetForwardVel = targetAngularVel = 0.0f;
 }
 
-bool Drivetrain::turnRobotDegreesInPlace(int degreesToTurn) {
-  const float K_P = 3.0f;
-  const float MAX_ERROR_DEGREES = 0.1f;
+// Forward PD controller integrates target velocity into position error.
+float Drivetrain::forwardPD() {
+  float expectedChange = targetForwardVel * LOOP_INTERVAL_S;
+  // Error between expected position change and actual change.
+  // Proportional term from accumulated error.
+  forwardError += expectedChange - odometry.getDeltaDistanceMM();
+  // Derivative term from change in error.
+  float errorRate = forwardError - prevForwardError;
+  prevForwardError = forwardError;
+  return (FWD_KP * forwardError) + (FWD_KD * errorRate);
+}
 
-  desiredDegreesYaw = drivetrainIMU->getNewYawAfterAddingDegrees(degreesToTurn);
-  yawController = PIDController(K_P);
-  yawController.setDeadband(MAX_ERROR_DEGREES);
+// Rotation PD controller integrates angular velocity into rotation error.
+float Drivetrain::rotationPD(float steeringCorrection) {
+  float expectedChange = targetAngularVel * LOOP_INTERVAL_S;
+  // Error between expected angle change and actual change.
+  // Proportional term from accumulated error.
+  rotationError += expectedChange - odometry.getDeltaAngleDeg();
+  rotationError += steeringCorrection;  // Wall-following or trajectory adjust.
+  // Derivative term from change in error.
+  float errorRate = rotationError - prevRotationError;
+  prevRotationError = rotationError;
+  return (ROT_KP * rotationError) + (ROT_KD * errorRate);
+}
 
-  updateYawErrorSignsAndPIDOutput();
-  leftMotor->setContinuousDesiredMotorVelocityMMPerSec(leftPIDOutputSign *
-                                                       pidYawCalculatedOutput);
-  rightMotor->setContinuousDesiredMotorVelocityMMPerSec(-leftPIDOutputSign *
-                                                        pidYawCalculatedOutput);
+// Predict left motor voltage from wheel speed and acceleration.
+float Drivetrain::feedforwardLeft(float wheelSpeed) {
+  static float lastSpeed = 0.0f;
+  float voltage = 0.0f;
 
-  while (true) {
-    updateYawErrorSignsAndPIDOutput();
-    leftMotor->setDesiredVelocityMMPerSec(leftPIDOutputSign *
-                                          pidYawCalculatedOutput);
-    rightMotor->setDesiredVelocityMMPerSec(-leftPIDOutputSign *
-                                           pidYawCalculatedOutput);
+  if (wheelSpeed > 0) {
+    // Forward: slope + static bias.
+    voltage = (SPEED_FFL * wheelSpeed) + BIAS_FFL;
+  } else if (wheelSpeed < 0) {
+    // Reverse: slope + static bias.
+    voltage = (SPEED_FBL * wheelSpeed) - BIAS_FBL;
   }
+
+  // Acceleration contribution.
+  float accel = (wheelSpeed - lastSpeed) * LOOP_FREQUENCY_HZ;
+  lastSpeed = wheelSpeed;
+  voltage += (ACC_FFL * accel);
+
+  return voltage;
 }
 
-void Drivetrain::updateYawErrorSignsAndPIDOutput() {
-  yawError =
-      desiredDegreesYaw - drivetrainIMU->getIMUYawDegreesNeg180ToPos180();
-  pidYawCalculatedOutput = yawController.calculateOutput(yawError);
+// Predict right motor voltage from wheel speed and acceleration.
+float Drivetrain::feedforwardRight(float wheelSpeed) {
+  static float lastSpeed = 0.0f;
+  float voltage = 0.0f;
 
-  // Assigns signs for left velocity based on which direction to turn.
-  // Right is always the opposite for in-place turns.
-  leftPIDOutputSign = (yawError > 0) ? 1 : -1;
+  if (wheelSpeed > 0) {
+    // Forward.
+    voltage = (SPEED_FFR * wheelSpeed) + BIAS_FFR;
+  } else if (wheelSpeed < 0) {
+    // Reverse.
+    voltage = (SPEED_FBR * wheelSpeed) - BIAS_FBR;
+  }
+
+  // Acceleration contribution.
+  float accel = (wheelSpeed - lastSpeed) * LOOP_FREQUENCY_HZ;
+  lastSpeed = wheelSpeed;
+  voltage += (ACC_FFR * accel);
+
+  return voltage;
+}
+
+// Main control loop: update odometry, compute voltages, and drive motors.
+void Drivetrain::runControl(float forwardVelocityMMPerSec,
+                            float angularVelocityDegPerSec,
+                            float steeringCorrection) {
+  targetForwardVel = forwardVelocityMMPerSec;
+  targetAngularVel = angularVelocityDegPerSec;
+
+  odometry.update();
+
+  float forwardOut = forwardPD();
+  float rotationOut = rotationPD(steeringCorrection);
+
+  // Combine forward and rotation control.
+  float leftOut = forwardOut - rotationOut;
+  float rightOut = forwardOut + rotationOut;
+
+  // Calculate wheel speeds for feedforward terms.
+  float tangentSpeed =
+      (targetAngularVel * (M_PI / 180.0f)) * (WHEEL_BASE_MM / 2.0f);
+  float leftWheelSpeed = targetForwardVel - tangentSpeed;
+  float rightWheelSpeed = targetForwardVel + tangentSpeed;
+
+  // Add feedforward predictions.
+  leftOut += feedforwardLeft(leftWheelSpeed);
+  rightOut += feedforwardRight(rightWheelSpeed);
+
+  leftMotor->applyVoltage(leftOut);
+  rightMotor->applyVoltage(rightOut);
+}
+
+void Drivetrain::stop() {
+  leftMotor->stopMotor();
+  rightMotor->stopMotor();
+}
+
+Odometry* Drivetrain::getOdometry() { return &odometry; }
+
+void Drivetrain::driveForwardMM(float distanceMM, float velocityMMPerSec) {
+  odometry.reset();
+
+  while (odometry.getDistanceMM() < distanceMM) {
+    runControl(velocityMMPerSec, 0.0f, 0.0f);
+    LOG_DEBUG("Pos: " + std::to_string(odometry.getDistanceMM()) +
+              " | Vel: " + std::to_string(odometry.getVelocityMMPerSec()));
+    sleep_ms(LOOP_INTERVAL_S * 1000);
+  }
+
+  stop();
 }

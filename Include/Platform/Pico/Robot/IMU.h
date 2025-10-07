@@ -1,33 +1,43 @@
 #ifndef IMU_H
 #define IMU_H
 
-#include <array>
+#include <cmath>
+#include <cstdint>
 
-#include "pico/stdlib.h"
+#include "../../../Include/Common/LogSystem.h"
+#include "../Config.h"
+#include "hardware/gpio.h"
+#include "hardware/irq.h"
+#include "hardware/uart.h"
 
 class IMU {
  public:
-  IMU(int uartRXPin = 5);
+  explicit IMU(int uartRXPin);
 
+  // Get yaw in degrees normalized to [-180, 180].
   float getIMUYawDegreesNeg180ToPos180();
+
+  // Reset yaw offset to make current yaw = 0.
   void resetIMUYawToZero();
+
+  // Get yaw after adding a delta angle, normalized to [-180, 180].
   float getNewYawAfterAddingDegrees(float degreesToAdd);
 
  private:
+  const int uartRXPin;                            // RX pin used by UART.
+  volatile int IMUBufferIndex;                       // Index for received bytes.
+  uint8_t IMUBufferForYaw[IMU_PACKET_LEN];  // Packet buffer.
+
+  float robotYawNeg180To180Degrees;  // Latest yaw reading.
+  float resetOffSet;                 // Zero offset for yaw.
+
+  static IMU* imuInstance;  // Static instance pointer.
+
+  // UART + Interrupt setup.
   void setUpIMUCommunication();
   void setUpIMUInterrupts();
   void processIMURXInterruptData();
   void convertPacketDataToUsableYaw();
   static void imuInterruptHandler();
-  static IMU* imuInstance;
-
-  volatile int IMUBufferIndex;  //added
-
-
-  const int uartRXPin;
-  volatile uint8_t IMUBufferForYaw[19];
-  float robotYawNeg180To180Degrees;
-  float resetOffSet;
 };
-
 #endif
