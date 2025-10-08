@@ -32,25 +32,29 @@ void API::moveForward(int steps) {
 
 void API::turnLeft45() {
   if (runOnSimulator) getSimulatorResponse("turnLeft45");
-  else motion->turn(-45.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  // else motion->turn(-45.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  motion->spinTurn(-45.0f, TURN_TOP_SPEED, TURN_ACCEL);
   internalMouse->turnIM45DegreeStepsRight(-1);
 }
 
 void API::turnLeft90() {
   if (runOnSimulator) getSimulatorResponse("turnLeft90");
-  else motion->turn(-90.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  // else motion->turn(-90.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  motion->spinTurn(-90.0f, TURN_TOP_SPEED, TURN_ACCEL);
   internalMouse->turnIM45DegreeStepsRight(-2);
 }
 
 void API::turnRight45() {
   if (runOnSimulator) getSimulatorResponse("turnRight45");
-  else motion->turn(45.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  // else motion->turn(45.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  motion->spinTurn(45.0f, TURN_TOP_SPEED, TURN_ACCEL);
   internalMouse->turnIM45DegreeStepsRight(1);
 }
 
 void API::turnRight90() {
   if (runOnSimulator) getSimulatorResponse("turnRight90");
-  else motion->turn(90.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  // else motion->turn(90.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  motion->spinTurn(90.0f, TURN_TOP_SPEED, TURN_ACCEL);
   internalMouse->turnIM45DegreeStepsRight(2);
 }
 
@@ -73,8 +77,14 @@ void API::executeSequence(const std::string& sequence) {
     int value = token.size() > 1 ? std::stoi(token.substr(1)) : 0;
 
     if (cmd == 'F') moveForward(value > 0 ? value : 1);
-    else if (cmd == 'L') turn(-(value > 0 ? value : 90));
-    else if (cmd == 'R') turn(value > 0 ? value : 90);
+    else if (cmd == 'L') {
+      LOG_DEBUG("Turning left " + std::to_string(value > 0 ? value : 90) + " degrees");
+      turn(-(value > 0 ? value : 90));
+    }
+    else if (cmd == 'R') {
+      LOG_DEBUG("Turning right " + std::to_string(value > 0 ? value : 90) + " degrees");
+      turn(value > 0 ? value : 90);
+    }
   }
 }
 

@@ -1,76 +1,75 @@
-#ifndef PROFILE_H
-#define PROFILE_H
+#ifndef PROFILE_H_
+#define PROFILE_H_
 
-#include <algorithm>
-#include <cmath>
 #include <cstdint>
 
-#include "../Config.h"
-
-
 /**
- * @brief Motion profile generator for trapezoidal speed control.
+ * @brief Motion profile for trapezoidal velocity control.
  *
- * A profile consists of three phases:
- * - Acceleration: Ramp speed up toward max speed.
- * - Coasting: Maintain max speed if distance allows.
- * - Braking: Ramp speed down to final speed.
- *
- * The profile runs incrementally and must be updated
- * every control cycle via update().
+ * This class generates smooth velocity commands (accel, cruise, brake)
+ * based on a desired distance, speed, and acceleration. It relies on
+ * odometry for actual position feedback.
  */
 class Profile {
  public:
-  enum class State : uint8_t { Idle, Accelerating, Braking, Finished };
+  enum class State {
+    Idle,        ///< Not running
+    Accelerating,///< Speeding up
+    Cruising,    ///< Constant velocity
+    Braking,     ///< Slowing down to final speed
+    Finished     ///< Motion completed
+  };
 
   Profile();
 
-  // Reset profile to idle state.
+  /** Reset profile to idle state. */
   void reset();
 
-  // Start a new profile.
+  /**
+   * @brief Start a new motion profile.
+   * @param distance    Target distance (absolute mm or deg).
+   * @param maxSpeed    Max speed allowed.
+   * @param finalSpeed  Speed at the end of motion.
+   * @param acceleration Positive acceleration (mm/s² or deg/s²).
+   * @param startPos     Current odometry position at start (mm or deg).
+   */
   void start(float distance, float maxSpeed, float finalSpeed,
-             float acceleration);
+             float acceleration, float startPos);
 
-  // Blocking move (wait until finished).
-  void move(float distance, float maxSpeed, float finalSpeed,
-            float acceleration);
+  /**
+   * @brief Update profile based on current odometry.
+   * @param currentPos Current odometry reading (mm or deg).
+   */
+  void update(float currentPos);
 
-  // Stop immediately with target speed set to zero.
+  /** Stop immediately and mark as finished. */
   void stop();
 
-  // Force profile to finish at final speed.
-  void finish();
-
-  // Update profile state (must be called each control cycle).
-  void update();
-
-  // Check if profile has completed.
+  /** @return True if motion has finished. */
   bool isFinished() const;
 
-  // Getters for current motion state.
-  float position() const;
+  /** @return Current commanded speed. */
   float speed() const;
+
+  /** @return Configured acceleration. */
   float acceleration() const;
 
-  // Setters for corrections.
-  void setSpeed(float speed);
-  void setTargetSpeed(float targetSpeed);
-  void setPosition(float position);
-  void adjustPosition(float delta);
-
  private:
+  /** @return Remaining distance to target. */
+  float remainingDistance(float currentPos) const;
+
+  /** @return Braking distance required at current speed. */
   float brakingDistance() const;
 
-  State state;
-  float positionMM;
-  float speedMMPerSec;
-  float targetSpeedMMPerSec;
-  float finalSpeedMMPerSec;
-  float finalPositionMM;
-  float accelerationMMPerSec2;
-  float invAcceleration;
-  int directionSign;
+  State state_;
+  float speed_;
+  float targetSpeed_;
+  float finalSpeed_;
+  float distance_;       ///< Target distance (always positive)
+  float startPosition_;  ///< Odometry position at profile start
+  float acceleration_;
+  float invAcceleration_;
+  int directionSign_;
 };
 
 #endif

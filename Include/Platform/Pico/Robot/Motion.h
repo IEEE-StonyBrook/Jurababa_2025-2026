@@ -1,61 +1,70 @@
+/******************************************************************************
+ * @file    Motion.h
+ * @brief   Motion manager for forward and rotational movements.
+ *
+ * This class manages trapezoidal velocity profiles for both forward and
+ * rotational motion. Profiles provide smooth velocity setpoints, while
+ * odometry/IMU provide actual state feedback. Motion ensures that moves and
+ * turns complete based on IMU/encoder feedback.
+ ******************************************************************************/
+
 #ifndef MOTION_H
 #define MOTION_H
 
-#include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
-#include "../../../Include/Platform/Pico/Robot/Profile.h"
+#include "Drivetrain.h"
+#include "Profile.h"
 
 /**
- * Motion converts planner commands into smooth forward and rotational movement
- * using trapezoidal profiles and the drivetrain.
+ * @class Motion
+ * @brief High-level motion control using profiles + odometry/IMU.
  */
 class Motion {
  public:
   explicit Motion(Drivetrain* drivetrain);
 
-  // Reset drivetrain and motion profiles.
+  // ---------------- System Control ----------------
   void resetDriveSystem();
-
-  // Stop all motion immediately.
   void stop();
   void disableDrive();
 
-  // Forward state access.
-  inline float positionMM() const { return drivetrain->getOdometry()->getDistanceMM(); }
-  inline float velocityMMPerSec() const { return drivetrain->getOdometry()->getVelocityMMPerSec(); }
-  inline float accelerationMMPerSec2() const { return forwardProfile.acceleration(); }
-
-  // Rotation state access.
-  inline float angleDeg() const { return drivetrain->getOdometry()->getAngleDeg(); }
-  inline float omegaDegPerSec() const { return drivetrain->getOdometry()->getAngularVelocityDegPerSec(); }
-  inline float alphaDegPerSec2() const { return rotationProfile.acceleration(); }
-
-  // Forward moves.
-  void startForward(float distanceMM, float topSpeed, float finalSpeed, float accel);
-  void forward(float distanceMM, float topSpeed, float finalSpeed, float accel, bool blocking = true);
+  // ---------------- Forward Motion ----------------
+  void startForward(float distance_mm, float top_speed, float final_speed,
+                    float accel);
+  void forward(float distance_mm, float top_speed, float final_speed,
+               float accel, bool blocking);
   bool isForwardFinished() const;
 
-  // Rotational moves.
-  void startTurn(float angleDeg, float omega, float finalOmega, float alpha);
-  void turn(float angleDeg, float omega, float finalOmega, float alpha, bool blocking = true);
+  // ---------------- Rotational Motion ----------------
+  void startTurn(float angle_deg, float omega, float final_omega, float alpha);
+  void turn(float angle_deg, float omega, float final_omega, float alpha,
+            bool blocking);
   bool isTurnFinished() const;
 
-  // Integrated and spin turns.
-  void integratedTurn(float angleDeg, float omega, float alpha);
-  void spinTurn(float angleDeg, float omega, float alpha);
+  // ---------------- Integrated Turns ----------------
+  void integratedTurn(float angle_deg, float omega, float alpha);
+  void spinTurn(float angle_deg, float omega, float alpha);
 
-  // Stopping utilities.
-  void stopAt(float positionMM);
-  void stopAfter(float distanceMM);
-  void waitUntilPosition(float targetMM);
-  void waitUntilDistance(float deltaMM);
+  // ---------------- Stopping Utilities ----------------
+  void stopAt(float target_mm);
+  void stopAfter(float distance_mm);
+  void waitUntilPosition(float target_mm);
+  void waitUntilDistance(float delta_mm);
 
-  // Update profiles and apply control.
+  // ---------------- Update Loop ----------------
   void update();
 
+  // ---------------- State Accessors ----------------
+  float positionMM() const { return drivetrain_->getOdometry()->getDistanceMM(); }
+  float velocityMMPerSec() const { return drivetrain_->getOdometry()->getVelocityMMPerSec(); }
+  float angleDeg() const { return drivetrain_->getOdometry()->getAngleDeg(); }
+  float omegaDegPerSec() const { return drivetrain_->getOdometry()->getAngularVelocityDegPerSec(); }
+  float accelerationMMPerSec2() const { return forward_profile_.acceleration(); }
+
  private:
-  Drivetrain* drivetrain;
-  Profile forwardProfile;
-  Profile rotationProfile;
+  Drivetrain* drivetrain_;         ///< Pointer to drivetrain
+  Profile forward_profile_;        ///< Profile for forward motion
+  Profile rotation_profile_;       ///< Profile for rotational motion
+  float target_angle_deg_;         ///< Absolute IMU target angle for turns
 };
 
 #endif

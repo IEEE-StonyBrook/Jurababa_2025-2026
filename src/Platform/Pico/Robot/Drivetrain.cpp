@@ -1,10 +1,10 @@
 #include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
 
 Drivetrain::Drivetrain(Motor* leftMotor, Motor* rightMotor,
-                       Encoder* leftEncoder, Encoder* rightEncoder)
+                       Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu)
     : leftMotor(leftMotor),
       rightMotor(rightMotor),
-      odometry(leftEncoder, rightEncoder),
+      odometry(leftEncoder, rightEncoder, imu),
       targetForwardVel(0.0f),
       targetAngularVel(0.0f),
       forwardError(0.0f),
@@ -13,8 +13,11 @@ Drivetrain::Drivetrain(Motor* leftMotor, Motor* rightMotor,
       prevRotationError(0.0f) {}
 
 void Drivetrain::reset() {
+  LOG_DEBUG("Resetting odometry...");
   odometry.reset();
+  LOG_DEBUG("Stopping motors...");
   stop();
+  LOG_DEBUG("Clearing controller states...");
   forwardError = rotationError = 0.0f;
   prevForwardError = prevRotationError = 0.0f;
   targetForwardVel = targetAngularVel = 0.0f;
@@ -94,10 +97,12 @@ void Drivetrain::runControl(float forwardVelocityMMPerSec,
   targetForwardVel = forwardVelocityMMPerSec;
   targetAngularVel = angularVelocityDegPerSec;
 
+  // LOG_DEBUG("Updating odometry...");
   odometry.update();
 
+  // LOG_DEBUG("Calculating control outputs...");
   float forwardOut = forwardPD();
-  float rotationOut = rotationPD(steeringCorrection);
+  float rotationOut = -rotationPD(steeringCorrection);
 
   // Combine forward and rotation control.
   float leftOut = forwardOut - rotationOut;
@@ -113,6 +118,8 @@ void Drivetrain::runControl(float forwardVelocityMMPerSec,
   leftOut += feedforwardLeft(leftWheelSpeed);
   rightOut += feedforwardRight(rightWheelSpeed);
 
+  LOG_DEBUG("Applying voltage of " + std::to_string(leftOut) + " V to left motor.");
+  LOG_DEBUG("Applying voltage of " + std::to_string(rightOut) + " V to right motor.");
   leftMotor->applyVoltage(leftOut);
   rightMotor->applyVoltage(rightOut);
 }
@@ -123,16 +130,3 @@ void Drivetrain::stop() {
 }
 
 Odometry* Drivetrain::getOdometry() { return &odometry; }
-
-void Drivetrain::driveForwardMM(float distanceMM, float velocityMMPerSec) {
-  odometry.reset();
-
-  while (odometry.getDistanceMM() < distanceMM) {
-    runControl(velocityMMPerSec, 0.0f, 0.0f);
-    LOG_DEBUG("Pos: " + std::to_string(odometry.getDistanceMM()) +
-              " | Vel: " + std::to_string(odometry.getVelocityMMPerSec()));
-    sleep_ms(LOOP_INTERVAL_S * 1000);
-  }
-
-  stop();
-}

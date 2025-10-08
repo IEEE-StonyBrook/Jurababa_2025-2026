@@ -1,119 +1,180 @@
+/******************************************************************************
+ * @file    Motion.cpp
+ * @brief   Implementation of Motion class.
+ ******************************************************************************/
+
 #include "../../../Include/Platform/Pico/Robot/Motion.h"
 
-Motion::Motion(Drivetrain* drivetrain) : drivetrain(drivetrain) {}
+#include <cmath>
+#include <string>
 
-// Reset drivetrain and motion profiles to a known state.
+#include "../../../Include/Common/LogSystem.h"
+
+namespace {
+/**
+ * @brief Wrap an angle into [-180, 180] range for error calculation.
+ */
+inline float Wrap180(float angle_deg) {
+  if (angle_deg > 180.0f) angle_deg -= 360.0f;
+  if (angle_deg < -180.0f) angle_deg += 360.0f;
+  return angle_deg;
+}
+}  // namespace
+
+// -----------------------------------------------------------------------------
+// Constructor
+// -----------------------------------------------------------------------------
+Motion::Motion(Drivetrain* drivetrain)
+    : drivetrain_(drivetrain), target_angle_deg_(0.0f) {}
+
+// -----------------------------------------------------------------------------
+// System control
+// -----------------------------------------------------------------------------
 void Motion::resetDriveSystem() {
-  drivetrain->reset();
-  forwardProfile.reset();
-  rotationProfile.reset();
+  LOG_DEBUG("Resetting drive system...");
+  drivetrain_->reset();
+  forward_profile_.reset();
+  rotation_profile_.reset();
+  LOG_DEBUG("Drive system reset complete.");
 }
 
-// Stop drivetrain and clear profiles.
 void Motion::stop() {
-  drivetrain->stop();
-  forwardProfile.reset();
-  rotationProfile.reset();
+  drivetrain_->stop();
+  forward_profile_.reset();
+  rotation_profile_.reset();
 }
 
-// Disable drive system (motors off).
-void Motion::disableDrive() { drivetrain->stop(); }
+void Motion::disableDrive() { drivetrain_->stop(); }
 
-// ---------------- Forward Motion ---------------- //
-
-// Start a forward motion profile without blocking.
-void Motion::startForward(float distanceMM, float topSpeed, float finalSpeed,
+// -----------------------------------------------------------------------------
+// Forward motion
+// -----------------------------------------------------------------------------
+void Motion::startForward(float distance_mm, float top_speed, float final_speed,
                           float accel) {
-  forwardProfile.start(distanceMM, topSpeed, finalSpeed, accel);
+  // Provide odometry start position to the profile so it can compute progress.
+  const float start_pos_mm = drivetrain_->getOdometry()->getDistanceMM();
+  forward_profile_.start(distance_mm, top_speed, final_speed, accel,
+                         start_pos_mm);
 }
 
-// Run forward motion with option to block until finished.
-void Motion::forward(float distanceMM, float topSpeed, float finalSpeed,
+void Motion::forward(float distance_mm, float top_speed, float final_speed,
                      float accel, bool blocking) {
-  LOG_DEBUG("Starting forward motion: " + std::to_string(distanceMM) + " mm");
-  startForward(distanceMM, topSpeed, finalSpeed, accel);
+  LOG_DEBUG("Starting forward motion: " + std::to_string(distance_mm) + " mm");
+  startForward(distance_mm, top_speed, final_speed, accel);
+
   if (blocking) {
     while (!isForwardFinished()) {
-      LOG_DEBUG("Pos: " + std::to_string(positionMM()) +
-                " mm, Speed: " + std::to_string(velocityMMPerSec()) + " mm/s");
+      // LOG_DEBUG("IsForwardFinished: " + std::to_string(isForwardFinished()));
+      // LOG_DEBUG("Pos: " + std::to_string(positionMM()) +
+      //           " mm, Speed: " + std::to_string(velocityMMPerSec()) + " mm/s");
+      // LOG_DEBUG("Angle: " + std::to_string(angleDeg()) +
+      //           " deg, Omega: " + std::to_string(omegaDegPerSec()) + " deg/s");
       update();
-      sleep_ms(LOOP_INTERVAL_S * 1000);
+      sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
     }
   }
 }
 
-// Check if forward motion has finished.
-bool Motion::isForwardFinished() const { return forwardProfile.isFinished(); }
+bool Motion::isForwardFinished() const { return forward_profile_.isFinished(); }
 
-// ---------------- Rotational Motion ---------------- //
-
-// Start a turn profile without blocking.
-void Motion::startTurn(float angleDeg, float omega, float finalOmega,
+// -----------------------------------------------------------------------------
+// Rotational motion
+// -----------------------------------------------------------------------------
+void Motion::startTurn(float angle_deg, float omega, float final_omega,
                        float alpha) {
-  rotationProfile.start(angleDeg, omega, finalOmega, alpha);
+  // Record absolute IMU-based target angle (for truth-based completion).
+  const float current_deg = drivetrain_->getOdometry()->getAngleDeg();
+  target_angle_deg_ = current_deg + angle_deg;
+
+  // Provide IMU start angle to the profile so it can compute progress.
+  rotation_profile_.start(angle_deg, omega, final_omega, alpha, current_deg);
 }
 
-// Run turn motion with option to block until finished.
-void Motion::turn(float angleDeg, float omega, float finalOmega, float alpha,
+void Motion::turn(float angle_deg, float omega, float final_omega, float alpha,
                   bool blocking) {
-  startTurn(angleDeg, omega, finalOmega, alpha);
+  startTurn(angle_deg, omega, final_omega, alpha);
+  LOG_DEBUG("Starting turn: " + std::to_string(angle_deg) + " degrees");
+
   if (blocking) {
     while (!isTurnFinished()) {
       update();
-      sleep_ms(LOOP_INTERVAL_S * 1000);
+      LOG_DEBUG("Angle: " +
+                std::to_string(drivetrain_->getOdometry()->getAngleDeg()) +
+                " deg, Omega: " +
+                std::to_string(
+                    drivetrain_->getOdometry()->getAngularVelocityDegPerSec()) +
+                " deg/s");
+      sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
     }
   }
 }
 
-// Check if turn motion has finished.
-bool Motion::isTurnFinished() const { return rotationProfile.isFinished(); }
-
-// ---------------- Integrated Turns ---------------- //
-
-// Perform a smooth integrated turn (used with forward motion).
-void Motion::integratedTurn(float angleDeg, float omega, float alpha) {
-  rotationProfile.reset();
-  rotationProfile.move(angleDeg, omega, 0, alpha);
+bool Motion::isTurnFinished() const {
+  const float imu_angle = drivetrain_->getOdometry()->getAngleDeg();
+  const float err = Wrap180(target_angle_deg_ - imu_angle);
+  return std::fabs(err) < 1.0f;  // 1 degree tolerance
 }
 
-// Perform an in-place spin turn (forces forward velocity to zero).
-void Motion::spinTurn(float angleDeg, float omega, float alpha) {
-  drivetrain->runControl(0.0f, 0.0f, 0.0f);
-  integratedTurn(angleDeg, omega, alpha);
+// -----------------------------------------------------------------------------
+// Integrated turns
+// -----------------------------------------------------------------------------
+void Motion::integratedTurn(float angle_deg, float omega, float alpha) {
+  rotation_profile_.reset();
+  const float start_angle = drivetrain_->getOdometry()->getAngleDeg();
+  rotation_profile_.start(angle_deg, omega, 0.0f, alpha, start_angle);
 }
 
-// ---------------- Stopping Utilities ---------------- //
-
-// Stop at a specific target position.
-void Motion::stopAt(float targetMM) {
-  float remaining = targetMM - positionMM();
-  forwardProfile.move(remaining, velocityMMPerSec(), 0,
-                      accelerationMMPerSec2());
+void Motion::spinTurn(float angle_deg, float omega, float alpha) {
+  drivetrain_->runControl(0.0f, 0.0f, 0.0f);
+  integratedTurn(angle_deg, omega, alpha);
 }
 
-// Stop after moving a given distance.
-void Motion::stopAfter(float distanceMM) {
-  forwardProfile.move(distanceMM, velocityMMPerSec(), 0,
-                      accelerationMMPerSec2());
+// -----------------------------------------------------------------------------
+// Stopping utilities
+// -----------------------------------------------------------------------------
+void Motion::stopAt(float target_mm) {
+  // Build a decel profile to the specific position target.
+  const float current_pos = positionMM();
+  const float remaining = target_mm - current_pos;
+  forward_profile_.start(
+      remaining,
+      velocityMMPerSec(),  // use current speed as max to ramp down
+      0.0f,                // final stop
+      accelerationMMPerSec2(),
+      current_pos);  // start position (odometry)
 }
 
-// Wait until a target position is reached.
-void Motion::waitUntilPosition(float targetMM) {
-  while (positionMM() < targetMM) {
+void Motion::stopAfter(float distance_mm) {
+  // Build a decel profile beginning now for a relative distance.
+  const float current_pos = positionMM();
+  forward_profile_.start(distance_mm, velocityMMPerSec(), 0.0f,
+                         accelerationMMPerSec2(),
+                         current_pos);  // start position (odometry)
+}
+
+void Motion::waitUntilPosition(float target_mm) {
+  while (positionMM() < target_mm) {
     sleep_ms(2);
   }
 }
 
-// Wait until a relative distance has been travelled.
-void Motion::waitUntilDistance(float deltaMM) {
-  waitUntilPosition(positionMM() + deltaMM);
+void Motion::waitUntilDistance(float delta_mm) {
+  waitUntilPosition(positionMM() + delta_mm);
 }
 
-// ---------------- Update Loop ---------------- //
-
-// Update motion profiles and send control signals to drivetrain.
+// -----------------------------------------------------------------------------
+// Update loop
+// -----------------------------------------------------------------------------
 void Motion::update() {
-  forwardProfile.update();
-  rotationProfile.update();
-  drivetrain->runControl(forwardProfile.speed(), rotationProfile.speed(), 0.0f);
+  // Feed CURRENT odometry positions to the profiles so they can compute
+  // remaining.
+  const float current_mm = drivetrain_->getOdometry()->getDistanceMM();
+  const float current_deg = drivetrain_->getOdometry()->getAngleDeg();
+
+  forward_profile_.update(current_mm);
+  rotation_profile_.update(current_deg);
+
+  // Drivetrain expects forward (mm/s) and rotation (deg/s).
+  drivetrain_->runControl(forward_profile_.speed(), rotation_profile_.speed(),
+                          0.0f);
 }

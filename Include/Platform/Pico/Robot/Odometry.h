@@ -1,13 +1,14 @@
 #ifndef ODOMETRY_H
 #define ODOMETRY_H
 
-#include "../../../Include/Platform/Pico/config.h"
+#include "../../../Include/Platform/Pico/Config.h"
 #include "Encoder.h"
+#include "IMU.h"
 
 class Odometry {
  public:
-  // Constructor initializes with references to left and right encoders.
-  Odometry(Encoder* leftEncoder, Encoder* rightEncoder);
+  // Constructor initializes with references to left and right encoders and IMU.
+  Odometry(Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu);
 
   // Reset all odometry values to zero.
   void reset();
@@ -36,9 +37,11 @@ class Odometry {
  private:
   Encoder* leftEncoder;
   Encoder* rightEncoder;
+  IMU* imu;
 
   int lastLeftTicks;
   int lastRightTicks;
+  float lastAngleDeg;
 
   float totalDistanceMM;
   float totalAngleDeg;

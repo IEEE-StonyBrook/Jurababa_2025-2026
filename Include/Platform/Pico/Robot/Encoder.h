@@ -4,9 +4,11 @@
 #include <cstdint>
 
 #include "../../../External/QuadratureEncoder.h"
+#include "../../../Include/Common/LogSystem.h"
 #include "../Config.h"
 #include "hardware/pio.h"
 #include "pico/stdlib.h"
+
 
 class Encoder {
  public:
@@ -23,10 +25,10 @@ class Encoder {
   // Load the quadrature decoder PIO program once into hardware.
   void loadPIOProgram(PIO pioInstance);
 
-  PIO pioInstance;   // PIO block used by this encoder.
-  int stateMachine;  // State machine index for the PIO program.
-  int offsetTicks;   // Offset to allow software reset of tick count.
-  bool invertDirection; // Whether to invert the tick count direction.
+  PIO pioInstance;       // PIO block used by this encoder.
+  int stateMachine;      // State machine index for the PIO program.
+  int offsetTicks;       // Offset to allow software reset of tick count.
+  bool invertDirection;  // Whether to invert the tick count direction.
 };
 
 #endif

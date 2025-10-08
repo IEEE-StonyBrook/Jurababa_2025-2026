@@ -24,14 +24,14 @@ int main() {
   Encoder rightEncoder(pio0, 8, false);
   Motor leftMotor(18, 19, nullptr, true);
   Motor rightMotor(6, 7, nullptr, false);
-  Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder);
+  IMU imu(5);
+  Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder,
+                        &imu);
   Motion motion(&drivetrain);
 
   ToF leftToF(11, 'L');
   ToF frontToF(12, 'F');
   ToF rightToF(13, 'R');
-  IMU imu(5);
-  imu.resetIMUYawToZero();
 
   std::array<int, 2> startCell = {0, 0};
   std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
@@ -41,38 +41,36 @@ int main() {
 
   LOG_DEBUG("Initialization complete.");
   motion.resetDriveSystem();
+  LOG_DEBUG("Current yaw: " +
+            std::to_string(imu.getIMUYawDegreesNeg180ToPos180()));
 
   // // Run test sequence: F5 L F5.
-  // LOG_DEBUG("Running test sequence...");
-  // api.executeSequence("F5#");
+  LOG_DEBUG("Running test sequence...");
 
   // // Stop everything at the end (safety).
   motion.stop();
 
+  // LOG_DEBUG("Starting main loop...");
   while (true) {
-    // Idle loop (robot finished its path).
-    // LOG_DEBUG("Finished path.");
-    // sleep_ms(1000);
+    api.executeSequence("F#");
+
+    // // Command straight forward motion at 200 mm/s.
+    // drivetrain.runControl(500.0f, 0.0f, 0.0f);
+
+    // // Read actual wheel velocities.
+    // float vel = drivetrain.getOdometry()->getVelocityMMPerSec();
+    // float pos = drivetrain.getOdometry()->getDistanceMM();
+    // float ang = drivetrain.getOdometry()->getAngleDeg();
+    // float angVel = drivetrain.getOdometry()->getAngularVelocityDegPerSec();
+
+    // // Print commanded vs actual.
+    // LOG_DEBUG("Vel: " + std::to_string(vel) + " | Pos: " +
+    // std::to_string(pos) +
+    //           " | Ang: " + std::to_string(ang) +
+    //           " | Ang Vel: " + std::to_string(angVel));
+
+    sleep_ms(5000);
   }
-
-  // while (true) {
-  //   // Command straight forward motion at 200 mm/s.
-  //   drivetrain.runControl(400.0f, 0.0f, 0.0f);
-
-  //   // Read actual wheel velocities.
-  //   float vel = drivetrain.getOdometry()->getVelocityMMPerSec();
-  //   float pos = drivetrain.getOdometry()->getDistanceMM();
-  //   float ang = drivetrain.getOdometry()->getAngleDeg();
-  //   float angVel = drivetrain.getOdometry()->getAngularVelocityDegPerSec();
-
-  //   // Print commanded vs actual.
-  //   LOG_DEBUG("Vel: " + std::to_string(vel) +
-  //             " | Pos: " + std::to_string(pos) +
-  //             " | Ang: " + std::to_string(ang) +
-  //             " | Ang Vel: " + std::to_string(angVel));
-
-  //   sleep_ms((int)(LOOP_INTERVAL_S * 1000));
-  // }
 
   return 0;
 }
