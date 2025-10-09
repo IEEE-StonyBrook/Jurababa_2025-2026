@@ -53,6 +53,7 @@ void Profile::start(float distance, float maxSpeed, float finalSpeed,
   invAcceleration_ = (acceleration_ >= 1e-6f) ? (1.0f / acceleration_) : 1.0f;
 
   speed_ = 0.0f;
+  LOG_DEBUG("START: Starting acceleration phase.");
   state_ = State::Accelerating;
 }
 
@@ -60,13 +61,15 @@ void Profile::update(float currentPos) {
   if (state_ == State::Idle || state_ == State::Finished) return;
 
   float deltaV = acceleration_ * LOOP_INTERVAL_S;
+  LOG_DEBUG("IN LOOP: DeltaV: " + std::to_string(deltaV) + " mm/s");
   float remaining = remainingDistance(currentPos);
+  LOG_DEBUG("IN LOOP: Remaining Distance: " + std::to_string(remaining) + " mm");
 
   // Transition to braking if needed
   if (state_ == State::Accelerating && remaining < brakingDistance()) {
     state_ = State::Braking;
     targetSpeed_ = finalSpeed_;
-    LOG_DEBUG("Switching to braking phase.");
+    LOG_DEBUG("SLOWING DOWN: Switching to braking phase.");
   }
 
   // Adjust speed toward target
@@ -80,8 +83,10 @@ void Profile::update(float currentPos) {
   if (remaining < 1e-2f) {
     state_ = State::Finished;
     speed_ = finalSpeed_;
-    LOG_DEBUG("Profile finished. Target reached.");
+    LOG_DEBUG("FINISHED LOOP: Profile finished. Target reached.");
   }
+
+  LOG_DEBUG("IN LOOP: Current Speed: " + std::to_string(speed_) + " mm/s");
 }
 
 void Profile::stop() {

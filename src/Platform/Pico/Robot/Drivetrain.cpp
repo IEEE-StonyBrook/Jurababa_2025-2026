@@ -98,7 +98,7 @@ void Drivetrain::runControl(float forwardVelocityMMPerSec,
   targetAngularVel = angularVelocityDegPerSec;
 
   // LOG_DEBUG("Updating odometry...");
-  odometry.update();
+  odometry.update(); 
 
   // LOG_DEBUG("Calculating control outputs...");
   float forwardOut = forwardPD();
@@ -118,8 +118,8 @@ void Drivetrain::runControl(float forwardVelocityMMPerSec,
   leftOut += feedforwardLeft(leftWheelSpeed);
   rightOut += feedforwardRight(rightWheelSpeed);
 
-  LOG_DEBUG("Applying voltage of " + std::to_string(leftOut) + " V to left motor.");
-  LOG_DEBUG("Applying voltage of " + std::to_string(rightOut) + " V to right motor.");
+  // LOG_DEBUG("Applying voltage of " + std::to_string(leftOut) + " V to left motor.");
+  // LOG_DEBUG("Applying voltage of " + std::to_string(rightOut) + " V to right motor.");
   leftMotor->applyVoltage(leftOut);
   rightMotor->applyVoltage(rightOut);
 }
