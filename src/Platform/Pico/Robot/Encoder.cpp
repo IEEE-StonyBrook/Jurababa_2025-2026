@@ -57,5 +57,6 @@ int Encoder::getTickCount() const {
 
 // Reset encoder by storing current count as offset.
 void Encoder::reset() {
+  LOG_DEBUG("Resetting encoder...");
   offsetTicks = quadrature_encoder_get_count(pioInstance, stateMachine);
 }

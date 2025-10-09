@@ -1,9 +1,10 @@
 #include "../../../Include/Platform/Pico/Robot/Odometry.h"
 
 // Constructor initializes encoder references and resets state.
-Odometry::Odometry(Encoder* leftEncoder, Encoder* rightEncoder)
+Odometry::Odometry(Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu)
     : leftEncoder(leftEncoder),
       rightEncoder(rightEncoder),
+      imu(imu),
       lastLeftTicks(0),
       lastRightTicks(0),
       totalDistanceMM(0.0f),
@@ -13,17 +14,43 @@ Odometry::Odometry(Encoder* leftEncoder, Encoder* rightEncoder)
 
 // Reset odometry to zero.
 void Odometry::reset() {
+  LOG_DEBUG("Resetting encoders...");
   leftEncoder->reset();
   rightEncoder->reset();
+  LOG_DEBUG("Resetting IMU yaw to zero...");
+  imu->resetIMUYawToZero();
+  LOG_DEBUG("Clearing odometry state...");
   lastLeftTicks = 0;
   lastRightTicks = 0;
+  lastAngleDeg = 0.0f;
   totalDistanceMM = 0.0f;
   totalAngleDeg = 0.0f;
   deltaDistanceMM = 0.0f;
   deltaAngleDeg = 0.0f;
 }
 
-// Update odometry using encoder tick changes.
+// // Update odometry using encoder tick changes.
+// void Odometry::update() {
+//   int currentLeftTicks = leftEncoder->getTickCount();
+//   int currentRightTicks = rightEncoder->getTickCount();
+
+//   int deltaLeftTicks = currentLeftTicks - lastLeftTicks;
+//   int deltaRightTicks = currentRightTicks - lastRightTicks;
+
+//   lastLeftTicks = currentLeftTicks;
+//   lastRightTicks = currentRightTicks;
+
+//   float deltaLeftMM = deltaLeftTicks * MM_PER_TICK;
+//   float deltaRightMM = deltaRightTicks * MM_PER_TICK;
+
+//   deltaDistanceMM = 0.5f * (deltaLeftMM + deltaRightMM);
+//   deltaAngleDeg = (deltaRightMM - deltaLeftMM) * DEG_PER_MM_DIFFERENCE;
+
+//   totalDistanceMM += deltaDistanceMM;
+//   totalAngleDeg += deltaAngleDeg;
+// }
+
+// Update odometry using encoder tick changes and IMU angle.
 void Odometry::update() {
   int currentLeftTicks = leftEncoder->getTickCount();
   int currentRightTicks = rightEncoder->getTickCount();
@@ -36,9 +63,13 @@ void Odometry::update() {
 
   float deltaLeftMM = deltaLeftTicks * MM_PER_TICK;
   float deltaRightMM = deltaRightTicks * MM_PER_TICK;
-
   deltaDistanceMM = 0.5f * (deltaLeftMM + deltaRightMM);
-  deltaAngleDeg = (deltaRightMM - deltaLeftMM) * DEG_PER_MM_DIFFERENCE;
+
+  float currentAngleDeg = imu->getIMUYawDegreesNeg180ToPos180();
+  deltaAngleDeg = currentAngleDeg - lastAngleDeg;
+  if (deltaAngleDeg > 180.0f) deltaAngleDeg -= 360.0f;
+  if (deltaAngleDeg < -180.0f) deltaAngleDeg += 360.0f;
+  lastAngleDeg = currentAngleDeg;
 
   totalDistanceMM += deltaDistanceMM;
   totalAngleDeg += deltaAngleDeg;

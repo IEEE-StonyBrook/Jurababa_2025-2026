@@ -27,6 +27,7 @@ class IMU {
   const int uartRXPin;                            // RX pin used by UART.
   volatile int IMUBufferIndex;                       // Index for received bytes.
   uint8_t IMUBufferForYaw[IMU_PACKET_LEN];  // Packet buffer.
+  bool yawReady;                           // Whether a valid yaw has been read.
 
   float robotYawNeg180To180Degrees;  // Latest yaw reading.
   float resetOffSet;                 // Zero offset for yaw.

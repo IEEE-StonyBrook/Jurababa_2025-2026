@@ -4,9 +4,11 @@
 #include <cstdint>
 
 #include "../../../External/QuadratureEncoder.h"
+#include "../../../Include/Common/LogSystem.h"
 #include "../Config.h"
 #include "hardware/pio.h"
 #include "pico/stdlib.h"
+
 
 class Encoder {
  public:

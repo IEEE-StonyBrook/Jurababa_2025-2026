@@ -13,7 +13,7 @@
    TICKS_PER_REVOLUTION)  // Distance per tick.
 
 // Robot geometry.
-#define WHEEL_BASE_MM 86.8f  // Distance between left and right wheels.
+#define WHEEL_BASE_MM 85.0f  // Distance between left and right wheels.
 #define DEG_PER_MM_DIFFERENCE \
   (180.0f /                   \
    (3.14159265f * WHEEL_BASE_MM))  // Deg per mm difference between wheels.
@@ -53,11 +53,11 @@
   0.0000000f  // Right wheel acceleration gain reverse (volts per mm/s²).
 
 // Forward PD controller gains.
-#define FWD_KP 0.00f  // Proportional gain for forward error.
+#define FWD_KP 0.01f  // Proportional gain for forward error.
 #define FWD_KD 0.00f  // Derivative gain for forward error.
 
 // Rotation PD controller gains.
-#define ROT_KP 1.00f  // Proportional gain for rotation error.
+#define ROT_KP 0.1f  // Proportional gain for rotation error.
 #define ROT_KD 0.00f  // Derivative gain for rotation error.
 
 // ================== Motion Constants ================== //
@@ -66,14 +66,14 @@
 #define HALF_CELL_DISTANCE_MM 90.0f  // Half cell length in mm.
 
 // Linear speed/acceleration.
-#define FORWARD_TOP_SPEED 400.0f    // Max forward speed (mm/s).
-#define FORWARD_FINAL_SPEED 150.0f  // End speed for forward motions.
+#define FORWARD_TOP_SPEED 300.0f    // Max forward speed (mm/s).
+#define FORWARD_FINAL_SPEED 200.0f  // End speed for forward motions.
 #define FORWARD_ACCEL 500.0f        // Forward accel (mm/s^2).
 
 // Rotational speed/acceleration.
-#define TURN_TOP_SPEED 400.0f    // Max angular speed (deg/s).
-#define TURN_FINAL_SPEED 200.0f  // End angular speed.
-#define TURN_ACCEL 360.0f        // Angular accel (deg/s^2).
+#define TURN_TOP_SPEED 100.0f    // Max angular speed (deg/s).
+#define TURN_FINAL_SPEED 100.0f  // End angular speed.
+#define TURN_ACCEL 50.0f        // Angular accel (deg/s^2).
 
 // ================= IMU UART CONFIG ================= //
 #define IMU_UART_ID uart1            // UART interface used by IMU.

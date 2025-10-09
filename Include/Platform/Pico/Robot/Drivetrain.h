@@ -13,11 +13,12 @@
 #include "../../../Include/Platform/Pico/Config.h"
 #include "Motor.h"
 #include "Odometry.h"
+#include "IMU.h"
 
 class Drivetrain {
  public:
   Drivetrain(Motor* leftMotor, Motor* rightMotor, Encoder* leftEncoder,
-             Encoder* rightEncoder);
+             Encoder* rightEncoder, IMU* imu);
 
   // Reset odometry and all controller states.
   void reset();
