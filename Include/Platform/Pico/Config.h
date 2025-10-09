@@ -68,7 +68,7 @@
 // Linear speed/acceleration.
 #define FORWARD_TOP_SPEED 300.0f    // Max forward speed (mm/s).
 #define FORWARD_FINAL_SPEED 200.0f  // End speed for forward motions.
-#define FORWARD_ACCEL 500.0f        // Forward accel (mm/s^2).
+#define FORWARD_ACCEL 20.0f        // Forward accel (mm/s^2).
 
 // Rotational speed/acceleration.
 #define TURN_TOP_SPEED 100.0f    // Max angular speed (deg/s).
