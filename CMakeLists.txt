@@ -53,6 +53,7 @@ add_executable(Jurababa
     Src/Maze/MazeNode.cpp
     Src/Navigation/AStarSolver.cpp
     Src/Navigation/PathConverter.cpp
+    Src/Navigation/Diagonalizer.cpp
     Src/Platform/Pico/API.cpp
     # Src/Platform/Simulator/API.cpp
     Src/Main.cpp

@@ -32,9 +32,8 @@ static void core1_publisher() {
     // Motors
     Motor leftMotor(18, 19, nullptr, true);
     Motor rightMotor(6, 7, nullptr, false);
-    Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder, &imu);
+    Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder);
     Motion motion(&drivetrain);
-    
     // LOG_DEBUG("CORE1 Init")
     // Signal Core0 that Core1 is ready
     multicore_fifo_push_blocking(1);
@@ -284,3 +283,4 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath) {
 //   // Stop motors at the end of the test.
 //   leftMotor.stopMotor();
 //   rightMotor.stopMotor();
+// }
