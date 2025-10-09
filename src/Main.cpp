@@ -49,27 +49,28 @@ int main() {
 
   // // Stop everything at the end (safety).
   motion.stop();
+  api.goToCenterFromEdge();
+  sleep_ms(2000);
+  api.executeSequence("F#F#F#F#L#F#F#F#F#L#F#F#F#F#L#F#F#F#L#F#F#F#L#F#F#L#F#F#L#F#L#F# ");
 
+  // // Command straight forward motion at 200 mm/s.
+  // drivetrain.runControl(500.0f, 0.0f, 0.0f);
+
+  // // Read actual wheel velocities.
+  // float vel = drivetrain.getOdometry()->getVelocityMMPerSec();
+  // float pos = drivetrain.getOdometry()->getDistanceMM();
+  // float ang = drivetrain.getOdometry()->getAngleDeg();
+  // float angVel = drivetrain.getOdometry()->getAngularVelocityDegPerSec();
+
+  // // Print commanded vs actual.
+  // LOG_DEBUG("Vel: " + std::to_string(vel) + " | Pos: " +
+  // std::to_string(pos) +
+  //           " | Ang: " + std::to_string(ang) +
+  //           " | Ang Vel: " + std::to_string(angVel));
+
+  sleep_ms(5000);
   // LOG_DEBUG("Starting main loop...");
   while (true) {
-    api.executeSequence("F#");
-
-    // // Command straight forward motion at 200 mm/s.
-    // drivetrain.runControl(500.0f, 0.0f, 0.0f);
-
-    // // Read actual wheel velocities.
-    // float vel = drivetrain.getOdometry()->getVelocityMMPerSec();
-    // float pos = drivetrain.getOdometry()->getDistanceMM();
-    // float ang = drivetrain.getOdometry()->getAngleDeg();
-    // float angVel = drivetrain.getOdometry()->getAngularVelocityDegPerSec();
-
-    // // Print commanded vs actual.
-    // LOG_DEBUG("Vel: " + std::to_string(vel) + " | Pos: " +
-    // std::to_string(pos) +
-    //           " | Ang: " + std::to_string(ang) +
-    //           " | Ang Vel: " + std::to_string(angVel));
-
-    sleep_ms(5000);
   }
 
   return 0;

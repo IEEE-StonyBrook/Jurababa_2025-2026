@@ -30,6 +30,10 @@ void API::moveForward(int steps) {
   internalMouse->moveIMForwardOneCell(steps);
 }
 
+void API::goToCenterFromEdge() {
+  motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+}
+
 void API::turnLeft45() {
   if (runOnSimulator) getSimulatorResponse("turnLeft45");
   // else motion->turn(-45.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);

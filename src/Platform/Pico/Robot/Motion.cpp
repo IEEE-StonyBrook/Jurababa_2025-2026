@@ -65,8 +65,8 @@ void Motion::forward(float distance_mm, float top_speed, float final_speed,
   if (blocking) {
     while (!isForwardFinished()) {
       // LOG_DEBUG("IsForwardFinished: " + std::to_string(isForwardFinished()));
-      // LOG_DEBUG("Pos: " + std::to_string(positionMM()) +
-      //           " mm, Speed: " + std::to_string(velocityMMPerSec()) + " mm/s");
+      LOG_DEBUG("Pos: " + std::to_string(positionMM()) +
+                " mm, Speed: " + std::to_string(velocityMMPerSec()) + " mm/s");
       // LOG_DEBUG("Angle: " + std::to_string(angleDeg()) +
       //           " deg, Omega: " + std::to_string(omegaDegPerSec()) + " deg/s");
       update();

@@ -35,6 +35,7 @@ class API {
   void turnLeft90();
   void turnRight45();
   void turnRight90();
+  void goToCenterFromEdge();
   void turn(int degrees);
 
   // Execute command sequence like "L90#F5#R45".
