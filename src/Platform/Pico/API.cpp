@@ -87,6 +87,7 @@ void API::executeSequence(const std::string& sequence) {
       turn(value > 0 ? value : 90);
     }
   }
+  CommandHub::send(CommandType::STOP); // Ensure stop at end
 }
 
 // ================== Maze State ================== //

@@ -85,23 +85,13 @@ static void core1_publisher() {
     Motor rightMotor(6, 7, nullptr, false);
     Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder, &imu);
     Motion motion(&drivetrain);
-    
-    // LOG_DEBUG("CORE1 Init")
-    // Signal Core0 that Core1 is ready
-    multicore_fifo_push_blocking(1);
-    
-
-    // API api(&drivetrain, &mouse, &motion); // ERROR: mouse undeclared
 
     LOG_DEBUG("Initialization complete.");
     motion.resetDriveSystem();
 
-    // // Run test sequence: F5 L F5.
-    // LOG_DEBUG("Running test sequence...");
-    // api.executeSequence("F5#");
-
-    // // Stop everything at the end (safety).
-    motion.stop();
+    // LOG_DEBUG("CORE1 Init")
+    // Signal Core0 that Core1 is ready
+    multicore_fifo_push_blocking(1);
 
     // Optional: set initial velocity
     // leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f, 0.0f, 0.0f);
@@ -134,6 +124,8 @@ int main() {
   MazeGraph maze(16, 16);
   InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
   API api(&mouse);
+  
+  api.executeSequence("F#F#F#F#");
 
   // Maze logic objects
   // AStarSolver aStar(&mouse);
