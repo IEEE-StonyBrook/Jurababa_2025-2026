@@ -1,7 +1,7 @@
 #include "../../../Include/Platform/Pico/API.h"
 
-API::API(Drivetrain* drivetrain, InternalMouse* internalMouse, Motion* motion)
-    : drivetrain(drivetrain), internalMouse(internalMouse), motion(motion), runOnSimulator(false) {}
+API::API(InternalMouse* internalMouse)
+    : internalMouse(internalMouse), runOnSimulator(false) {}
 
 int API::mazeWidth()  { return internalMouse->getMazeWidth(); }
 int API::mazeHeight() { return internalMouse->getMazeHeight(); }
@@ -15,52 +15,49 @@ bool API::wallRight() { return runOnSimulator ? getSimulatorBoolResponse("wallRi
 
 void API::moveForwardHalf() {
   if (runOnSimulator) getSimulatorResponse("moveForwardHalf");
-  else motion->forward(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+  else CommandHub::send(CommandType::MOVE_FWD_HALF);
+  internalMouse->moveIMForwardOneCell(0.5f); // or handle in core0 with half-cell update
 }
 
 void API::moveForward() {
   if (runOnSimulator) getSimulatorResponse("moveForward");
-  else motion->forward(CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+  else CommandHub::send(CommandType::MOVE_FWD, 1);
   internalMouse->moveIMForwardOneCell(1);
 }
 
-void API::moveForward(int steps) { 
+void API::moveForward(int steps) {
   if (runOnSimulator) getSimulatorResponse("moveForward" + std::to_string(steps));
-  else motion->forward(steps * CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+  else CommandHub::send(CommandType::MOVE_FWD, steps);
   internalMouse->moveIMForwardOneCell(steps);
 }
 
 void API::turnLeft45() {
   if (runOnSimulator) getSimulatorResponse("turnLeft45");
-  // else motion->turn(-45.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-  motion->spinTurn(-45.0f, TURN_TOP_SPEED, TURN_ACCEL);
+  else CommandHub::send(CommandType::TURN_LEFT, 45);
   internalMouse->turnIM45DegreeStepsRight(-1);
 }
 
 void API::turnLeft90() {
   if (runOnSimulator) getSimulatorResponse("turnLeft90");
-  // else motion->turn(-90.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-  motion->spinTurn(-90.0f, TURN_TOP_SPEED, TURN_ACCEL);
+  else CommandHub::send(CommandType::TURN_LEFT, 90);
   internalMouse->turnIM45DegreeStepsRight(-2);
 }
 
 void API::turnRight45() {
   if (runOnSimulator) getSimulatorResponse("turnRight45");
-  // else motion->turn(45.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-  motion->spinTurn(45.0f, TURN_TOP_SPEED, TURN_ACCEL);
+  else CommandHub::send(CommandType::TURN_RIGHT, 45);
   internalMouse->turnIM45DegreeStepsRight(1);
 }
 
 void API::turnRight90() {
   if (runOnSimulator) getSimulatorResponse("turnRight90");
-  // else motion->turn(90.0f, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-  motion->spinTurn(90.0f, TURN_TOP_SPEED, TURN_ACCEL);
+  else CommandHub::send(CommandType::TURN_RIGHT, 90);
   internalMouse->turnIM45DegreeStepsRight(2);
 }
 
 void API::turn(int degrees) {
   if (runOnSimulator) getSimulatorResponse("turn" + std::to_string(degrees));
-  else motion->turn((float)degrees, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+  else CommandHub::send(CommandType::TURN_ARBITRARY, degrees);
   internalMouse->turnIM45DegreeStepsRight(degrees / 45);
 }
 

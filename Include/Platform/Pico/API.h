@@ -12,11 +12,12 @@
 #include "../../Maze/InternalMouse.h"
 #include "Robot/Drivetrain.h"
 #include "Robot/Motion.h"
+#include "CommandHub.h"
 
 
 class API {
  public:
-  API(Drivetrain* drivetrain, InternalMouse* internalMouse, Motion* motion);
+  API(InternalMouse* internalMouse);
 
   // Maze dimensions.
   int mazeWidth();

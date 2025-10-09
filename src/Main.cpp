@@ -18,6 +18,57 @@
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
+void publishSensors(Encoder* leftEncoder, Encoder* rightEncoder, ToF* leftToF, ToF* frontToF, ToF* rightToF, IMU* imu) {
+  // Read sensors
+  //LOG_DEBUG("CORE1 Read")
+  MulticoreSensorData local{};
+  local.left_encoder_count = leftEncoder->getTickCount();
+  local.right_encoder_count = rightEncoder->getTickCount();
+  local.tof_left_mm = static_cast<int16_t>(leftToF->getToFDistanceFromWallMM());
+  local.tof_front_mm = static_cast<int16_t>(frontToF->getToFDistanceFromWallMM());
+  local.tof_right_mm = static_cast<int16_t>(rightToF->getToFDistanceFromWallMM());
+  local.imu_yaw = imu->getIMUYawDegreesNeg180ToPos180();
+  local.timestamp_ms = to_ms_since_boot(get_absolute_time());
+
+  // Publish sensor snapshot to Core0
+  MulticoreSensorHub::publish(local);
+  // MulticoreSensorData test{};
+  // MulticoreSensorHub::snapshot(test);
+  // LOG_DEBUG("Left encoder CORE1: " + std::to_string(local.left_encoder_count));
+  // LOG_DEBUG("Front ToF CORE1: " + std::to_string(local.tof_front_mm));
+  // LOG_DEBUG("Left TEST encoder CORE1: " + std::to_string(test.left_encoder_count));
+  // LOG_DEBUG("Front TEST ToF CORE1: " + std::to_string(test.tof_front_mm));
+}
+
+void processCommand(Motion* motion) {
+  if (CommandHub::hasPendingCommands()) {
+    CommandPacket cmd = CommandHub::receiveBlocking();
+    switch (cmd.type) {
+      case CommandType::MOVE_FWD_HALF:
+        motion->forward(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+        break;
+      case CommandType::MOVE_FWD:
+        motion->forward(cmd.param * CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+        break;
+      case CommandType::TURN_LEFT:
+        motion->spinTurn(-cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        break;
+      case CommandType::TURN_RIGHT:
+        motion->spinTurn(cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        break;
+      case CommandType::STOP:
+        motion->stop();
+        break;
+      case CommandType::TURN_ARBITRARY:
+        motion->spinTurn(cmd.param, TURN_TOP_SPEED, TURN_ACCEL); 
+        break;
+      default:
+        LOG_ERROR("Unknown command type received.");
+        break;
+    }
+  }
+}
+
 // Example publisher run on core1: read sensors and publish into hub
 static void core1_publisher() {
   // Sensors
@@ -50,32 +101,16 @@ static void core1_publisher() {
     // api.executeSequence("F5#");
 
     // // Stop everything at the end (safety).
-    // motion.stop();
+    motion.stop();
 
     // Optional: set initial velocity
     // leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f, 0.0f, 0.0f);
     // leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
     // LOG_DEBUG("CORE1 Loop")
     while (true) {
-        // Read sensors
-         //LOG_DEBUG("CORE1 Read")
-        MulticoreSensorData local{};
-        local.left_encoder_count = leftEncoder.getTickCount();
-        local.right_encoder_count = rightEncoder.getTickCount();
-        local.tof_left_mm = static_cast<int16_t>(leftToF.getToFDistanceFromWallMM());
-        local.tof_front_mm = static_cast<int16_t>(frontToF.getToFDistanceFromWallMM());
-        local.tof_right_mm = static_cast<int16_t>(rightToF.getToFDistanceFromWallMM());
-        local.imu_yaw = imu.getIMUYawDegreesNeg180ToPos180();
-        local.timestamp_ms = to_ms_since_boot(get_absolute_time());
+        processCommand(&motion);
+        publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
 
-        // Publish sensor snapshot to Core0
-        MulticoreSensorHub::publish(local);
-        // MulticoreSensorData test{};
-        // MulticoreSensorHub::snapshot(test);
-        // LOG_DEBUG("Left encoder CORE1: " + std::to_string(local.left_encoder_count));
-        // LOG_DEBUG("Front ToF CORE1: " + std::to_string(local.tof_front_mm));
-        // LOG_DEBUG("Left TEST encoder CORE1: " + std::to_string(test.left_encoder_count));
-        // LOG_DEBUG("Front TEST ToF CORE1: " + std::to_string(test.tof_front_mm));
 
         sleep_ms(250);
     }
@@ -98,6 +133,7 @@ int main() {
   std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
   MazeGraph maze(16, 16);
   InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
+  API api(&mouse);
 
   // Maze logic objects
   // AStarSolver aStar(&mouse);
