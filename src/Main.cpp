@@ -86,15 +86,15 @@ void processCommand(Motion* motion)
 // Publisher for Core1: All robot specific logic
 static void core1_Publisher()
 {
-    spi_init(spi0, 1000000);              // 1 MHz
+    spi_init(spi1, 1000000);              // 1 MHz
     gpio_set_function(18, GPIO_FUNC_SPI); // SCK
     gpio_set_function(19, GPIO_FUNC_SPI); // MOSI
     gpio_set_function(16, GPIO_FUNC_SPI); // MISO
-    spi_set_format(spi0, 16, SPI_CPOL_1, SPI_CPHA_1, SPI_MSB_FIRST);
+    spi_set_format(spi1, 16, SPI_CPOL_1, SPI_CPHA_1, SPI_MSB_FIRST);
 
     // Sensors
-    Encoder leftEncoder(spi0, 9);
-    Encoder rightEncoder(spi0, 13);
+    Encoder leftEncoder(spi1, 9);
+    Encoder rightEncoder(spi1, 13);
     leftEncoder.init();
     rightEncoder.init();
     ToF leftToF(0, 'L');
