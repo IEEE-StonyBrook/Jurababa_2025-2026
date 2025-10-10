@@ -52,15 +52,15 @@ void Motor::applyPWM(float dutyCycle) {
   pwm_set_chan_level(pwmSliceNumber, forward ? backwardChannel : forwardChannel,
                      0);
 
-  LOG_DEBUG("[Motor] applyPWM -> Duty=" + std::to_string(dutyCycle) +
-            " (" + (forward ? "FWD" : "REV") +
-            "), PWM=" + std::to_string(pwmLevel));
+  // LOG_DEBUG("[Motor] applyPWM -> Duty=" + std::to_string(dutyCycle) +
+  //           " (" + (forward ? "FWD" : "REV") +
+  //           "), PWM=" + std::to_string(pwmLevel));
 }
 
 void Motor::applyVoltage(float desiredVolts) {
   float batteryVolts = DEFAULT_BATTERY_VOLTAGE;
   if (batteryVolts < 1.0f) {
-    LOG_ERROR("[Motor] Invalid battery voltage reading!");
+    // LOG_ERROR("[Motor] Invalid battery voltage reading!");
     return;
   }
 
@@ -69,16 +69,16 @@ void Motor::applyVoltage(float desiredVolts) {
   // Deadband check
   if (std::fabs(desiredVolts) > 1e-3f && std::fabs(desiredVolts) < DEADBAND_MOTOR_VOLTS) {
     desiredVolts = (desiredVolts > 0 ? +DEADBAND_MOTOR_VOLTS : -DEADBAND_MOTOR_VOLTS);
-    LOG_DEBUG("[Motor] Deadband adjust: " + std::to_string(original) +
-              " V -> " + std::to_string(desiredVolts) + " V");
+    // LOG_DEBUG("[Motor] Deadband adjust: " + std::to_string(original) +
+    //           " V -> " + std::to_string(desiredVolts) + " V");
   }
 
   desiredVolts = std::clamp(desiredVolts, -batteryVolts, batteryVolts);
   float dutyCycle = desiredVolts / batteryVolts;
 
-  LOG_DEBUG("[Motor] applyVoltage: " + std::to_string(original) +
-            " V req -> " + std::to_string(desiredVolts) +
-            " V clamped, Duty=" + std::to_string(dutyCycle));
+  // LOG_DEBUG("[Motor] applyVoltage: " + std::to_string(original) +
+  //           " V req -> " + std::to_string(desiredVolts) +
+  //           " V clamped, Duty=" + std::to_string(dutyCycle));
   applyPWM(dutyCycle);
 }
 

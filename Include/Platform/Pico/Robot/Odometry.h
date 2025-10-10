@@ -1,38 +1,31 @@
 #ifndef ODOMETRY_H
 #define ODOMETRY_H
 
-#include "../../../Include/Platform/Pico/Config.h"
 #include "Encoder.h"
 #include "IMU.h"
+#include "../../../Include/Common/LogSystem.h"
+#include "../../../Include/Platform/Pico/Config.h"
 
 class Odometry {
  public:
-  // Constructor initializes with references to left and right encoders and IMU.
   Odometry(Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu);
 
-  // Reset all odometry values to zero.
   void reset();
-
-  // Update odometry values. Must be called once per control loop.
   void update();
 
-  // Return total forward distance traveled in millimeters.
+  // Robot-level metrics
   float getDistanceMM() const;
-
-  // Return current forward velocity in millimeters per second.
   float getVelocityMMPerSec() const;
-
-  // Return current robot heading angle in degrees.
   float getAngleDeg() const;
-
-  // Return angular velocity in degrees per second.
   float getAngularVelocityDegPerSec() const;
-
-  // Return forward distance change since last update in millimeters.
   float getDeltaDistanceMM() const;
-
-  // Return rotation change since last update in degrees.
   float getDeltaAngleDeg() const;
+
+  // Wheel-level metrics
+  float getLeftWheelVelocityMMPerSec() const;
+  float getRightWheelVelocityMMPerSec() const;
+  float getLeftDeltaMM() const;
+  float getRightDeltaMM() const;
 
  private:
   Encoder* leftEncoder;
@@ -43,10 +36,15 @@ class Odometry {
   int lastRightTicks;
   float lastAngleDeg;
 
+  // Robot-level
   float totalDistanceMM;
   float totalAngleDeg;
   float deltaDistanceMM;
   float deltaAngleDeg;
+
+  // Wheel-level
+  float deltaLeftMM;
+  float deltaRightMM;
 };
 
 #endif

@@ -56,7 +56,8 @@ void processCommand(Motion* motion) {
         LOG_DEBUG("[Motion] Forward " + std::to_string(cmd.param) + " cells");
         motion->forward(cmd.param * CELL_DISTANCE_MM, FORWARD_TOP_SPEED,
                         FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
-        LOG_DEBUG("[Motion] Completed Forward " + std::to_string(cmd.param) + " cells");
+        LOG_DEBUG("[Motion] Completed Forward " + std::to_string(cmd.param) +
+                  " cells");
         break;
       case CommandType::TURN_LEFT:
         LOG_DEBUG("[Motion] Turn Left 90");
@@ -75,7 +76,8 @@ void processCommand(Motion* motion) {
       case CommandType::TURN_ARBITRARY:
         LOG_DEBUG("[Motion] Turn " + std::to_string(cmd.param) + " deg");
         motion->turn(cmd.param, TURN_TOP_SPEED, 0.0f, TURN_ACCEL, true);
-        LOG_DEBUG("[Motion] Completed Turn " + std::to_string(cmd.param) + " deg");
+        LOG_DEBUG("[Motion] Completed Turn " + std::to_string(cmd.param) +
+                  " deg");
         break;
       case CommandType::CENTER_FROM_EDGE:
         LOG_DEBUG("[Motion] Center from edge");
@@ -104,10 +106,16 @@ static void core1_publisher() {
   // Motors + drivetrain
   Motor leftMotor(18, 19, nullptr, true);
   Motor rightMotor(6, 7, nullptr, false);
-  Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder,
-                        &imu, &leftToF, &frontToF, &rightToF);
+  Odometry odometry(&leftEncoder, &rightEncoder, &imu);
+  Drivetrain drivetrain(&leftMotor, &rightMotor, &odometry,
+                        &leftToF, &frontToF, &rightToF);
   Motion motion(&drivetrain);
 
+  while (true) {
+	drivetrain.runControl(300.0f, 0.0f, 0.0f);
+
+	sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
+  }
   LOG_DEBUG("[Core1] Initialization complete.");
   motion.resetDriveSystem();
 
@@ -142,7 +150,7 @@ int main() {
   LOG_DEBUG("[Main] Maze and API initialized.");
 
   // Example: execute path
-  api.executeSequence("L#");
+//   api.executeSequence("L#");
   // api.executeSequence("R#");
 
   while (true) {
@@ -152,7 +160,8 @@ int main() {
     if (CommandHub::hasPendingCommands()) {
       CommandPacket cmd = CommandHub::receiveBlocking();
       if (cmd.type == CommandType::SNAPSHOT) {
-        LOG_DEBUG("[Snapshot] Mask=" + std::to_string((uint32_t)(SensorMask)cmd.param));
+        LOG_DEBUG("[Snapshot] Mask=" +
+                  std::to_string((uint32_t)(SensorMask)cmd.param));
         if (sensors.tof_left_exist) mouse.setWallExistsLFR('L');
         if (sensors.tof_front_exist) mouse.setWallExistsLFR('F');
         if (sensors.tof_right_exist) mouse.setWallExistsLFR('R');
@@ -174,12 +183,19 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath) {
 
   for (std::string t : tokens) {
     LOG_DEBUG("[Interpreter] Token=" + t);
-    if (t == "R") apiPtr->turnRight90();
-    else if (t == "L") apiPtr->turnLeft90();
-    else if (t == "F") apiPtr->moveForward();
-    else if (t == "R45") apiPtr->turnRight45();
-    else if (t == "L45") apiPtr->turnLeft45();
-    else if (t == "FH") apiPtr->moveForwardHalf();
-    else LOG_ERROR("[Interpreter] Unknown token: " + t);
+    if (t == "R")
+      apiPtr->turnRight90();
+    else if (t == "L")
+      apiPtr->turnLeft90();
+    else if (t == "F")
+      apiPtr->moveForward();
+    else if (t == "R45")
+      apiPtr->turnRight45();
+    else if (t == "L45")
+      apiPtr->turnLeft45();
+    else if (t == "FH")
+      apiPtr->moveForwardHalf();
+    else
+      LOG_ERROR("[Interpreter] Unknown token: " + t);
   }
 }

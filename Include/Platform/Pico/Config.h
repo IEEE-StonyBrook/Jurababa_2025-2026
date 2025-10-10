@@ -54,15 +54,35 @@
 #define ACC_FBR \
   0.0000000f  // Right wheel acceleration gain reverse (volts per mm/s²).
 
-// Forward position controller gains
-#define FWD_KP 0.012f   // Proportional gain per mm error
-#define FWD_KI 0.000f  // Integral gain per mm*s error
-#define FWD_KD 0.020f   // Derivative gain on filtered diff
+// Left wheel PID gains
+#define LEFT_KP 0.0f
+#define LEFT_KI 0.0f
+#define LEFT_KD 0.0f
 
-// Rotation position controller gains
-#define ROT_KP 1.0f
-#define ROT_KI 0.0f
-#define ROT_KD 0.05f
+// Right wheel PID gains
+#define RIGHT_KP 0.0f
+#define RIGHT_KI 0.0f
+#define RIGHT_KD 0.0f
+
+// Derivative filter (0 = no filtering, 1 = frozen)
+#define DERIV_ALPHA 0.8f
+
+/*
+
+// Left wheel PID gains
+#define LEFT_KP       1.0f
+#define LEFT_KI       0.0f
+#define LEFT_KD       0.05f
+
+// Right wheel PID gains
+#define RIGHT_KP      1.0f
+#define RIGHT_KI      0.0f
+#define RIGHT_KD      0.05f
+
+// Derivative filter (0 = no filtering, 1 = frozen)
+#define DERIV_ALPHA   0.8f  
+
+*/
 
 // 0.15f
 
