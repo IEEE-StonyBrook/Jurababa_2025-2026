@@ -57,6 +57,9 @@ void Motor::applyVoltage(float desiredVolts) {
   float batteryVolts = DEFAULT_BATTERY_VOLTAGE;
   if (batteryVolts < 1.0f) return;  // Guard against invalid ADC read.
 
+  if (desiredVolts < MIN_VOLTAGE && desiredVolts > -MIN_VOLTAGE && std::fabs(desiredVolts) > 1e-3f) {
+    desiredVolts = MIN_VOLTAGE * (desiredVolts >= 0.0f ? 1.0f : -1.0f);
+  }
   // Converts desired volts to duty cycle ratio.
   float dutyCycle = desiredVolts / batteryVolts;
   applyPWM(dutyCycle);

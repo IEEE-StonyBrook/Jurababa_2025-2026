@@ -62,6 +62,9 @@ class Drivetrain {
   float targetForwardVel;  // mm/s
   float targetAngularVel;  // deg/s
 
+  float m_velocity; // Current forward velocity target
+  float m_omega;    // Current angular velocity target
+
   // Errors for PD control.
   float forwardError;
   float rotationError;

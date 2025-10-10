@@ -1,7 +1,16 @@
 #include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
 
+#include <cmath>
+
+
+const float RADIANS_PER_DEGREE = 2 * 3.14152790 / 360.0;
+const float DEGREES_PER_RADIAN = 360.0 / 2 * 3.14152790;
+const bool m_feedforward_enabled = true;
+const bool m_controller_output_enabled = true;
+
 Drivetrain::Drivetrain(Motor* leftMotor, Motor* rightMotor,
-                       Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF)
+                       Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu,
+                       ToF* leftToF, ToF* frontToF, ToF* rightToF)
     : leftMotor(leftMotor),
       rightMotor(rightMotor),
       odometry(leftEncoder, rightEncoder, imu),
@@ -24,111 +33,58 @@ void Drivetrain::reset() {
 }
 
 float Drivetrain::forwardPID() {
-    // Update accumulated forward error (Harrison-style)
-    float expectedDelta = targetForwardVel * LOOP_INTERVAL_S;
-    float measuredDelta = odometry.getDeltaDistanceMM();
-    forwardError += expectedDelta - measuredDelta;
-
-    // Derivative on error (with low-pass filter)
-    float rawDiff = forwardError - prevForwardError;
-    prevForwardError = forwardError;
-
-    static float derivFilt = 0.0f;
-    const float alpha = 0.2f;  // smoothing factor (0..1)
-    derivFilt += alpha * (rawDiff - derivFilt);
-
-    // Explicit integral term
-    static float fwdInt = 0.0f;
-    fwdInt += forwardError * LOOP_INTERVAL_S;
-
-    // Anti-windup clamp
-    const float INT_LIM = 200.0f;
-    if (fwdInt > INT_LIM) fwdInt = INT_LIM;
-    if (fwdInt < -INT_LIM) fwdInt = -INT_LIM;
-
-    // PID output
-    return (FWD_KP * forwardError) + (FWD_KI * fwdInt) + (FWD_KD * derivFilt);
+  float increment = targetForwardVel * LOOP_INTERVAL_S;
+  forwardError += increment - odometry.getDeltaDistanceMM();
+  float diff = forwardError - prevForwardError;
+  prevForwardError = forwardError;
+  float output = FWD_KP * forwardError + FWD_KD * diff;
+  return output;
 }
 
 float Drivetrain::rotationPID(float steeringCorrection) {
-    // Update accumulated rotation error (Harrison-style)
-    float expectedDelta = targetAngularVel * LOOP_INTERVAL_S;   // deg
-    float measuredDelta = odometry.getDeltaAngleDeg();          // deg
-    rotationError += expectedDelta - measuredDelta;
-
-    // Add steering correction (treated like an extra angular error)
-    rotationError += steeringCorrection;
-
-    // Derivative on error (with low-pass filter)
-    float rawDiff = rotationError - prevRotationError;
-    prevRotationError = rotationError;
-
-    static float derivFilt = 0.0f;
-    const float alpha = 0.2f;
-    derivFilt += alpha * (rawDiff - derivFilt);
-
-    // Explicit integral term
-    static float rotInt = 0.0f;
-    rotInt += rotationError * LOOP_INTERVAL_S;
-
-    // Anti-windup clamp
-    const float INT_LIM = 30.0f;
-    if (rotInt > INT_LIM) rotInt = INT_LIM;
-    if (rotInt < -INT_LIM) rotInt = -INT_LIM;
-
-    // PID output
-    return (ROT_KP * rotationError) + (ROT_KI * rotInt) + (ROT_KD * derivFilt);
+  float increment = targetAngularVel * LOOP_INTERVAL_S;
+  rotationError += increment - odometry.getDeltaAngleDeg();
+  rotationError += steeringCorrection;
+  float diff = rotationError - prevRotationError;
+  prevRotationError = rotationError;
+  float output = ROT_KP * rotationError + ROT_KD * diff;
+  return output;
 }
-
-// float Drivetrain::rotationPID(float steeringCorrection) {
-//     float actualRate = odometry.getDeltaAngleDeg() / LOOP_INTERVAL_S; // deg/sec
-//     float error = targetAngularVel - actualRate;
-//     error += steeringCorrection;
-//     float errorRate = error - prevRotationError;
-//     prevRotationError = error;
-//     return (ROT_KP * error) + (ROT_KD * errorRate);
-// }
 
 // Predict left motor voltage from wheel speed and acceleration.
 float Drivetrain::feedforwardLeft(float wheelSpeed) {
-  static float lastSpeed = 0.0f;
-  float voltage = 0.0f;
-
+  static float oldSpeed = wheelSpeed;
+  float leftFF = wheelSpeed * SPEED_FFL;
   if (wheelSpeed > 0) {
-    // Forward: slope + static bias.
-    voltage = (SPEED_FFL * wheelSpeed) + BIAS_FFL;
+    leftFF += BIAS_FFL;
   } else if (wheelSpeed < 0) {
-    // Reverse: slope + static bias.
-    voltage = (SPEED_FBL * wheelSpeed) - BIAS_FBL;
+    leftFF -= BIAS_FFL;
+  } else {
+    // No bias when the speed is 0
   }
-
-  // Acceleration contribution.
-  float accel = (wheelSpeed - lastSpeed) * LOOP_FREQUENCY_HZ;
-  lastSpeed = wheelSpeed;
-  voltage += (ACC_FFL * accel);
-
-  return voltage;
+  float acc = (wheelSpeed - oldSpeed) * LOOP_FREQUENCY_HZ;
+  oldSpeed = wheelSpeed;
+  float accFF = ACC_FFL * acc;
+  leftFF += accFF;
+  return leftFF;
 }
 
 // Predict right motor voltage from wheel speed and acceleration.
 float Drivetrain::feedforwardRight(float wheelSpeed) {
-  static float lastSpeed = 0.0f;
-  float voltage = 0.0f;
-
+  static float oldSpeed = wheelSpeed;
+  float rightFF = wheelSpeed * SPEED_FFR;
   if (wheelSpeed > 0) {
-    // Forward.
-    voltage = (SPEED_FFR * wheelSpeed) + BIAS_FFR;
+    rightFF += BIAS_FFR;
   } else if (wheelSpeed < 0) {
-    // Reverse.
-    voltage = (SPEED_FBR * wheelSpeed) - BIAS_FBR;
+    rightFF -= BIAS_FFR;
+  } else {
+    // No bias when the speed is 0
   }
-
-  // Acceleration contribution.
-  float accel = (wheelSpeed - lastSpeed) * LOOP_FREQUENCY_HZ;
-  lastSpeed = wheelSpeed;
-  voltage += (ACC_FFR * accel);
-
-  return voltage;
+  float acc = (wheelSpeed - oldSpeed) * LOOP_FREQUENCY_HZ;
+  oldSpeed = wheelSpeed;
+  float accFF = ACC_FFR * acc;
+  rightFF += accFF;
+  return rightFF;
 }
 
 bool Drivetrain::isWallLeft() {
@@ -147,42 +103,28 @@ bool Drivetrain::isWallRight() {
 void Drivetrain::runControl(float forwardVelocityMMPerSec,
                             float angularVelocityDegPerSec,
                             float steeringCorrection) {
-  targetForwardVel = forwardVelocityMMPerSec;
-  targetAngularVel = angularVelocityDegPerSec;
+  m_velocity = forwardVelocityMMPerSec;
+  m_omega = angularVelocityDegPerSec;
+  float pos_output = forwardPID();
+  float rot_output = rotationPID(steeringCorrection);
+  float left_output = 0;
+  float right_output = 0;
+  left_output = pos_output - rot_output;
+  right_output = pos_output + rot_output;
 
-  // LOG_DEBUG("Updating odometry...");
-  odometry.update(); 
-
-  // LOG_DEBUG("Calculating control outputs...");
-  float forwardOut = forwardPID();
-  float rotationOut = -rotationPID(steeringCorrection);
-
-  // Combine forward and rotation control.
-  float leftOut = forwardOut - rotationOut;
-  float rightOut = forwardOut + rotationOut;
-  // LOG_DEBUG("Left PD Output: " + std::to_string(leftOut));
-  // LOG_DEBUG("Right PD Output: " + std::to_string(rightOut));
-  // LOG_DEBUG("Forward Output: " + std::to_string(forwardOut));
-  // LOG_DEBUG("Rotation Output: " + std::to_string(rotationOut));
-
-  // Calculate wheel speeds for feedforward terms. 
-  float tangentSpeed =
-      (targetAngularVel * (M_PI / 180.0f)) * (WHEEL_BASE_MM / 2.0f);
-  float leftWheelSpeed = targetForwardVel - tangentSpeed;
-  float rightWheelSpeed = targetForwardVel + tangentSpeed; 
-  // LOG_DEBUG("Left Wheel Speed: " + std::to_string(leftWheelSpeed) + " mm/s");
-  // LOG_DEBUG("Right Wheel Speed: " + std::to_string(rightWheelSpeed) + " mm/s");
-
-  // Add feedforward predictions.
-  leftOut += -feedforwardLeft(leftWheelSpeed);
-  rightOut += -feedforwardRight(rightWheelSpeed);
-  // LOG_DEBUG ("Left FF Output: " + std::to_string(feedforwardLeft(leftWheelSpeed)));
-  // LOG_DEBUG ("Right FF Output: " + std::to_string(feedforwardRight(rightWheelSpeed)));
-
-  LOG_DEBUG("Applying voltage of " + std::to_string(leftOut) + " V to left motor.");
-  LOG_DEBUG("Applying voltage of " + std::to_string(rightOut) + " V to right motor.");
-  leftMotor->applyVoltage(leftOut);
-  rightMotor->applyVoltage(rightOut);
+  float tangent_speed = m_omega * WHEEL_BASE_MM / 2 * RADIANS_PER_DEGREE;
+  float left_speed = m_velocity - tangent_speed;
+  float right_speed = m_velocity + tangent_speed;
+  float left_ff = feedforwardLeft(left_speed);
+  float right_ff = feedforwardRight(right_speed);
+  if (m_feedforward_enabled) {
+    left_output += left_ff;
+    right_output += right_ff;
+  }
+  if (m_controller_output_enabled) {
+    leftMotor->applyVoltage(left_output);
+    rightMotor->applyVoltage(right_output);
+  }
 }
 
 void Drivetrain::stop() {

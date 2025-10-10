@@ -143,9 +143,8 @@ int main() {
   InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
   API api(&mouse);
 
-//   api.goToCenterFromEdge();
-//   api.executeSequence("F#F#F#F#L#F#");
-api.executeSequence("L#");
+  api.goToCenterFromEdge();
+  api.executeSequence("F#F#F#L#F#");
   // api.executeSequence("R#");
   // CommandHub::send(CommandType::MOVE_FWD, 1);
   // CommandHub::send(CommandType::TURN_RIGHT, 45);
