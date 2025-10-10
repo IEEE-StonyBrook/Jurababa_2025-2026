@@ -1,29 +1,28 @@
-#ifndef FRONTIERBASEDSEARCHSOLVER_H
-#define FRONTIERBASEDSEARCHSOLVER_H
+#ifndef FRONTIER_BASED_SEARCH_SOLVER_H
+#define FRONTIER_BASED_SEARCH_SOLVER_H
 
-#include <unordered_map>
 #include <unordered_set>
-
-#include "../Maze/InternalMouse.h"
+#include <unordered_map>
 #include "../Platform/Simulator/API.h"
+#include "../Maze/MazeNode.h"
+#include "../Maze/InternalMouse.h"
 
 class FrontierBasedSearchSolver {
  public:
   FrontierBasedSearchSolver(API* api, InternalMouse* internalMouse,
-                            bool diagMovementAllowed = false);
-  ~FrontierBasedSearchSolver();
+                            bool diagMovementAllowed);
 
   void exploreMaze();
 
  private:
-  MazeNode* getOptimalFrontierToExploreNext();
-  std::unordered_map<MazeNode*, float> getBFSCosts(MazeNode* startBFSCell);
-
   API* api;
   InternalMouse* internalMouse;
   bool diagMovementAllowed;
 
   std::unordered_set<MazeNode*> frontierNodes;
+
+  MazeNode* getOptimalFrontierToExploreNext();
+  std::unordered_map<MazeNode*, float> getBFSCosts(MazeNode* startBFSCell);
 };
 
-#endif
+#endif  // FRONTIER_BASED_SEARCH_SOLVER_H

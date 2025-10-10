@@ -10,7 +10,7 @@ $(shell mkdir -p $(OUTDIR))
 # Source file groups
 VIRTUAL_SRCS = Src/Maze/InternalMouse.cpp Src/Maze/MazeGraph.cpp Src/Maze/MazeNode.cpp
 UTILS_SRC = Src/Common/LogSystem.cpp
-SOLVER_SRCS = Src/Navigation/AStarSolver.cpp Src/Navigation/PathConverter.cpp
+SOLVER_SRCS = Src/Navigation/AStarSolver.cpp Src/Navigation/PathConverter.cpp Src/Navigation/Diagonalizer.cpp Src/Navigation/FrontierBasedSearchSolver.cpp
 MAIN_SRCS = Src/Platform/Simulator/API.cpp Src/Main.cpp
 
 # Combine all sources

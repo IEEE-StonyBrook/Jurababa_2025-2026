@@ -160,3 +160,14 @@ std::vector<std::array<int, 2>> InternalMouse::getPossibleDirectionArrays() {
 
   return directionArrays;
 }
+
+void InternalMouse::setCurrentPosition(MazeNode* node) {
+    currentRobotPosition = {node->getCellXPos(), node->getCellYPos()};
+    // NOTE: this only updates position, not direction.
+    // If you want to also adjust heading, you’ll need to add logic
+    // based on previous node vs new node.
+}
+
+std::vector<std::array<int, 2>> InternalMouse::getGoalCells() {
+    return goalCells;
+}

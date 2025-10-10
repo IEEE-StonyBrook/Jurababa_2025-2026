@@ -4,6 +4,7 @@
 
 #include "../Include/Common/LogSystem.h"
 #include "../Include/Navigation/AStarSolver.h"
+#include "../Include/Navigation/FrontierBasedSearchSolver.h"
 #include "../Include/Platform/Simulator/API.h"
 
 #ifdef USING_ROBOT
@@ -12,6 +13,7 @@
 #endif
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
+void detectWalls(API& api, InternalMouse& internalMouse);
 
 int main() {
   const bool RUN_ON_SIMULATOR = true;
@@ -28,6 +30,9 @@ int main() {
   API api(&mouse, RUN_ON_SIMULATOR);
   api.setUp(startCell, goalCells);
   api.printMaze();
+
+  FrontierBasedSearchSolver frontierSolver(&api, &mouse, true);
+  frontierSolver.exploreMaze();
 
 #ifdef USING_ROBOT
   stdio_init_all();
@@ -46,9 +51,10 @@ int main() {
 #endif
   // Maze logic objects
   AStarSolver aStar(&mouse);
-  std::string path = aStar.go(goalCells, true, true);
-  LOG_DEBUG(path);
-  interpretLFRPath(&api, path);
+  // std::string path = aStar.go(goalCells, true, true);
+  // LOG_DEBUG(path);
+  // interpretLFRPath(&api, path);
+
   // while (true) {
   //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
   // }
@@ -85,4 +91,79 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath) {
       LOG_ERROR("Main.cpp: Unknown token: " + t);
     }
   }
+}
+
+bool goIterativeAStar(API* apiPtr, InternalMouse* mouse,
+                      AStarSolver* aStar,
+                      std::vector<std::array<int, 2>> goalCells,
+                      bool diagonalsAllowed = true,
+                      bool passThroughGoalCells = false) {
+    MazeNode* currNode = mouse->getCurrentRobotNode();
+
+    while (true) {
+        // 1. Goal check
+        if (mouse->isAGoalCell(currNode)) {
+            LOG_INFO("Reached goal at (" +
+                     std::to_string(currNode->getCellXPos()) + "," +
+                     std::to_string(currNode->getCellYPos()) + ")");
+            return true;
+        }
+
+        // 2. Get path from A*
+        std::string lfrPath =
+            aStar->go(goalCells, diagonalsAllowed, passThroughGoalCells);
+
+        if (lfrPath.empty()) {
+            LOG_ERROR("No path found!");
+            return false;
+        }
+        LOG_INFO("A* path: " + lfrPath);
+
+        // 3. Diagonalize if allowed
+        if (diagonalsAllowed) {
+            lfrPath = Diagonalizer::diagonalize(lfrPath);
+            LOG_INFO("Diagonalized path: " + lfrPath);
+        }
+
+        // 4. Take only the first move
+        std::stringstream ss(lfrPath);
+        std::string move;
+        if (!std::getline(ss, move, '#') || move.empty()) {
+            LOG_ERROR("Bad path token!");
+            return false;
+        }
+
+        // 5. Execute the move
+        apiPtr->executeSequence(move);
+
+        // 6. Update exploration
+        currNode = mouse->getCurrentRobotNode();
+        if (!currNode->getCellIsExplored()) {
+            LOG_DEBUG("[RE-CALC] New unexplored node at (" +
+                      std::to_string(currNode->getCellXPos()) + "," +
+                      std::to_string(currNode->getCellYPos()) + ")");
+            detectWalls(*apiPtr, *mouse);
+            currNode->markAsExplored();
+        }
+    }
+}
+
+void detectWalls(API& api, InternalMouse& internalMouse) {
+    // Check and set walls based on the internal mouse's perception
+    if (internalMouse.getCurrentRobotNode()->getIsWall('n')) {
+        api.setWall(internalMouse.getCurrentRobotNode()->getCellXPos(),
+                    internalMouse.getCurrentRobotNode()->getCellYPos(), "n");
+    }
+    if (internalMouse.getCurrentRobotNode()->getIsWall('e')) {
+        api.setWall(internalMouse.getCurrentRobotNode()->getCellXPos(),
+                    internalMouse.getCurrentRobotNode()->getCellYPos(), "e");
+    }
+    if (internalMouse.getCurrentRobotNode()->getIsWall('s')) {
+        api.setWall(internalMouse.getCurrentRobotNode()->getCellXPos(),
+                    internalMouse.getCurrentRobotNode()->getCellYPos(), "s");
+    }
+    if (internalMouse.getCurrentRobotNode()->getIsWall('w')) {
+        api.setWall(internalMouse.getCurrentRobotNode()->getCellXPos(),
+                    internalMouse.getCurrentRobotNode()->getCellYPos(), "w");
+    }
 }

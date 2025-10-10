@@ -39,6 +39,9 @@ class InternalMouse {
 
   std::vector<std::array<int, 2>> getPossibleDirectionArrays();
 
+  void setCurrentPosition(MazeNode* node);
+  std::vector<std::array<int, 2>> getGoalCells();
+
  private:
   int indexOfDirection(std::string direction);
   std::string getNewDirectionAfterAddingHalfStepsRight(int halfStepsRight);

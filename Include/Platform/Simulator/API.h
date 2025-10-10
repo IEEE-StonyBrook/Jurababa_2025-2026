@@ -178,6 +178,7 @@ class API {
   void printMaze();
   bool runOnSimulator;
 
+  void executeSequence(const std::string& seq);
  private:
   InternalMouse* internalMouse;
 
