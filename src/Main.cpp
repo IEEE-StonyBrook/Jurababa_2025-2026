@@ -4,6 +4,7 @@
 #include "../Include/Common/LogSystem.h"
 #include "../Include/Navigation/AStarSolver.h"
 #include "../Include/Platform/Pico/API.h"
+#include "../Include/Platform/Pico/Config.h"
 #include "../Include/Platform/Pico/MulticoreSensors.h"
 #include "../Include/Platform/Pico/Robot/Battery.h"
 #include "../Include/Platform/Pico/Robot/Drivetrain.h"
@@ -19,215 +20,229 @@
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
-void publishSensors(Encoder* leftEncoder,
-                    Encoder* rightEncoder,
-                    ToF* leftToF,
-                    ToF* frontToF,
-                    ToF* rightToF,
-                    IMU* imu) {
-  // Read Sensors
-  MulticoreSensorData local{};
-  local.left_encoder_count = leftEncoder->getTickCount();
-  local.right_encoder_count = rightEncoder->getTickCount();
-  local.tof_left_mm = static_cast<int16_t>(leftToF->getToFDistanceFromWallMM());
-  local.tof_front_mm =
-      static_cast<int16_t>(frontToF->getToFDistanceFromWallMM());
-  local.tof_right_mm =
-      static_cast<int16_t>(rightToF->getToFDistanceFromWallMM());
-  local.imu_yaw = imu->getIMUYawDegreesNeg180ToPos180();
-  local.timestamp_ms = to_ms_since_boot(get_absolute_time());
+void publishSensors(Encoder* leftEncoder, Encoder* rightEncoder, ToF* leftToF, ToF* frontToF,
+                    ToF* rightToF, IMU* imu)
+{
+    // Read Sensors
+    MulticoreSensorData local{};
+    local.left_encoder_count  = leftEncoder->getTickCount();
+    local.right_encoder_count = rightEncoder->getTickCount();
+    local.tof_left_mm         = static_cast<int16_t>(leftToF->getToFDistanceFromWallMM());
+    local.tof_front_mm        = static_cast<int16_t>(frontToF->getToFDistanceFromWallMM());
+    local.tof_right_mm        = static_cast<int16_t>(rightToF->getToFDistanceFromWallMM());
+    local.imu_yaw             = imu->getIMUYawDegreesNeg180ToPos180();
+    local.timestamp_ms        = to_ms_since_boot(get_absolute_time());
 
-  // Publish sensor snapshot to Core0
-  MulticoreSensorHub::publish(local);
-  // MulticoreSensorData test{};
-  // MulticoreSensorHub::snapshot(test);
-  // LOG_DEBUG("Left encoder CORE1: " +
-  // std::to_string(local.left_encoder_count)); LOG_DEBUG("Front ToF CORE1: " +
-  // std::to_string(local.tof_front_mm)); LOG_DEBUG("Left TEST encoder CORE1: "
-  // + std::to_string(test.left_encoder_count)); LOG_DEBUG("Front TEST ToF
-  // CORE1: " + std::to_string(test.tof_front_mm));
+    // Publish sensor snapshot to Core0
+    MulticoreSensorHub::publish(local);
+    // MulticoreSensorData test{};
+    // MulticoreSensorHub::snapshot(test);
+    // LOG_DEBUG("Left encoder CORE1: " +
+    // std::to_string(local.left_encoder_count)); LOG_DEBUG("Front ToF CORE1: " +
+    // std::to_string(local.tof_front_mm)); LOG_DEBUG("Left TEST encoder CORE1: "
+    // + std::to_string(test.left_encoder_count)); LOG_DEBUG("Front TEST ToF
+    // CORE1: " + std::to_string(test.tof_front_mm));
 }
 
-void processCommand(Motion* motion) {
-  if (CommandHub::hasPendingCommands()) {
-    CommandPacket cmd = CommandHub::receiveBlocking();
-    switch (cmd.type) {
-      case CommandType::MOVE_FWD_HALF:
-        motion->forward(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED,
-                        FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
-        break;
-      case CommandType::MOVE_FWD:
-        motion->forward(cmd.param * CELL_DISTANCE_MM, FORWARD_TOP_SPEED,
-                        FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
-        break;
-      case CommandType::TURN_LEFT:
-        motion->turn(-cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL,
-                     true);
-        break;
-      case CommandType::TURN_RIGHT:
-        motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL,
-                     true);
-        break;
-      case CommandType::STOP:
-        motion->stop();
-        break;
-      case CommandType::TURN_ARBITRARY:
-        motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL,
-                     true);
-        break;
-      case CommandType::CENTER_FROM_EDGE:
-        motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED,
-                        FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
-        break;
+void processCommand(Motion* motion)
+{
+    if (CommandHub::hasPendingCommands())
+    {
+        CommandPacket cmd = CommandHub::receiveBlocking();
+        switch (cmd.type)
+        {
+            case CommandType::MOVE_FWD_HALF:
+                motion->forward(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED,
+                                FORWARD_ACCEL, true);
+                break;
+            case CommandType::MOVE_FWD:
+                motion->forward(cmd.param * CELL_DISTANCE_MM, FORWARD_TOP_SPEED,
+                                FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+                break;
+            case CommandType::TURN_LEFT:
+                motion->turn(-cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+                break;
+            case CommandType::TURN_RIGHT:
+                motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+                break;
+            case CommandType::STOP:
+                motion->stop();
+                break;
+            case CommandType::TURN_ARBITRARY:
+                motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
+                break;
+            case CommandType::CENTER_FROM_EDGE:
+                motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED,
+                                FORWARD_ACCEL, true);
+                break;
 
-      default:
-        LOG_ERROR("Unknown command type received.");
-        break;
+            default:
+                LOG_ERROR("Unknown command type received.");
+                break;
+        }
     }
-  }
 }
 
 // Publisher for Core1: All robot specific logic
-static void core1_Publisher() {
-  Bluetooth bt(uart0, 16, 17, 9600);
-  bt.init();
-  
-  // Bluetooth
-  LogSystem::attachBluetooth(&bt);
-  LOG_INFO("System initialized");
-  LOG_DEBUG("Bluetooth logging enabled");
+static void core1_Publisher()
+{
+    Bluetooth bt(uart0, 16, 17, 9600);
+    bt.init();
 
-  // Sensors
-  Encoder leftEncoder(pio0, 20, true);
-  Encoder rightEncoder(pio0, 8, false);  // was 7
-  ToF leftToF(11, 'L');
-  ToF frontToF(12, 'F');
-  ToF rightToF(13, 'R');
-  IMU imu(5);
-  imu.resetIMUYawToZero();
+    // Bluetooth
+    LogSystem::attachBluetooth(&bt);
+    LOG_INFO("System initialized");
+    LOG_DEBUG("Bluetooth logging enabled");
 
-  // Motors
-  Motor leftMotor(18, 19, nullptr, true);
-  Motor rightMotor(6, 7, nullptr, false);
-  Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder,
-                        &imu, &leftToF, &frontToF, &rightToF);
-  Motion motion(&drivetrain);
+    // Sensors
+    Encoder leftEncoder(pio0, 20, true);
+    Encoder rightEncoder(pio0, 8, false); // was 7
+    ToF     leftToF(11, 'L');
+    ToF     frontToF(12, 'F');
+    ToF     rightToF(13, 'R');
+    IMU     imu(5);
+    imu.resetIMUYawToZero();
 
-  LOG_DEBUG("Initialization complete.");
-  motion.resetDriveSystem();
+    // Motors
+    Motor      leftMotor(18, 19, nullptr, true);
+    Motor      rightMotor(6, 7, nullptr, false);
+    Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder, &imu, &leftToF,
+                          &frontToF, &rightToF);
+    Motion     motion(&drivetrain);
 
-  multicore_fifo_push_blocking(1);  // Signal Core0 that Core1 is ready
+    LOG_DEBUG("Initialization complete.");
+    motion.resetDriveSystem();
 
-  while (true) {
-    processCommand(&motion);
-    publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF,
-                   &imu);
+    multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
 
-    sleep_ms(250);
-  }
+    while (true)
+    {
+        processCommand(&motion);
+        publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
+
+        sleep_ms(250);
+    }
 }
 
-int main() {
-  stdio_init_all();
-  sleep_ms(3000);
+int main()
+{
+    stdio_init_all();
+    sleep_ms(3000);
 
-  MulticoreSensorHub::init();
-  multicore_launch_core1(core1_Publisher);
+    MulticoreSensorHub::init();
+    multicore_launch_core1(core1_Publisher);
 
-  // Wait until Core1 signals it finished initializing its sensors
-  multicore_fifo_pop_blocking();
+    // Wait until Core1 signals it finished initializing its sensors
+    multicore_fifo_pop_blocking();
 
-  // Maze / planning objects
-  std::array<int, 2> startCell = {0, 0};
-  std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
-  MazeGraph maze(16, 16);
-  InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
-  API api(&mouse);
+    // Maze / planning objects
+    std::array<int, 2>              startCell = {0, 0};
+    std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
+    MazeGraph                       maze(16, 16);
+    InternalMouse                   mouse(startCell, std::string("n"), goalCells, &maze);
+    API                             api(&mouse);
 
-  api.goToCenterFromEdge();
-  api.executeSequence("F#F#F#F#L#F#");
-  // CommandHub::send(CommandType::MOVE_FWD, 1);
-  // CommandHub::send(CommandType::TURN_RIGHT, 45);
-  // CommandHub::send(CommandType::MOVE_FWD, 2);
+    api.goToCenterFromEdge();
+    api.executeSequence("F#F#F#F#L#F#");
 
-  // std::string path = aStar.go(goalCells, true, true);
-  // LOG_DEBUG(path);
-  // interpretLFRPath(&api, path);
-  // // while (true) {
-  // //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
-  // // }
-  // LOG_DEBUG("Initialize")
-  // Main loop: high-level planning, sensor reads, etc.
-  while (true) {
-    // LOG_DEBUG("Loop")
-    MulticoreSensorData sensors;
-    MulticoreSensorHub::snapshot(sensors);  // lock-free read
+    // std::string path = aStar.go(goalCells, true, true);
+    // LOG_DEBUG(path);
+    // interpretLFRPath(&api, path);
+    // // while (true) {
+    // //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
+    // // }
+    // LOG_DEBUG("Initialize")
+    // Main loop: high-level planning, sensor reads, etc.
+    while (true)
+    {
+        // LOG_DEBUG("Loop")
+        MulticoreSensorData sensors;
+        MulticoreSensorHub::snapshot(sensors); // lock-free read
 
-    if (CommandHub::hasPendingCommands()) {
-      CommandPacket cmd = CommandHub::receiveBlocking();
-      if (cmd.type == CommandType::SNAPSHOT) {
-        LOG_DEBUG("Snapshot received with mask: " +
-                  std::to_string(static_cast<uint32_t>(
-                      static_cast<SensorMask>(cmd.param))));
-        if (sensors.tof_left_exist) {
-          mouse.setWallExistsLFR('L');
-          LOG_DEBUG("Left ToF Detects Wall" +
-                    std::to_string(sensors.tof_left_exist));
+        if (CommandHub::hasPendingCommands())
+        {
+            CommandPacket cmd = CommandHub::receiveBlocking();
+            if (cmd.type == CommandType::SNAPSHOT)
+            {
+                LOG_DEBUG(
+                    "Snapshot received with mask: " +
+                    std::to_string(static_cast<uint32_t>(static_cast<SensorMask>(cmd.param))));
+                if (sensors.tof_left_exist)
+                {
+                    mouse.setWallExistsLFR('L');
+                    LOG_DEBUG("Left ToF Detects Wall" + std::to_string(sensors.tof_left_exist));
+                }
+                if (sensors.tof_front_exist)
+                {
+                    mouse.setWallExistsLFR('F');
+                    LOG_DEBUG("Front ToF Detects Wall" + std::to_string(sensors.tof_front_exist));
+                }
+                if (sensors.tof_right_exist)
+                {
+                    mouse.setWallExistsLFR('R');
+                    LOG_DEBUG("Right ToF Detects Wall" + std::to_string(sensors.tof_right_exist));
+                }
+            }
         }
-        if (sensors.tof_front_exist) {
-          mouse.setWallExistsLFR('F');
-          LOG_DEBUG("Front ToF Detects Wall" +
-                    std::to_string(sensors.tof_front_exist));
-        }
-        if (sensors.tof_right_exist) {
-          mouse.setWallExistsLFR('R');
-          LOG_DEBUG("Right ToF Detects Wall" +
-                    std::to_string(sensors.tof_right_exist));
-        }
-      }
+
+        // Example: print sensor values or feed into planner
+        // LOG_DEBUG("\nLeft encoder: " +
+        // std::to_string(sensors.left_encoder_count)); LOG_DEBUG("\nFront ToF: " +
+        // std::to_string(sensors.tof_front_mm)); LOG_DEBUG("\nIMU_YAW: " +
+        // std::to_string(sensors.imu_yaw));
+
+        sleep_ms(250);
     }
-
-    // Example: print sensor values or feed into planner
-    // LOG_DEBUG("\nLeft encoder: " +
-    // std::to_string(sensors.left_encoder_count)); LOG_DEBUG("\nFront ToF: " +
-    // std::to_string(sensors.tof_front_mm)); LOG_DEBUG("\nIMU_YAW: " +
-    // std::to_string(sensors.imu_yaw));
-
-    sleep_ms(250);
-  }
-  return 0;
+    return 0;
 }
 
-void interpretLFRPath(API* apiPtr, std::string lfrPath) {
-  std::stringstream ss(lfrPath);
-  std::string token;
+void interpretLFRPath(API* apiPtr, std::string lfrPath)
+{
+    std::stringstream ss(lfrPath);
+    std::string       token;
 
-  // Seperate into tokens.
-  std::vector<std::string> tokens;
-  while (std::getline(ss, token, '#')) {
-    if (!token.empty()) {
-      tokens.push_back(token);
+    // Seperate into tokens.
+    std::vector<std::string> tokens;
+    while (std::getline(ss, token, '#'))
+    {
+        if (!token.empty())
+        {
+            tokens.push_back(token);
+        }
     }
-  }
 
-  // Go through each token and run movement.
-  for (std::string t : tokens) {
-    if (t == "R") {
-      apiPtr->turnRight90();
-    } else if (t == "L") {
-      apiPtr->turnLeft90();
-    } else if (t == "F") {
-      apiPtr->moveForward();
-    } else if (t == "R45") {
-      apiPtr->turnRight45();
-    } else if (t == "L45") {
-      apiPtr->turnLeft45();
-    } else if (t == "FH") {
-      apiPtr->moveForwardHalf();
-    } else {
-      LOG_ERROR("Main.cpp: Unknown token: " + t);
+    // Go through each token and run movement.
+    for (std::string t : tokens)
+    {
+        if (t == "R")
+        {
+            apiPtr->turnRight90();
+        }
+        else if (t == "L")
+        {
+            apiPtr->turnLeft90();
+        }
+        else if (t == "F")
+        {
+            apiPtr->moveForward();
+        }
+        else if (t == "R45")
+        {
+            apiPtr->turnRight45();
+        }
+        else if (t == "L45")
+        {
+            apiPtr->turnLeft45();
+        }
+        else if (t == "FH")
+        {
+            apiPtr->moveForwardHalf();
+        }
+        else
+        {
+            LOG_ERROR("Main.cpp: Unknown token: " + t);
+        }
     }
-  }
 }
 
 // /**

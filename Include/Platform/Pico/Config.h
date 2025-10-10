@@ -108,4 +108,5 @@
 #define TOF_RIGHT_WALL_THRESHOLD_MM 100
 #define TOF_FRONT_WALL_THRESHOLD_MM 120
 
+#define CORE_SLEEP_MS 250 // Sleep time for core loops
 #endif

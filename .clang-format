@@ -1,2 +1,36 @@
+# .clang-format
+---
+# Base your settings on a known style to reduce defaults you need to override
+BasedOnStyle: LLVM
+
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never        # no tabs, only spaces
+
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+
+ColumnLimit: 100
+
+DerivePointerAlignment: false
+PointerAlignment: Left  # prefer `int *ptr` vs `int* ptr`
+
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments: true
+AlignConsecutiveDeclarations: true
+AlignConsecutiveMacros: true
+
+SpaceBeforeParens: ControlStatements  # e.g. `if (`, `for (` but not in function definitions
+SpaceInEmptyParentheses: false
+SpacesInParentheses: false
+SpacesInContainerLiterals: false
+SpaceInEmptyBlock: false
+
+AllowAllParametersOfDeclarationOnNextLine: false
+
+BreakBeforeBraces: Allman  # Or “Attach” if you prefer K&R style
+
+# For C++ specific overrides
 Language: Cpp
-BasedOnStyle: Chromium
+IndentCaseLabels: true
