@@ -6,27 +6,27 @@
 
 #include "MazeNode.h"
 
-class MazeGraph {
- public:
-  MazeGraph(int mazeNumRows, int mazeNumCols);
-  ~MazeGraph();
+class MazeGraph
+{
+  public:
+    MazeGraph(int mazeNumRows, int mazeNumCols);
+    ~MazeGraph();
 
-  MazeNode* getNode(int nodePosX, int nodePosY);
-  std::vector<MazeNode*> getNodeNeighbors(MazeNode* node,
-                                          bool includeDiagNeighbors = false);
+    MazeNode*              getNode(int nodePosX, int nodePosY);
+    std::vector<MazeNode*> getNodeNeighbors(MazeNode* node, bool includeDiagNeighbors = false);
 
-  int getMazeWidth();
-  int getMazeHeight();
-  void printASCIIMaze();
-  
- private:
-  void createCellsInMaze();
-  void linkNeighboringCellsInMaze();
+    int  getMazeWidth();
+    int  getMazeHeight();
+    void printASCIIMaze();
 
-  std::string stringifyTopMazeEdge();
-  std::string stringifyMazeRow(int rowIndex);
+  private:
+    void createCellsInMaze();
+    void linkNeighboringCellsInMaze();
 
-  std::vector<std::vector<MazeNode*>> cellMaze;
+    std::string stringifyTopMazeEdge();
+    std::string stringifyMazeRow(int rowIndex);
+
+    std::vector<std::vector<MazeNode*>> cellMaze;
 };
 
 #endif

@@ -1,39 +1,41 @@
 #pragma once
 
+#include "pico/multicore.h"
 #include "pico/mutex.h"
 #include "pico/stdlib.h"
-#include "pico/multicore.h"
-#include <cstdint>
 #include <array>
+#include <cstdint>
 #include <functional>
+
 #define USE_MULTICORE_SENSORS
 
-
-enum class SensorMask : uint32_t {
-    ALL = 0,
-    LEFT_ENCODER = 1 << 0,
-    RIGHT_ENCODER = 1 << 1,
-    TOF_LEFT = 1 << 2,
-    TOF_FRONT = 1 << 3,
-    TOF_RIGHT = 1 << 4,
-    IMU_YAW = 1 << 5,
-    TOF_LEFT_EXIST = 1 << 6,
+enum class SensorMask : uint32_t
+{
+    ALL             = 0,
+    LEFT_ENCODER    = 1 << 0,
+    RIGHT_ENCODER   = 1 << 1,
+    TOF_LEFT        = 1 << 2,
+    TOF_FRONT       = 1 << 3,
+    TOF_RIGHT       = 1 << 4,
+    IMU_YAW         = 1 << 5,
+    TOF_LEFT_EXIST  = 1 << 6,
     TOF_FRONT_EXIST = 1 << 7,
     TOF_RIGHT_EXIST = 1 << 8
 };
 
 // Shared sensor data layout. Adjust fields to match your actual sensors.
-struct MulticoreSensorData {
-    int32_t left_encoder_count = 0;
-    int32_t right_encoder_count = 0;
-    int16_t tof_left_mm = 0;
-    int16_t tof_front_mm = 0;
-    int16_t tof_right_mm = 0;
-    bool tof_left_exist = false;
-    bool tof_front_exist = false;
-    bool tof_right_exist = false;
-    float imu_yaw = 0.0f;
-    uint64_t timestamp_ms = 0;
+struct MulticoreSensorData
+{
+    int32_t  left_encoder_count  = 0;
+    int32_t  right_encoder_count = 0;
+    int16_t  tof_left_mm         = 0;
+    int16_t  tof_front_mm        = 0;
+    int16_t  tof_right_mm        = 0;
+    bool     tof_left_exist      = false;
+    bool     tof_front_exist     = false;
+    bool     tof_right_exist     = false;
+    float    imu_yaw             = 0.0f;
+    uint64_t timestamp_ms        = 0;
 
     SensorMask valid_sensors = SensorMask::ALL;
 };
@@ -41,26 +43,29 @@ struct MulticoreSensorData {
 // Header-only singleton-style hub for publishing/snapshotting sensor data
 // across cores using pico mutex. Keep the critical sections short: publish
 // or snapshot copies the whole struct under mutex, then returns.
-class MulticoreSensorHub {
-public:
+class MulticoreSensorHub
+{
+  public:
     // Initialize the hub (must be called before use)
-    static inline void init() {
-        mutex_init(&get_mutex());
-    }
+    static inline void init() { mutex_init(&get_mutex()); }
 
     // Publish a new snapshot from the producer core.
     // This copies `data` into the shared store while holding the mutex.
-    static inline void publish(const MulticoreSensorData &data) {
+    static inline void publish(const MulticoreSensorData& data)
+    {
         mutex_enter_blocking(&get_mutex());
 
-        MulticoreSensorData &back = buffers[get_back_index()];
+        MulticoreSensorData& back = buffers[get_back_index()];
         // Start from current front buffer to preserve unchanged fields
         back = buffers[active_index];
 
         SensorMask mask = data.valid_sensors;
-        if (mask == SensorMask::ALL) {
+        if (mask == SensorMask::ALL)
+        {
             back = data; // full overwrite
-        } else {
+        }
+        else
+        {
             if ((uint32_t)mask & (uint32_t)SensorMask::LEFT_ENCODER)
                 back.left_encoder_count = data.left_encoder_count;
             if ((uint32_t)mask & (uint32_t)SensorMask::RIGHT_ENCODER)
@@ -82,7 +87,7 @@ public:
         }
 
         // Always update timestamp + mask
-        back.timestamp_ms = data.timestamp_ms;
+        back.timestamp_ms  = data.timestamp_ms;
         back.valid_sensors = mask;
 
         flip_buffers();
@@ -91,9 +96,10 @@ public:
     }
 
     // Take a fast snapshot of the latest published data into `out`.
-    static inline void snapshot(MulticoreSensorData &out) {
+    static inline void snapshot(MulticoreSensorData& out)
+    {
         uint8_t idx = active_index; // volatile, atomic on RP2040
-        out = buffers[idx];
+        out         = buffers[idx];
     }
 
     // (snapshot API above remains; callers that need atomic multi-field
@@ -115,15 +121,16 @@ public:
     //     return multicore_fifo_pop_blocking();
     // }
 
-private:
-    static inline MulticoreSensorData buffers[2] = {};
-    static inline volatile uint8_t active_index = 0;
+  private:
+    static inline MulticoreSensorData buffers[2]   = {};
+    static inline volatile uint8_t    active_index = 0;
 
     static inline uint8_t get_back_index() { return active_index ^ 1; }
 
     static inline void flip_buffers() { active_index ^= 1; }
 
-    static inline mutex_t &get_mutex() {
+    static inline mutex_t& get_mutex()
+    {
         static mutex_t m;
         return m;
     }

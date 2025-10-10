@@ -10,35 +10,36 @@
 #include "hardware/irq.h"
 #include "hardware/uart.h"
 
-class IMU {
- public:
-  explicit IMU(int uartRXPin);
+class IMU
+{
+  public:
+    explicit IMU(int uartRXPin);
 
-  // Get yaw in degrees normalized to [-180, 180].
-  float getIMUYawDegreesNeg180ToPos180();
+    // Get yaw in degrees normalized to [-180, 180].
+    float getIMUYawDegreesNeg180ToPos180();
 
-  // Reset yaw offset to make current yaw = 0.
-  void resetIMUYawToZero();
+    // Reset yaw offset to make current yaw = 0.
+    void resetIMUYawToZero();
 
-  // Get yaw after adding a delta angle, normalized to [-180, 180].
-  float getNewYawAfterAddingDegrees(float degreesToAdd);
+    // Get yaw after adding a delta angle, normalized to [-180, 180].
+    float getNewYawAfterAddingDegrees(float degreesToAdd);
 
- private:
-  const int uartRXPin;                            // RX pin used by UART.
-  volatile int IMUBufferIndex;                       // Index for received bytes.
-  uint8_t IMUBufferForYaw[IMU_PACKET_LEN];  // Packet buffer.
-  bool yawReady;                           // Whether a valid yaw has been read.
+  private:
+    const int    uartRXPin;                       // RX pin used by UART.
+    volatile int IMUBufferIndex;                  // Index for received bytes.
+    uint8_t      IMUBufferForYaw[IMU_PACKET_LEN]; // Packet buffer.
+    bool         yawReady;                        // Whether a valid yaw has been read.
 
-  float robotYawNeg180To180Degrees;  // Latest yaw reading.
-  float resetOffSet;                 // Zero offset for yaw.
+    float robotYawNeg180To180Degrees; // Latest yaw reading.
+    float resetOffSet;                // Zero offset for yaw.
 
-  static IMU* imuInstance;  // Static instance pointer.
+    static IMU* imuInstance; // Static instance pointer.
 
-  // UART + Interrupt setup.
-  void setUpIMUCommunication();
-  void setUpIMUInterrupts();
-  void processIMURXInterruptData();
-  void convertPacketDataToUsableYaw();
-  static void imuInterruptHandler();
+    // UART + Interrupt setup.
+    void        setUpIMUCommunication();
+    void        setUpIMUInterrupts();
+    void        processIMURXInterruptData();
+    void        convertPacketDataToUsableYaw();
+    static void imuInterruptHandler();
 };
 #endif

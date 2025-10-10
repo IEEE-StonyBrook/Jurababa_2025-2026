@@ -1,24 +1,23 @@
 #ifndef PATHCONVERTER_H
 #define PATHCONVERTER_H
 
-#include "../Maze/InternalMouse.h"
 #include "../Common/LogSystem.h"
-class PathConverter {
- public:
-  static std::string buildLFRPath(MazeNode* startNode,
-                                  std::array<int, 2> startHeading,
-                                  std::vector<MazeNode*> nodePath);
+#include "../Maze/InternalMouse.h"
 
- private:
-  static std::string calculateMovesNeededBetweenHeadings(
-      std::array<int, 2> from, std::array<int, 2> to);
-  static std::string getMovesNeededBy4Cardinal(std::array<int, 2> from,
-                                               std::array<int, 2> to);
-  static int findIndexInVector(std::vector<std::array<int, 2>> vector,
-                               std::array<int, 2> find);
+class PathConverter
+{
+  public:
+    static std::string buildLFRPath(MazeNode* startNode, std::array<int, 2> startHeading,
+                                    std::vector<MazeNode*> nodePath);
 
-  static MazeNode* currNode;
-  static std::array<int, 2> currHeading;
+  private:
+    static std::string calculateMovesNeededBetweenHeadings(std::array<int, 2> from,
+                                                           std::array<int, 2> to);
+    static std::string getMovesNeededBy4Cardinal(std::array<int, 2> from, std::array<int, 2> to);
+    static int findIndexInVector(std::vector<std::array<int, 2>> vector, std::array<int, 2> find);
+
+    static MazeNode*          currNode;
+    static std::array<int, 2> currHeading;
 };
 
 #endif

@@ -7,23 +7,24 @@
 #include "../Maze/InternalMouse.h"
 #include "../Platform/Simulator/API.h"
 
-class FrontierBasedSearchSolver {
- public:
-  FrontierBasedSearchSolver(API* api, InternalMouse* internalMouse,
-                            bool diagMovementAllowed = false);
-  ~FrontierBasedSearchSolver();
+class FrontierBasedSearchSolver
+{
+  public:
+    FrontierBasedSearchSolver(API* api, InternalMouse* internalMouse,
+                              bool diagMovementAllowed = false);
+    ~FrontierBasedSearchSolver();
 
-  void exploreMaze();
+    void exploreMaze();
 
- private:
-  MazeNode* getOptimalFrontierToExploreNext();
-  std::unordered_map<MazeNode*, float> getBFSCosts(MazeNode* startBFSCell);
+  private:
+    MazeNode*                            getOptimalFrontierToExploreNext();
+    std::unordered_map<MazeNode*, float> getBFSCosts(MazeNode* startBFSCell);
 
-  API* api;
-  InternalMouse* internalMouse;
-  bool diagMovementAllowed;
+    API*           api;
+    InternalMouse* internalMouse;
+    bool           diagMovementAllowed;
 
-  std::unordered_set<MazeNode*> frontierNodes;
+    std::unordered_set<MazeNode*> frontierNodes;
 };
 
 #endif

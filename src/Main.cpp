@@ -120,7 +120,7 @@ static void core1_Publisher()
         processCommand(&motion);
         publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
 
-        sleep_ms(250);
+        sleep_ms(CORE_SLEEP_MS);
     }
 }
 
@@ -148,14 +148,10 @@ int main()
     // std::string path = aStar.go(goalCells, true, true);
     // LOG_DEBUG(path);
     // interpretLFRPath(&api, path);
-    // // while (true) {
-    // //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
-    // // }
-    // LOG_DEBUG("Initialize")
+
     // Main loop: high-level planning, sensor reads, etc.
     while (true)
     {
-        // LOG_DEBUG("Loop")
         MulticoreSensorData sensors;
         MulticoreSensorHub::snapshot(sensors); // lock-free read
 
@@ -191,7 +187,7 @@ int main()
         // std::to_string(sensors.tof_front_mm)); LOG_DEBUG("\nIMU_YAW: " +
         // std::to_string(sensors.imu_yaw));
 
-        sleep_ms(250);
+        sleep_ms(CORE_SLEEP_MS);
     }
     return 0;
 }

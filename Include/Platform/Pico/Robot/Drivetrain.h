@@ -11,62 +11,64 @@
 
 #include "../../../Include/Common/LogSystem.h"
 #include "../../../Include/Platform/Pico/Config.h"
+#include "IMU.h"
 #include "Motor.h"
 #include "Odometry.h"
-#include "IMU.h"
 #include "ToF.h"
 
-class Drivetrain {
- public:
-  Drivetrain(Motor* leftMotor, Motor* rightMotor, Encoder* leftEncoder,
-             Encoder* rightEncoder, IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF);
 
-  // Reset odometry and all controller states.
-  void reset();
+class Drivetrain
+{
+  public:
+    Drivetrain(Motor* leftMotor, Motor* rightMotor, Encoder* leftEncoder, Encoder* rightEncoder,
+               IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF);
 
-  // Run control loop: update odometry and apply new motor voltages.
-  void runControl(float forwardVelocityMMPerSec, float angularVelocityDegPerSec,
-                  float steeringCorrection);
+    // Reset odometry and all controller states.
+    void reset();
 
-  // Immediately stop both motors.
-  void stop();
+    // Run control loop: update odometry and apply new motor voltages.
+    void runControl(float forwardVelocityMMPerSec, float angularVelocityDegPerSec,
+                    float steeringCorrection);
 
-  // Access odometry readings (distance, angle, velocity).
-  Odometry* getOdometry();
+    // Immediately stop both motors.
+    void stop();
 
-  // Drive straight forward a set distance in mm at given velocity.
-  void driveForwardMM(float distanceMM, float velocityMMPerSec = 300.0f);
+    // Access odometry readings (distance, angle, velocity).
+    Odometry* getOdometry();
 
-  bool isWallLeft();
-  bool isWallFront();
-  bool isWallRight();
-  
- private:
-  // Core controllers.
-  float forwardPD();
-  float rotationPD(float steeringCorrection);
+    // Drive straight forward a set distance in mm at given velocity.
+    void driveForwardMM(float distanceMM, float velocityMMPerSec = 300.0f);
 
-  // Feedforward helpers.
-  float feedforwardLeft(float wheelSpeed);
-  float feedforwardRight(float wheelSpeed);
+    bool isWallLeft();
+    bool isWallFront();
+    bool isWallRight();
 
-  Motor* leftMotor;
-  Motor* rightMotor;
-  Odometry odometry;
+  private:
+    // Core controllers.
+    float forwardPD();
+    float rotationPD(float steeringCorrection);
 
-  ToF* leftToF;
-  ToF* frontToF;
-  ToF* rightToF;
+    // Feedforward helpers.
+    float feedforwardLeft(float wheelSpeed);
+    float feedforwardRight(float wheelSpeed);
 
-  // Targets.
-  float targetForwardVel;  // mm/s
-  float targetAngularVel;  // deg/s
+    Motor*   leftMotor;
+    Motor*   rightMotor;
+    Odometry odometry;
 
-  // Errors for PD control.
-  float forwardError;
-  float rotationError;
-  float prevForwardError;
-  float prevRotationError;
+    ToF* leftToF;
+    ToF* frontToF;
+    ToF* rightToF;
+
+    // Targets.
+    float targetForwardVel; // mm/s
+    float targetAngularVel; // deg/s
+
+    // Errors for PD control.
+    float forwardError;
+    float rotationError;
+    float prevForwardError;
+    float prevRotationError;
 };
 
-#endif  // DRIVETRAIN_H
+#endif // DRIVETRAIN_H
