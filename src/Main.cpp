@@ -14,7 +14,6 @@
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
 
-
 // #include "../Include/Platform/Simulator/API.h"
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
@@ -58,16 +57,16 @@ void processCommand(Motion* motion) {
                         FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
         break;
       case CommandType::TURN_LEFT:
-        motion->spinTurn(-cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
         break;
       case CommandType::TURN_RIGHT:
-        motion->spinTurn(cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        motion->turn(-cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
         break;
       case CommandType::STOP:
         motion->stop();
         break;
       case CommandType::TURN_ARBITRARY:
-        motion->spinTurn(cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
         break;
       case CommandType::CENTER_FROM_EDGE:
         motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED,
@@ -106,6 +105,10 @@ static void core1_publisher() {
   // Signal Core0 that Core1 is ready
   multicore_fifo_push_blocking(1);
 
+  while (true) {
+	drivetrain.runControl(0.0f, 50.0f, 0.0f);
+	sleep_ms(LOOP_INTERVAL_S * 1000);
+  }
   // Optional: set initial velocity
   // leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f,
   // 0.0f, 0.0f); leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
@@ -139,7 +142,7 @@ int main() {
   API api(&mouse);
 
   // api.goToCenterFromEdge();
-  api.executeSequence("L#L#L#");
+//   api.executeSequence("F#F#F#F#L#F#");
   // CommandHub::send(CommandType::MOVE_FWD, 1);
   // CommandHub::send(CommandType::TURN_RIGHT, 45);
   // CommandHub::send(CommandType::MOVE_FWD, 2);
@@ -161,7 +164,8 @@ int main() {
       CommandPacket cmd = CommandHub::receiveBlocking();
       if (cmd.type == CommandType::SNAPSHOT) {
         LOG_DEBUG("Snapshot received with mask: " +
-                  std::to_string(static_cast<uint32_t>(static_cast<SensorMask>(cmd.param))));
+                  std::to_string(static_cast<uint32_t>(
+                      static_cast<SensorMask>(cmd.param))));
         if (sensors.tof_left_exist) mouse.setWallExistsLFR('L');
         if (sensors.tof_front_exist) mouse.setWallExistsLFR('F');
         if (sensors.tof_right_exist) mouse.setWallExistsLFR('R');
