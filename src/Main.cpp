@@ -86,13 +86,13 @@ void processCommand(Motion* motion)
 // Publisher for Core1: All robot specific logic
 static void core1_Publisher()
 {
-    Bluetooth bt(uart0, 16, 17, 9600);
-    bt.init();
+    // // Bluetooth
+    // Bluetooth bt(uart0, 16, 17, 9600);
+    // bt.init();
 
-    // Bluetooth
-    LogSystem::attachBluetooth(&bt);
-    LOG_INFO("System initialized");
-    LOG_DEBUG("Bluetooth logging enabled");
+    // LogSystem::attachBluetooth(&bt);
+    // LOG_INFO("System initialized");
+    // LOG_DEBUG("Bluetooth logging enabled");
 
     // Sensors
     Encoder leftEncoder(pio0, 20, true);
@@ -130,6 +130,14 @@ int main()
     sleep_ms(3000);
 
     MulticoreSensorHub::init();
+    Bluetooth bt(uart0, 16, 17, 9600);
+    bt.init();
+
+    bt.sendString("Hello from Bluetooth!\n");
+
+    LogSystem::attachBluetooth(&bt);
+    LOG_INFO("System initialized");
+    LOG_DEBUG("Bluetooth logging enabled");
     multicore_launch_core1(core1_Publisher);
 
     // Wait until Core1 signals it finished initializing its sensors
@@ -142,8 +150,8 @@ int main()
     InternalMouse                   mouse(startCell, std::string("n"), goalCells, &maze);
     API                             api(&mouse);
 
-    api.goToCenterFromEdge();
-    api.executeSequence("F#F#F#F#L#F#");
+    // api.goToCenterFromEdge();
+    // api.executeSequence("F#F#F#F#L#F#");
 
     // std::string path = aStar.go(goalCells, true, true);
     // LOG_DEBUG(path);
@@ -152,6 +160,9 @@ int main()
     // Main loop: high-level planning, sensor reads, etc.
     while (true)
     {
+        LOG_DEBUG("Test");
+        bt.sendString("Hello from Bluetooth!\r\n");
+
         MulticoreSensorData sensors;
         MulticoreSensorHub::snapshot(sensors); // lock-free read
 

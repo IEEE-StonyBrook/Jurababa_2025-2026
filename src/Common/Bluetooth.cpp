@@ -29,10 +29,7 @@ void Bluetooth::sendChar(char c)
 
 void Bluetooth::sendString(const std::string& str)
 {
-    for (char c : str)
-    {
-        uart_putc_raw(uart_id, c);
-    }
+   uart_puts(uart_id, str.c_str());
 }
 
 bool Bluetooth::available()
