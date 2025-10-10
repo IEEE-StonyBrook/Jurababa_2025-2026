@@ -12,7 +12,7 @@
 #define TO_CENTER_DISTANCE_MM ((167.5f - WHEEL_DIAMETER_MM) / 2.0f)
 
 // Robot geometry.
-#define WHEEL_BASE_MM 85.0f // Distance between left and right wheels.
+#define WHEEL_BASE_MM 87.049f // Distance between left and right wheels.
 #define DEG_PER_MM_DIFFERENCE                                                                      \
     (180.0f / (3.14159265f * WHEEL_BASE_MM)) // Deg per mm difference between wheels.
 

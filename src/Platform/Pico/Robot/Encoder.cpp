@@ -1,6 +1,6 @@
 /******************************************************************************
  * @file    Encoder.cpp
- * @brief   Implementation of AS5048A encoder driver.
+ * @brief   Implementation of AS5048A encoder driver for Raspberry Pi Pico.
  ******************************************************************************/
 
 #include "../../../Include/Platform/Pico/Robot/Encoder.h"
@@ -8,76 +8,99 @@
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
 
-#define AS5048A_CMD_READ  0x4000
-#define AS5048A_REG_ANGLE 0x3FFF
+// AS5048A constants
+#define AS5048A_CPR        16384    // 14-bit resolution
+#define AS5048A_REG_ANGLE  0x3FFF   // angle register
+#define AS5048A_RW_BIT     0x4000   // R/W = 1 for read
 
 Encoder::Encoder(spi_inst_t* spi_port, uint cs_gpio)
-    : spi_(spi_port), cs_gpio_(cs_gpio), last_raw_(0), tick_count_(0)
-{
-}
+    : spi_(spi_port), cs_gpio_(cs_gpio), last_raw_(0), tick_count_(0) {}
 
-void Encoder::init()
-{
+void Encoder::init() {
+    // CS pin setup
     gpio_init(cs_gpio_);
-    LOG_DEBUG("Initialized GPIO " + std::to_string(cs_gpio_) + " for Encoder CS");
     gpio_set_dir(cs_gpio_, GPIO_OUT);
-    LOG_DEBUG("Set GPIO " + std::to_string(cs_gpio_) + " as OUTPUT for Encoder CS");
+    gpio_put(cs_gpio_, 1); // deselect
+
+    last_raw_ = readRawAngle();
+    tick_count_ = 0;
+}
+
+void Encoder::select() {
+    gpio_put(cs_gpio_, 0);
+}
+
+void Encoder::deselect() {
     gpio_put(cs_gpio_, 1);
-    LOG_DEBUG("Set GPIO " + std::to_string(cs_gpio_) + " HIGH (deselected) for Encoder CS");
 }
 
-uint16_t Encoder::transfer(uint16_t command)
-{
-    uint8_t txbuf[2] = {static_cast<uint8_t>((command >> 8) & 0xFF),
-                        static_cast<uint8_t>(command & 0xFF)};
-    uint8_t rxbuf[2] = {0, 0};
+// ---- Parity calculation (even parity for bits 0..13 + R/W bit) ----
+uint8_t Encoder::calcParity(uint16_t value) {
+    uint8_t cnt = 0;
+    for (int i = 0; i < 15; i++) {
+        if (value & (1 << i)) cnt++;
+    }
+    return cnt & 0x1; // return 1 if odd, 0 if even
+}
 
-    LOG_DEBUG("Transferring command: 0x" + std::to_string(command));
+// ---- SPI transfer ----
+uint16_t Encoder::spiTransfer16(uint16_t data) {
+    uint8_t tx[2] = { (uint8_t)(data >> 8), (uint8_t)(data & 0xFF) };
+    uint8_t rx[2] = { 0, 0 };
     select();
-    LOG_DEBUG("Selected encoder (CS LOW)");
-    spi_write_read_blocking(spi_, txbuf, rxbuf, 2);
-    LOG_DEBUG("Received response: 0x" + std::to_string((static_cast<uint16_t>(rxbuf[0]) << 8) | rxbuf[1]));
+    spi_write_read_blocking(spi_, tx, rx, 2);
     deselect();
-    LOG_DEBUG("Deselected encoder (CS HIGH)");
-
-    return (static_cast<uint16_t>(rxbuf[0]) << 8) | rxbuf[1];
+    return ((uint16_t)rx[0] << 8) | rx[1];
 }
 
-uint16_t Encoder::readRaw()
-{
-    LOG_DEBUG("Reading raw encoder value...");
-    uint16_t raw = transfer(AS5048A_CMD_READ | AS5048A_REG_ANGLE);
-    LOG_DEBUG("Raw encoder value: " + std::to_string(raw));
-    return raw & 0x3FFF; // 14-bit value
+// ---- Read raw 14-bit angle ----
+uint16_t Encoder::readRawAngle() {
+    uint16_t command = AS5048A_REG_ANGLE | AS5048A_RW_BIT;
+    command |= (calcParity(command) << 15);
+
+    // issue command
+    spiTransfer16(command);
+    // response
+    uint16_t result = spiTransfer16(0xFFFF);
+
+    // check error flag
+    if (result & 0x4000) {
+        LOG_ERROR("[Encoder] Error flag set result=0x" + std::to_string(result));
+        return 0;
+    }
+
+    // check parity
+    uint8_t parity = calcParity(result & 0x7FFF);
+    if (((result >> 15) & 0x1) != parity) {
+        LOG_ERROR("[Encoder] Parity error result=0x" + std::to_string(result));
+        return 0;
+    }
+
+    return result & 0x3FFF;
 }
 
-float Encoder::readDegrees()
-{
-    uint16_t raw = readRaw();
-    return (static_cast<float>(raw) * 360.0f) / 16384.0f;
+// ---- Convert to degrees ----
+float Encoder::readDegrees() {
+    uint16_t raw = readRawAngle();
+    return (static_cast<float>(raw) * 360.0f) / AS5048A_CPR;
 }
 
-int32_t Encoder::getTickCount()
-{
-    uint16_t raw = readRaw();
-
-    // Compute signed delta with wrap-around correction
+// ---- Tick counter with wrap-around ----
+int32_t Encoder::getTickCount() {
+    uint16_t raw = readRawAngle();
     int32_t delta = static_cast<int32_t>(raw) - static_cast<int32_t>(last_raw_);
-    if (delta > 8192)
-        delta -= 16384;
-    if (delta < -8192)
-        delta += 16384;
+
+    // Handle wrap-around on 14-bit counter
+    if (delta > (AS5048A_CPR / 2))  delta -= AS5048A_CPR;
+    if (delta < -(AS5048A_CPR / 2)) delta += AS5048A_CPR;
 
     tick_count_ += delta;
     last_raw_ = raw;
-
     return tick_count_;
 }
 
-void Encoder::reset()
-{
-    LOG_DEBUG("Resetting encoder...");
-    last_raw_   = readRaw();
+// ---- Reset counter ----
+void Encoder::reset() {
+    last_raw_ = readRawAngle();
     tick_count_ = 0;
-    LOG_DEBUG("Encoder reset complete.");
 }

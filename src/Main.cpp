@@ -87,21 +87,21 @@ void processCommand(Motion* motion)
 static void core1_Publisher()
 {
     spi_init(spi1, 1000000);              // 1 MHz
-    gpio_set_function(18, GPIO_FUNC_SPI); // SCK
-    gpio_set_function(19, GPIO_FUNC_SPI); // MOSI
-    gpio_set_function(16, GPIO_FUNC_SPI); // MISO
-    spi_set_format(spi1, 16, SPI_CPOL_1, SPI_CPHA_1, SPI_MSB_FIRST);
+    gpio_set_function(10, GPIO_FUNC_SPI); // SCK
+    gpio_set_function(11, GPIO_FUNC_SPI); // MOSI
+    gpio_set_function(12, GPIO_FUNC_SPI); // MISO
+    spi_set_format(spi1, 16, SPI_CPOL_0, SPI_CPHA_1, SPI_MSB_FIRST);
 
     // Sensors
-    Encoder leftEncoder(spi1, 9);
-    Encoder rightEncoder(spi1, 13);
+    Encoder leftEncoder(spi1, 9);   // CS1 on GPIO9
+    Encoder rightEncoder(spi1, 13); // CS2 on GPIO13
     leftEncoder.init();
     rightEncoder.init();
     ToF leftToF(0, 'L');
     ToF frontToF(26, 'F');
     ToF rightToF(27, 'R');
     IMU imu;
-	imu.enableRotationVector();
+    imu.enableRotationVector();
     imu.resetIMUYawToZero();
 
     // Motors
@@ -115,6 +115,14 @@ static void core1_Publisher()
     motion.resetDriveSystem();
 
     multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
+
+    while (true)
+    {
+        uint16_t raw = leftEncoder.readRawAngle();
+        LOG_DEBUG("Raw L: " + std::to_string(raw));
+
+        sleep_ms(200);
+    }
 
     while (true)
     {

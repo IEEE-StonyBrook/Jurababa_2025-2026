@@ -1,52 +1,39 @@
-/******************************************************************************
- * @file    Encoder.h
- * @brief   Driver for AS5048A magnetic rotary encoder via SPI.
- ******************************************************************************/
-
 #ifndef ENCODER_H
 #define ENCODER_H
 
 #include "hardware/spi.h"
-#include "pico/stdlib.h"
 #include <cstdint>
 
-class Encoder
-{
-  public:
+class Encoder {
+public:
+    // Constructor: provide SPI instance (e.g., spi1) and CS pin
     Encoder(spi_inst_t* spi_port, uint cs_gpio);
 
+    // Initialize chip select pin and reset counters
     void init();
 
-    /**
-     * @brief Read the raw 14-bit angle (0–16383).
-     */
-    uint16_t readRaw();
-
-    /**
-     * @brief Read angle in degrees (0–360).
-     */
+    // Get the latest angle in degrees [0,360)
     float readDegrees();
 
-    /**
-     * @brief Get accumulated tick count (like a quadrature encoder).
-     *
-     * Each step of the AS5048A (1/16384 of a rev) is treated as 1 tick.
-     */
+    // Get running tick count (increments/decrements across rotations)
     int32_t getTickCount();
 
+    // Reset tick counter and latch current position as reference
     void reset();
 
-  private:
+    // Read raw 14-bit angle directly (0–16383)
+    uint16_t readRawAngle();
+
+private:
     spi_inst_t* spi_;
-    uint        cs_gpio_;
+    uint cs_gpio_;
+    uint16_t last_raw_;
+    int32_t tick_count_;
 
-    uint16_t last_raw_;   ///< Last raw angle reading (0–16383)
-    int32_t  tick_count_; ///< Accumulated ticks
-
-    uint16_t transfer(uint16_t command);
-
-    inline void select() { gpio_put(cs_gpio_, 0); }
-    inline void deselect() { gpio_put(cs_gpio_, 1); }
+    void select();
+    void deselect();
+    uint16_t spiTransfer16(uint16_t data);
+    uint8_t calcParity(uint16_t value);
 };
 
-#endif
+#endif // ENCODER_H
