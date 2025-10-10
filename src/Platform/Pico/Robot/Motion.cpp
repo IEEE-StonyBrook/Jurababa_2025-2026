@@ -4,6 +4,8 @@
  ******************************************************************************/
 
 #include "../../../Include/Platform/Pico/Robot/Motion.h"
+#include "../../../Include/Platform/Pico/MulticoreSensors.h"
+#include "../../../Include/Platform/Pico/CommandHub.h"
 
 #include <cmath>
 #include <string>
@@ -59,16 +61,37 @@ void Motion::startForward(float distance_mm, float top_speed, float final_speed,
 
 void Motion::forward(float distance_mm, float top_speed, float final_speed,
                      float accel, bool blocking) {
+  float distanceMoved = 0.0f;
+
   LOG_DEBUG("Starting forward motion: " + std::to_string(distance_mm) + " mm");
   startForward(distance_mm, top_speed, final_speed, accel);
 
   if (blocking) {
     while (!isForwardFinished()) {
+      distanceMoved =
+          drivetrain_->getOdometry()->getVelocityMMPerSec() * LOOP_INTERVAL_S +
+          distanceMoved;
       // LOG_DEBUG("IsForwardFinished: " + std::to_string(isForwardFinished()));
       LOG_DEBUG("Pos: " + std::to_string(positionMM()) +
                 " mm, Speed: " + std::to_string(velocityMMPerSec()) + " mm/s");
       // LOG_DEBUG("Angle: " + std::to_string(angleDeg()) +
-      //           " deg, Omega: " + std::to_string(omegaDegPerSec()) + " deg/s");
+      //           " deg, Omega: " + std::to_string(omegaDegPerSec()) + "
+      //           deg/s");
+      if (distanceMoved == TOF_CELL_DEPTH_TO_CHECK_MM) {
+        MulticoreSensorData local{};
+        LOG_DEBUG("Publishing sensor snapshot at " +
+                  std::to_string(positionMM()) + " mm");
+
+        local.tof_left_exist = drivetrain_->isWallLeft();
+        local.tof_front_exist = drivetrain_->isWallFront();
+        local.tof_right_exist = drivetrain_->isWallRight();
+        local.valid_sensors = (SensorMask) (static_cast<uint8_t>(SensorMask::TOF_LEFT_EXIST) | static_cast<uint8_t>(SensorMask::TOF_FRONT_EXIST) | static_cast<uint8_t>(SensorMask::TOF_RIGHT_EXIST));
+        local.timestamp_ms = to_ms_since_boot(get_absolute_time());
+        MulticoreSensorHub::publish(local);
+
+        CommandHub::send(CommandType::SNAPSHOT, static_cast<int32_t>(local.valid_sensors));
+        distanceMoved = 0.0f;
+      }
       update();
       sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
     }

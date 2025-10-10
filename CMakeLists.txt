@@ -78,6 +78,7 @@ target_link_libraries(Jurababa
         hardware_uart
         hardware_i2c
         hardware_adc
+        hardware_spi
         vl53l0x_api_rp2040
         pico_multicore
         )

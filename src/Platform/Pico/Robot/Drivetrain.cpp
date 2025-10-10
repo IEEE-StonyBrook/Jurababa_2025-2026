@@ -1,7 +1,7 @@
 #include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
 
 Drivetrain::Drivetrain(Motor* leftMotor, Motor* rightMotor,
-                       Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu)
+                       Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF)
     : leftMotor(leftMotor),
       rightMotor(rightMotor),
       odometry(leftEncoder, rightEncoder, imu),
@@ -88,6 +88,18 @@ float Drivetrain::feedforwardRight(float wheelSpeed) {
   voltage += (ACC_FFR * accel);
 
   return voltage;
+}
+
+bool Drivetrain::isWallLeft() {
+  return leftToF->getToFDistanceFromWallMM() < TOF_LEFT_WALL_THRESHOLD_MM;
+}
+
+bool Drivetrain::isWallFront() {
+  return frontToF->getToFDistanceFromWallMM() < TOF_FRONT_WALL_THRESHOLD_MM;
+}
+
+bool Drivetrain::isWallRight() {
+  return rightToF->getToFDistanceFromWallMM() < TOF_RIGHT_WALL_THRESHOLD_MM;
 }
 
 // Main control loop: update odometry, compute voltages, and drive motors.

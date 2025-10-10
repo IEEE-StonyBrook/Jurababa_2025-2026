@@ -6,8 +6,8 @@
 #define LOOP_INTERVAL_S (1.0f / LOOP_FREQUENCY_HZ)  // Seconds per update.
 
 // Encoder and wheel geometry.
-#define WHEEL_DIAMETER_MM 39.5f       // Wheel diameter.
-#define TICKS_PER_REVOLUTION 1400.0f  // Encoder ticks per wheel turn.
+#define WHEEL_DIAMETER_MM 25.0f       // Wheel diameter.
+#define TICKS_PER_REVOLUTION 16384.0f  // Encoder ticks per wheel turn.
 #define MM_PER_TICK                    \
   ((WHEEL_DIAMETER_MM * 3.14159265f) / \
    TICKS_PER_REVOLUTION)  // Distance per tick.
@@ -15,7 +15,7 @@
 
 
 // Robot geometry.
-#define WHEEL_BASE_MM 85.0f  // Distance between left and right wheels.
+#define WHEEL_BASE_MM 94.0f  // Distance between left and right wheels.
 #define DEG_PER_MM_DIFFERENCE \
   (180.0f /                   \
    (3.14159265f * WHEEL_BASE_MM))  // Deg per mm difference between wheels.

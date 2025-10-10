@@ -32,7 +32,7 @@ void API::moveForward(int steps) {
 }
 
 void API::goToCenterFromEdge() {
-  motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+  CommandHub::send(CommandType::CENTER_FROM_EDGE);
 }
 
 void API::turnLeft45() {

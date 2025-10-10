@@ -14,11 +14,12 @@
 #include "Motor.h"
 #include "Odometry.h"
 #include "IMU.h"
+#include "ToF.h"
 
 class Drivetrain {
  public:
   Drivetrain(Motor* leftMotor, Motor* rightMotor, Encoder* leftEncoder,
-             Encoder* rightEncoder, IMU* imu);
+             Encoder* rightEncoder, IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF);
 
   // Reset odometry and all controller states.
   void reset();
@@ -36,6 +37,10 @@ class Drivetrain {
   // Drive straight forward a set distance in mm at given velocity.
   void driveForwardMM(float distanceMM, float velocityMMPerSec = 300.0f);
 
+  bool isWallLeft();
+  bool isWallFront();
+  bool isWallRight();
+  
  private:
   // Core controllers.
   float forwardPD();
@@ -48,6 +53,10 @@ class Drivetrain {
   Motor* leftMotor;
   Motor* rightMotor;
   Odometry odometry;
+
+  ToF* leftToF;
+  ToF* frontToF;
+  ToF* rightToF;
 
   // Targets.
   float targetForwardVel;  // mm/s

@@ -17,6 +17,9 @@ enum class SensorMask : uint32_t {
     TOF_FRONT = 1 << 3,
     TOF_RIGHT = 1 << 4,
     IMU_YAW = 1 << 5,
+    TOF_LEFT_EXIST = 1 << 6,
+    TOF_FRONT_EXIST = 1 << 7,
+    TOF_RIGHT_EXIST = 1 << 8
 };
 
 // Shared sensor data layout. Adjust fields to match your actual sensors.
@@ -26,6 +29,9 @@ struct MulticoreSensorData {
     int16_t tof_left_mm = 0;
     int16_t tof_front_mm = 0;
     int16_t tof_right_mm = 0;
+    bool tof_left_exist = false;
+    bool tof_front_exist = false;
+    bool tof_right_exist = false;
     float imu_yaw = 0.0f;
     uint64_t timestamp_ms = 0;
 
@@ -67,6 +73,12 @@ public:
                 back.tof_right_mm = data.tof_right_mm;
             if ((uint32_t)mask & (uint32_t)SensorMask::IMU_YAW)
                 back.imu_yaw = data.imu_yaw;
+            if ((uint32_t)mask & (uint32_t)SensorMask::TOF_LEFT_EXIST)
+                back.tof_left_exist = data.tof_left_exist;
+            if ((uint32_t)mask & (uint32_t)SensorMask::TOF_FRONT_EXIST)
+                back.tof_front_exist = data.tof_front_exist;
+            if ((uint32_t)mask & (uint32_t)SensorMask::TOF_RIGHT_EXIST)
+                back.tof_right_exist = data.tof_right_exist;
         }
 
         // Always update timestamp + mask

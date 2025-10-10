@@ -13,6 +13,7 @@
 
 #include "Drivetrain.h"
 #include "Profile.h"
+#include <functional>   // for std::function
 
 /**
  * @class Motion
@@ -60,11 +61,25 @@ class Motion {
   float omegaDegPerSec() const { return drivetrain_->getOdometry()->getAngularVelocityDegPerSec(); }
   float accelerationMMPerSec2() const { return forward_profile_.acceleration(); }
 
+  // ---------------- Wall Update Hook ----------------
+  /**
+   * @brief Set a callback that will be invoked when the robot reaches
+   *        DEPTHINTOCELL mm into a new cell. The callback receives
+   *        (left, front, right) wall existence flags.
+   */
+  void setWallUpdateCallback(std::function<void(bool, bool, bool)> cb) {
+    wallCallback_ = cb;
+  }
+
  private:
   Drivetrain* drivetrain_;         ///< Pointer to drivetrain
   Profile forward_profile_;        ///< Profile for forward motion
   Profile rotation_profile_;       ///< Profile for rotational motion
   float target_angle_deg_;         ///< Absolute IMU target angle for turns
+
+  // For wall update trigger
+  std::function<void(bool, bool, bool)> wallCallback_; ///< callback for wall update
+  bool wallTriggeredThisCell_ = false;                 ///< track per-cell trigger
 };
 
 #endif

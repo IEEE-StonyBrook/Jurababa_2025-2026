@@ -11,7 +11,9 @@ enum class CommandType : uint8_t {
     TURN_RIGHT, // 3
     STOP,       // 4
     TURN_ARBITRARY, // 5
-    MOVE_FWD_HALF // 6
+    MOVE_FWD_HALF, // 6
+    CENTER_FROM_EDGE, // 7
+    SNAPSHOT // 8
 };
 
 // Command packet structure
