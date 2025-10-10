@@ -14,7 +14,6 @@
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
 
-
 // #include "../Include/Platform/Simulator/API.h"
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
@@ -102,13 +101,19 @@ static void core1_publisher() {
   LOG_DEBUG("Initialization complete.");
   motion.resetDriveSystem();
 
+  //   while (true) {
+  // 	drivetrain.runControl(0.0f, 100.0f, 0.0f);
+  // 	LOG_DEBUG("Angle: " +
+  // std::to_string(drivetrain.getOdometry()->getAngleDeg()) + " deg");
+  // 	LOG_DEBUG("Omega: " +
+  // std::to_string(drivetrain.getOdometry()->getAngularVelocityDegPerSec()) + "
+  // deg/s"); 	sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
+  //   }
+
   // LOG_DEBUG("CORE1 Init")
   // Signal Core0 that Core1 is ready
   multicore_fifo_push_blocking(1);
 
-  // Optional: set initial velocity
-  // leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f,
-  // 0.0f, 0.0f); leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
   // LOG_DEBUG("CORE1 Loop")
   while (true) {
     processCommand(&motion);
@@ -139,8 +144,8 @@ int main() {
   API api(&mouse);
 
   // api.goToCenterFromEdge();
-//   api.executeSequence("F#F#F#F#R#F#");
-api.executeSequence("R#");
+  api.executeSequence("F#F#F#F#R#F#");
+  // api.executeSequence("R#");
   // CommandHub::send(CommandType::MOVE_FWD, 1);
   // CommandHub::send(CommandType::TURN_RIGHT, 45);
   // CommandHub::send(CommandType::MOVE_FWD, 2);
@@ -162,7 +167,8 @@ api.executeSequence("R#");
       CommandPacket cmd = CommandHub::receiveBlocking();
       if (cmd.type == CommandType::SNAPSHOT) {
         LOG_DEBUG("Snapshot received with mask: " +
-                  std::to_string(static_cast<uint32_t>(static_cast<SensorMask>(cmd.param))));
+                  std::to_string(static_cast<uint32_t>(
+                      static_cast<SensorMask>(cmd.param))));
         if (sensors.tof_left_exist) mouse.setWallExistsLFR('L');
         if (sensors.tof_front_exist) mouse.setWallExistsLFR('F');
         if (sensors.tof_right_exist) mouse.setWallExistsLFR('R');

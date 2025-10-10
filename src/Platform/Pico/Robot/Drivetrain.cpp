@@ -23,30 +23,71 @@ void Drivetrain::reset() {
   targetForwardVel = targetAngularVel = 0.0f;
 }
 
-// Forward PD controller integrates target velocity into position error.
-float Drivetrain::forwardPD() {
-  float expectedChange = targetForwardVel * LOOP_INTERVAL_S;
-  // Error between expected position change and actual change.
-  // Proportional term from accumulated error.
-  forwardError += expectedChange - odometry.getDeltaDistanceMM();
-  // Derivative term from change in error.
-  float errorRate = forwardError - prevForwardError;
-  prevForwardError = forwardError;
-  return (FWD_KP * forwardError) + (FWD_KD * errorRate);
+float Drivetrain::forwardPID() {
+    // Update accumulated forward error (Harrison-style)
+    float expectedDelta = targetForwardVel * LOOP_INTERVAL_S;
+    float measuredDelta = odometry.getDeltaDistanceMM();
+    forwardError += expectedDelta - measuredDelta;
+
+    // Derivative on error (with low-pass filter)
+    float rawDiff = forwardError - prevForwardError;
+    prevForwardError = forwardError;
+
+    static float derivFilt = 0.0f;
+    const float alpha = 0.2f;  // smoothing factor (0..1)
+    derivFilt += alpha * (rawDiff - derivFilt);
+
+    // Explicit integral term
+    static float fwdInt = 0.0f;
+    fwdInt += forwardError * LOOP_INTERVAL_S;
+
+    // Anti-windup clamp
+    const float INT_LIM = 200.0f;
+    if (fwdInt > INT_LIM) fwdInt = INT_LIM;
+    if (fwdInt < -INT_LIM) fwdInt = -INT_LIM;
+
+    // PID output
+    return (FWD_KP * forwardError) + (FWD_KI * fwdInt) + (FWD_KD * derivFilt);
 }
 
-// Rotation PD controller integrates angular velocity into rotation error.
-float Drivetrain::rotationPD(float steeringCorrection) {
-  float expectedChange = targetAngularVel * LOOP_INTERVAL_S;
-  // Error between expected angle change and actual change.
-  // Proportional term from accumulated error.
-  rotationError += expectedChange - odometry.getDeltaAngleDeg();
-  rotationError += steeringCorrection;  // Wall-following or trajectory adjust.
-  // Derivative term from change in error.
-  float errorRate = rotationError - prevRotationError;
-  prevRotationError = rotationError;
-  return (ROT_KP * rotationError) + (ROT_KD * errorRate);
+float Drivetrain::rotationPID(float steeringCorrection) {
+    // Update accumulated rotation error (Harrison-style)
+    float expectedDelta = targetAngularVel * LOOP_INTERVAL_S;   // deg
+    float measuredDelta = odometry.getDeltaAngleDeg();          // deg
+    rotationError += expectedDelta - measuredDelta;
+
+    // Add steering correction (treated like an extra angular error)
+    rotationError += steeringCorrection;
+
+    // Derivative on error (with low-pass filter)
+    float rawDiff = rotationError - prevRotationError;
+    prevRotationError = rotationError;
+
+    static float derivFilt = 0.0f;
+    const float alpha = 0.2f;
+    derivFilt += alpha * (rawDiff - derivFilt);
+
+    // Explicit integral term
+    static float rotInt = 0.0f;
+    rotInt += rotationError * LOOP_INTERVAL_S;
+
+    // Anti-windup clamp
+    const float INT_LIM = 30.0f;
+    if (rotInt > INT_LIM) rotInt = INT_LIM;
+    if (rotInt < -INT_LIM) rotInt = -INT_LIM;
+
+    // PID output
+    return (ROT_KP * rotationError) + (ROT_KI * rotInt) + (ROT_KD * derivFilt);
 }
+
+// float Drivetrain::rotationPID(float steeringCorrection) {
+//     float actualRate = odometry.getDeltaAngleDeg() / LOOP_INTERVAL_S; // deg/sec
+//     float error = targetAngularVel - actualRate;
+//     error += steeringCorrection;
+//     float errorRate = error - prevRotationError;
+//     prevRotationError = error;
+//     return (ROT_KP * error) + (ROT_KD * errorRate);
+// }
 
 // Predict left motor voltage from wheel speed and acceleration.
 float Drivetrain::feedforwardLeft(float wheelSpeed) {
@@ -113,25 +154,31 @@ void Drivetrain::runControl(float forwardVelocityMMPerSec,
   odometry.update(); 
 
   // LOG_DEBUG("Calculating control outputs...");
-  float forwardOut = forwardPD();
-  float rotationOut = -rotationPD(steeringCorrection);
+  float forwardOut = forwardPID();
+  float rotationOut = -rotationPID(steeringCorrection);
 
   // Combine forward and rotation control.
   float leftOut = forwardOut - rotationOut;
   float rightOut = forwardOut + rotationOut;
+  LOG_DEBUG("Left PD Output: " + std::to_string(leftOut));
+  LOG_DEBUG("Right PD Output: " + std::to_string(rightOut));
+  LOG_DEBUG("Forward Output: " + std::to_string(forwardOut));
+  LOG_DEBUG("Rotation Output: " + std::to_string(rotationOut));
 
-  // Calculate wheel speeds for feedforward terms.
+  // Calculate wheel speeds for feedforward terms. 
   float tangentSpeed =
       (targetAngularVel * (M_PI / 180.0f)) * (WHEEL_BASE_MM / 2.0f);
   float leftWheelSpeed = targetForwardVel - tangentSpeed;
-  float rightWheelSpeed = targetForwardVel + tangentSpeed;
+  float rightWheelSpeed = targetForwardVel + tangentSpeed; 
+  LOG_DEBUG("Left Wheel Speed: " + std::to_string(leftWheelSpeed) + " mm/s");
+  LOG_DEBUG("Right Wheel Speed: " + std::to_string(rightWheelSpeed) + " mm/s");
 
   // Add feedforward predictions.
   leftOut += feedforwardLeft(leftWheelSpeed);
   rightOut += feedforwardRight(rightWheelSpeed);
 
-  // LOG_DEBUG("Applying voltage of " + std::to_string(leftOut) + " V to left motor.");
-  // LOG_DEBUG("Applying voltage of " + std::to_string(rightOut) + " V to right motor.");
+  LOG_DEBUG("Applying voltage of " + std::to_string(leftOut) + " V to left motor.");
+  LOG_DEBUG("Applying voltage of " + std::to_string(rightOut) + " V to right motor.");
   leftMotor->applyVoltage(leftOut);
   rightMotor->applyVoltage(rightOut);
 }

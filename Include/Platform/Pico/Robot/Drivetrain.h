@@ -43,8 +43,8 @@ class Drivetrain {
   
  private:
   // Core controllers.
-  float forwardPD();
-  float rotationPD(float steeringCorrection);
+  float forwardPID();
+  float rotationPID(float steeringCorrection);
 
   // Feedforward helpers.
   float feedforwardLeft(float wheelSpeed);
