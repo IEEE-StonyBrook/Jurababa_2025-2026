@@ -135,7 +135,7 @@ void Motion::turn(float angle_deg, float omega, float final_omega, float alpha,
 bool Motion::isTurnFinished() const {
   const float imu_angle = drivetrain_->getOdometry()->getAngleDeg();
   const float err = Wrap180(target_angle_deg_ - imu_angle);
-  return std::fabs(err) < 1.0f;  // 1 degree tolerance
+  return std::fabs(err) < 0.1f;  // 0.1 degree tolerance
 }
 
 // -----------------------------------------------------------------------------

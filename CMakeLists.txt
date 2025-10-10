@@ -48,6 +48,7 @@ add_executable(Jurababa
     Src/Platform/Pico/Robot/Profile.cpp
     Src/Common/PIDController.cpp
     Src/Common/LogSystem.cpp
+    Src/Common/Bluetooth.cpp
     Src/Maze/InternalMouse.cpp
     Src/Maze/MazeGraph.cpp
     Src/Maze/MazeNode.cpp

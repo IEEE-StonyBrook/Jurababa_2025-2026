@@ -58,16 +58,19 @@ void processCommand(Motion* motion) {
                         FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
         break;
       case CommandType::TURN_LEFT:
-        motion->spinTurn(-cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        motion->turn(-cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL,
+                     true);
         break;
       case CommandType::TURN_RIGHT:
-        motion->spinTurn(cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL,
+                     true);
         break;
       case CommandType::STOP:
         motion->stop();
         break;
       case CommandType::TURN_ARBITRARY:
-        motion->spinTurn(cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL,
+                     true);
         break;
       case CommandType::CENTER_FROM_EDGE:
         motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED,
@@ -138,8 +141,8 @@ int main() {
   InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
   API api(&mouse);
 
-  // api.goToCenterFromEdge();
-  api.executeSequence("L#L#L#");
+  api.goToCenterFromEdge();
+  api.executeSequence("F#F#F#F#L#F#");
   // CommandHub::send(CommandType::MOVE_FWD, 1);
   // CommandHub::send(CommandType::TURN_RIGHT, 45);
   // CommandHub::send(CommandType::MOVE_FWD, 2);
@@ -162,9 +165,18 @@ int main() {
       if (cmd.type == CommandType::SNAPSHOT) {
         LOG_DEBUG("Snapshot received with mask: " +
                   std::to_string(static_cast<uint32_t>(static_cast<SensorMask>(cmd.param))));
-        if (sensors.tof_left_exist) mouse.setWallExistsLFR('L');
-        if (sensors.tof_front_exist) mouse.setWallExistsLFR('F');
-        if (sensors.tof_right_exist) mouse.setWallExistsLFR('R');
+        if (sensors.tof_left_exist)  {
+          mouse.setWallExistsLFR('L');
+          LOG_DEBUG("Left ToF Detects Wall" + std::to_string(sensors.tof_left_exist));
+        }
+        if (sensors.tof_front_exist) {
+          mouse.setWallExistsLFR('F');
+          LOG_DEBUG("Front ToF Detects Wall" + std::to_string(sensors.tof_front_exist));
+        }
+        if (sensors.tof_right_exist) { 
+          mouse.setWallExistsLFR('R');
+          LOG_DEBUG("Right ToF Detects Wall" + std::to_string(sensors.tof_right_exist));
+        }
       }
     }
 

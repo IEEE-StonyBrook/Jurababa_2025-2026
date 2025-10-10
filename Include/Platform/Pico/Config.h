@@ -60,7 +60,7 @@
 
 // Rotation PD controller gains.
 #define ROT_KP 0.15f  // Proportional gain for rotation error.
-#define ROT_KD 0.00f  // Derivative gain for rotation error.
+#define ROT_KD 0.5f  // Derivative gain for rotation error.
 
 // ================== Motion Constants ================== //
 // Distances.
