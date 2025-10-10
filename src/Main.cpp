@@ -1,5 +1,6 @@
 #include <stdio.h>
 
+#include "../Include/Common/Bluetooth.h"
 #include "../Include/Common/LogSystem.h"
 #include "../Include/Navigation/AStarSolver.h"
 #include "../Include/Platform/Pico/API.h"
@@ -14,15 +15,17 @@
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
 
-
 // #include "../Include/Platform/Simulator/API.h"
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
-void publishSensors(Encoder* leftEncoder, Encoder* rightEncoder, ToF* leftToF,
-                    ToF* frontToF, ToF* rightToF, IMU* imu) {
-  // Read sensors
-  // LOG_DEBUG("CORE1 Read")
+void publishSensors(Encoder* leftEncoder,
+                    Encoder* rightEncoder,
+                    ToF* leftToF,
+                    ToF* frontToF,
+                    ToF* rightToF,
+                    IMU* imu) {
+  // Read Sensors
   MulticoreSensorData local{};
   local.left_encoder_count = leftEncoder->getTickCount();
   local.right_encoder_count = rightEncoder->getTickCount();
@@ -84,8 +87,16 @@ void processCommand(Motion* motion) {
   }
 }
 
-// Example publisher run on core1: read sensors and publish into hub
-static void core1_publisher() {
+// Publisher for Core1: All robot specific logic
+static void core1_Publisher() {
+  Bluetooth bt(uart0, 16, 17, 9600);
+  bt.init();
+  
+  // Bluetooth
+  LogSystem::attachBluetooth(&bt);
+  LOG_INFO("System initialized");
+  LOG_DEBUG("Bluetooth logging enabled");
+
   // Sensors
   Encoder leftEncoder(pio0, 20, true);
   Encoder rightEncoder(pio0, 8, false);  // was 7
@@ -105,14 +116,8 @@ static void core1_publisher() {
   LOG_DEBUG("Initialization complete.");
   motion.resetDriveSystem();
 
-  // LOG_DEBUG("CORE1 Init")
-  // Signal Core0 that Core1 is ready
-  multicore_fifo_push_blocking(1);
+  multicore_fifo_push_blocking(1);  // Signal Core0 that Core1 is ready
 
-  // Optional: set initial velocity
-  // leftMotor.setUpPIDControllerWithFeedforward(5.0f, 0.00677f, 0.000675f,
-  // 0.0f, 0.0f); leftMotor.setContinuousDesiredMotorVelocityMMPerSec(100.0f);
-  // LOG_DEBUG("CORE1 Loop")
   while (true) {
     processCommand(&motion);
     publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF,
@@ -127,12 +132,10 @@ int main() {
   sleep_ms(3000);
 
   MulticoreSensorHub::init();
-  multicore_launch_core1(core1_publisher);
+  multicore_launch_core1(core1_Publisher);
 
   // Wait until Core1 signals it finished initializing its sensors
   multicore_fifo_pop_blocking();
-
-  LOG_DEBUG("Test");
 
   // Maze / planning objects
   std::array<int, 2> startCell = {0, 0};
@@ -164,18 +167,22 @@ int main() {
       CommandPacket cmd = CommandHub::receiveBlocking();
       if (cmd.type == CommandType::SNAPSHOT) {
         LOG_DEBUG("Snapshot received with mask: " +
-                  std::to_string(static_cast<uint32_t>(static_cast<SensorMask>(cmd.param))));
-        if (sensors.tof_left_exist)  {
+                  std::to_string(static_cast<uint32_t>(
+                      static_cast<SensorMask>(cmd.param))));
+        if (sensors.tof_left_exist) {
           mouse.setWallExistsLFR('L');
-          LOG_DEBUG("Left ToF Detects Wall" + std::to_string(sensors.tof_left_exist));
+          LOG_DEBUG("Left ToF Detects Wall" +
+                    std::to_string(sensors.tof_left_exist));
         }
         if (sensors.tof_front_exist) {
           mouse.setWallExistsLFR('F');
-          LOG_DEBUG("Front ToF Detects Wall" + std::to_string(sensors.tof_front_exist));
+          LOG_DEBUG("Front ToF Detects Wall" +
+                    std::to_string(sensors.tof_front_exist));
         }
-        if (sensors.tof_right_exist) { 
+        if (sensors.tof_right_exist) {
           mouse.setWallExistsLFR('R');
-          LOG_DEBUG("Right ToF Detects Wall" + std::to_string(sensors.tof_right_exist));
+          LOG_DEBUG("Right ToF Detects Wall" +
+                    std::to_string(sensors.tof_right_exist));
         }
       }
     }
