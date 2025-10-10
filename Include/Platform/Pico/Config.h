@@ -6,7 +6,7 @@
 #define LOOP_INTERVAL_S   (1.0f / LOOP_FREQUENCY_HZ) // Seconds per update.
 
 // Encoder and wheel geometry.
-#define WHEEL_DIAMETER_MM     39.5f   // Wheel diameter.
+#define WHEEL_DIAMETER_MM     33.0f   // Wheel diameter.
 #define TICKS_PER_REVOLUTION  1400.0f // Encoder ticks per wheel turn.
 #define MM_PER_TICK           ((WHEEL_DIAMETER_MM * 3.14159265f) / TICKS_PER_REVOLUTION) // Distance per tick.
 #define TO_CENTER_DISTANCE_MM ((167.5f - WHEEL_DIAMETER_MM) / 2.0f)

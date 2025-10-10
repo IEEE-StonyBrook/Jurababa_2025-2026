@@ -4,9 +4,6 @@
 #include <sstream>
 #include <string>
 
-// Forward declaration (to avoid circular include)
-class Bluetooth;
-
 enum class LogPriority
 {
     DEBUG,
@@ -20,11 +17,9 @@ class LogSystem
 {
   public:
     static void logMessage(LogPriority logPriority, std::string logMessage);
-    static void attachBluetooth(Bluetooth* bt); // NEW
 
   private:
     static LogPriority printPriorityLevel;
-    static Bluetooth*  btInterface; // NEW
 };
 
 // ---------------- Macros ----------------

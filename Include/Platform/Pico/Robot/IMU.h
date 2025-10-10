@@ -1,45 +1,51 @@
+/******************************************************************************
+ * @file    IMU.h
+ * @brief   Minimal I2C-based IMU driver for BNO085 (yaw only)
+ ******************************************************************************/
+
 #ifndef IMU_H
 #define IMU_H
 
-#include <cmath>
 #include <cstdint>
 
-#include "../../../Include/Common/LogSystem.h"
-#include "../Config.h"
-#include "hardware/gpio.h"
-#include "hardware/irq.h"
-#include "hardware/uart.h"
+class IMU {
+public:
+    IMU();
 
-class IMU
-{
-  public:
-    explicit IMU(int uartRXPin);
+    /**
+     * @brief Enable rotation vector feature on the IMU (must be called once after init).
+     * @return true if the request was successfully sent over I2C
+     */
+    bool enableRotationVector();
 
-    // Get yaw in degrees normalized to [-180, 180].
+    /**
+     * @brief Get the current yaw angle in degrees [-180, 180],
+     *        corrected for any reset offset.
+     * @return yaw in degrees (float)
+     */
     float getIMUYawDegreesNeg180ToPos180();
 
-    // Reset yaw offset to make current yaw = 0.
+    /**
+     * @brief Reset yaw so the current heading becomes 0°.
+     */
     void resetIMUYawToZero();
 
-    // Get yaw after adding a delta angle, normalized to [-180, 180].
-    float getNewYawAfterAddingDegrees(float degreesToAdd);
+private:
+    static IMU* imuInstance;
 
-  private:
-    const int    uartRXPin;                       // RX pin used by UART.
-    volatile int IMUBufferIndex;                  // Index for received bytes.
-    uint8_t      IMUBufferForYaw[IMU_PACKET_LEN]; // Packet buffer.
-    bool         yawReady;                        // Whether a valid yaw has been read.
+    // Latest raw yaw value from IMU
+    float robotYawDegrees;
 
-    float robotYawNeg180To180Degrees; // Latest yaw reading.
-    float resetOffSet;                // Zero offset for yaw.
+    // Offset applied when resetting yaw
+    float yawOffset;
 
-    static IMU* imuInstance; // Static instance pointer.
+    // Tracks if IMU has produced valid data yet
+    bool yawReady;
 
-    // UART + Interrupt setup.
-    void        setUpIMUCommunication();
-    void        setUpIMUInterrupts();
-    void        processIMURXInterruptData();
-    void        convertPacketDataToUsableYaw();
-    static void imuInterruptHandler();
+    // ---- Internal Helpers ----
+    bool sendPacket(uint8_t channel, const uint8_t* data, uint16_t len);
+    bool readPacket(uint8_t &channel, uint16_t &len);
+    void updateYaw();
 };
-#endif
+
+#endif // IMU_H

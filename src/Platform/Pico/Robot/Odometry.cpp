@@ -1,4 +1,5 @@
 #include "../../../Include/Platform/Pico/Robot/Odometry.h"
+#include "../../../Include/Common/LogSystem.h"
 
 // Constructor initializes encoder references and resets state.
 Odometry::Odometry(Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu)

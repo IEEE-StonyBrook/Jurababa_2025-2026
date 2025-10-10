@@ -1,37 +1,52 @@
+/******************************************************************************
+ * @file    Encoder.h
+ * @brief   Driver for AS5048A magnetic rotary encoder via SPI.
+ ******************************************************************************/
+
 #ifndef ENCODER_H
 #define ENCODER_H
 
-#include <cstdint>
-
-#include "../../../External/QuadratureEncoder.h"
-#include "../../../Include/Common/LogSystem.h"
-#include "../Config.h"
-#include "hardware/pio.h"
+#include "hardware/spi.h"
 #include "pico/stdlib.h"
+#include <cstdint>
 
 class Encoder
 {
   public:
-    // Constructor initializes the encoder on the given PIO instance and GPIO pin.
-    Encoder(PIO pioInstance, int gpioPin, bool invertDirection = false);
+    Encoder(spi_inst_t* spi_port, uint cs_gpio);
 
-    // Reset the encoder tick count to zero.
+    void init();
+
+    /**
+     * @brief Read the raw 14-bit angle (0–16383).
+     */
+    uint16_t readRaw();
+
+    /**
+     * @brief Read angle in degrees (0–360).
+     */
+    float readDegrees();
+
+    /**
+     * @brief Get accumulated tick count (like a quadrature encoder).
+     *
+     * Each step of the AS5048A (1/16384 of a rev) is treated as 1 tick.
+     */
+    int32_t getTickCount();
+
     void reset();
 
-    // Return the current tick count.
-    int getTickCount() const;
-
   private:
-    // Load the quadrature decoder PIO program once into hardware.
-    void loadPIOProgram(PIO pioInstance);
+    spi_inst_t* spi_;
+    uint        cs_gpio_;
 
-    const PIO pioInstance;     // PIO block used by this encoder. = pio0;
-    uint      stateMachine;    // State machine index for the PIO program.
-    int       offsetTicks;     // Offset to allow software reset of tick count.
-    bool      invertDirection; // Whether to invert the tick count direction.
-    // Remember which GPIO pin this encoder instance is using so consumers can
-    // decide which field of the MulticoreSensorData to return (left vs right).
-    int gpioPin;
+    uint16_t last_raw_;   ///< Last raw angle reading (0–16383)
+    int32_t  tick_count_; ///< Accumulated ticks
+
+    uint16_t transfer(uint16_t command);
+
+    inline void select() { gpio_put(cs_gpio_, 0); }
+    inline void deselect() { gpio_put(cs_gpio_, 1); }
 };
 
 #endif

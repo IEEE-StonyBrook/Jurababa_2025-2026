@@ -86,25 +86,26 @@ void processCommand(Motion* motion)
 // Publisher for Core1: All robot specific logic
 static void core1_Publisher()
 {
-    // // Bluetooth
-    // Bluetooth bt(uart0, 16, 17, 9600);
-    // bt.init();
-
-    // LogSystem::attachBluetooth(&bt);
-    // LOG_INFO("System initialized");
-    // LOG_DEBUG("Bluetooth logging enabled");
+    spi_init(spi0, 1000000);              // 1 MHz
+    gpio_set_function(18, GPIO_FUNC_SPI); // SCK
+    gpio_set_function(19, GPIO_FUNC_SPI); // MOSI
+    gpio_set_function(16, GPIO_FUNC_SPI); // MISO
+    spi_set_format(spi0, 16, SPI_CPOL_1, SPI_CPHA_1, SPI_MSB_FIRST);
 
     // Sensors
-    Encoder leftEncoder(pio0, 20, true);
-    Encoder rightEncoder(pio0, 8, false); // was 7
-    ToF     leftToF(11, 'L');
-    ToF     frontToF(12, 'F');
-    ToF     rightToF(13, 'R');
-    IMU     imu(5);
+    Encoder leftEncoder(spi0, 9);
+    Encoder rightEncoder(spi0, 13);
+    leftEncoder.init();
+    rightEncoder.init();
+    ToF leftToF(0, 'L');
+    ToF frontToF(26, 'F');
+    ToF rightToF(27, 'R');
+    IMU imu;
+	imu.enableRotationVector();
     imu.resetIMUYawToZero();
 
     // Motors
-    Motor      leftMotor(18, 19, nullptr, true);
+    Motor      leftMotor(2, 3, nullptr, true);
     Motor      rightMotor(6, 7, nullptr, false);
     Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder, &imu, &leftToF,
                           &frontToF, &rightToF);
@@ -130,14 +131,14 @@ int main()
     sleep_ms(3000);
 
     MulticoreSensorHub::init();
-    Bluetooth bt(uart0, 16, 17, 9600);
-    bt.init();
+    // Bluetooth bt(uart0, 16, 17, 9600);
+    // bt.init();
 
-    bt.sendString("Hello from Bluetooth!\n");
+    // bt.sendString("Hello from Bluetooth!\n");
 
-    LogSystem::attachBluetooth(&bt);
-    LOG_INFO("System initialized");
-    LOG_DEBUG("Bluetooth logging enabled");
+    // LogSystem::attachBluetooth(&bt);
+    // LOG_INFO("System initialized");
+    // LOG_DEBUG("Bluetooth logging enabled");
     multicore_launch_core1(core1_Publisher);
 
     // Wait until Core1 signals it finished initializing its sensors
@@ -161,7 +162,6 @@ int main()
     while (true)
     {
         LOG_DEBUG("Test");
-        bt.sendString("Hello from Bluetooth!\r\n");
 
         MulticoreSensorData sensors;
         MulticoreSensorHub::snapshot(sensors); // lock-free read
