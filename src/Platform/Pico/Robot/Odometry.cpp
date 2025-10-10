@@ -14,12 +14,14 @@ Odometry::Odometry(Encoder* leftEncoder, Encoder* rightEncoder, IMU* imu)
 
 // Reset odometry to zero.
 void Odometry::reset() {
-  LOG_DEBUG("Resetting encoders...");
+  LOG_DEBUG("[Odometry] Resetting encoders...");
   leftEncoder->reset();
   rightEncoder->reset();
-  LOG_DEBUG("Resetting IMU yaw to zero...");
+
+  LOG_DEBUG("[Odometry] Resetting IMU yaw to zero...");
   imu->resetIMUYawToZero();
-  LOG_DEBUG("Clearing odometry state...");
+
+  LOG_DEBUG("[Odometry] Clearing internal state...");
   lastLeftTicks = 0;
   lastRightTicks = 0;
   lastAngleDeg = 0.0f;
@@ -28,27 +30,6 @@ void Odometry::reset() {
   deltaDistanceMM = 0.0f;
   deltaAngleDeg = 0.0f;
 }
-
-// // Update odometry using encoder tick changes.
-// void Odometry::update() {
-//   int currentLeftTicks = leftEncoder->getTickCount();
-//   int currentRightTicks = rightEncoder->getTickCount();
-
-//   int deltaLeftTicks = currentLeftTicks - lastLeftTicks;
-//   int deltaRightTicks = currentRightTicks - lastRightTicks;
-
-//   lastLeftTicks = currentLeftTicks;
-//   lastRightTicks = currentRightTicks;
-
-//   float deltaLeftMM = deltaLeftTicks * MM_PER_TICK;
-//   float deltaRightMM = deltaRightTicks * MM_PER_TICK;
-
-//   deltaDistanceMM = 0.5f * (deltaLeftMM + deltaRightMM);
-//   deltaAngleDeg = (deltaRightMM - deltaLeftMM) * DEG_PER_MM_DIFFERENCE;
-
-//   totalDistanceMM += deltaDistanceMM;
-//   totalAngleDeg += deltaAngleDeg;
-// }
 
 // Update odometry using encoder tick changes and IMU angle.
 void Odometry::update() {
@@ -73,6 +54,14 @@ void Odometry::update() {
 
   totalDistanceMM += deltaDistanceMM;
   totalAngleDeg += deltaAngleDeg;
+
+  // ---- Debug logs ----
+  LOG_DEBUG("[Odometry] ΔTicks L=" + std::to_string(deltaLeftTicks) +
+            " R=" + std::to_string(deltaRightTicks));
+  LOG_DEBUG("[Odometry] ΔDist=" + std::to_string(deltaDistanceMM) + " mm");
+  LOG_DEBUG("[Odometry] ΔAngle=" + std::to_string(deltaAngleDeg) + " deg");
+  LOG_DEBUG("[Odometry] TotalDist=" + std::to_string(totalDistanceMM) +
+            " mm, TotalAngle=" + std::to_string(totalAngleDeg) + " deg");
 }
 
 // Return total forward distance in millimeters.

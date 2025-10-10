@@ -26,6 +26,7 @@
 
 // Battery reference.
 #define DEFAULT_BATTERY_VOLTAGE 7.92f  // Nominal charged battery voltage.
+#define DEADBAND_MOTOR_VOLTS 2.0f      // Deadband for motor voltage commands.
 
 // Feedforward constants.
 #define SPEED_FFL 0.0075918f  // Left wheel speed gain forward (volts per mm/s).
@@ -55,13 +56,13 @@
 
 // Forward position controller gains
 #define FWD_KP 0.012f   // Proportional gain per mm error
-#define FWD_KI 0.0003f  // Integral gain per mm*s error
+#define FWD_KI 0.000f  // Integral gain per mm*s error
 #define FWD_KD 0.020f   // Derivative gain on filtered diff
 
 // Rotation position controller gains
-#define ROT_KP 0.080f   // Proportional gain per degree error
-#define ROT_KI 0.0015f  // Integral gain per deg*s error
-#define ROT_KD 0.030f   // Derivative gain on filtered diff
+#define ROT_KP 1.0f
+#define ROT_KI 0.0f
+#define ROT_KD 0.05f
 
 // 0.15f
 

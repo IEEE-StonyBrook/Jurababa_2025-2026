@@ -2,6 +2,7 @@
 #define PROFILE_H_
 
 #include <cstdint>
+#include <string>
 
 /**
  * @brief Motion profile for trapezoidal velocity control.
@@ -70,6 +71,8 @@ class Profile {
   float acceleration_;
   float invAcceleration_;
   int directionSign_;
+
+  std::string phaseName() const;
 };
 
 #endif

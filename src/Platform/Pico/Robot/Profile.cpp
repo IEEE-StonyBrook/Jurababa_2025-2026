@@ -19,6 +19,7 @@ Profile::Profile()
       directionSign_(1) {}
 
 void Profile::reset() {
+  LOG_DEBUG("[Profile] Resetting profile to Idle.");
   state_ = State::Idle;
   speed_ = 0.0f;
   targetSpeed_ = 0.0f;
@@ -36,6 +37,7 @@ void Profile::start(float distance, float maxSpeed, float finalSpeed,
   distance = std::fabs(distance);
 
   if (distance < 1e-3f) {
+    LOG_DEBUG("[Profile] Start ignored, distance too small.");
     state_ = State::Finished;
     return;
   }
@@ -53,23 +55,30 @@ void Profile::start(float distance, float maxSpeed, float finalSpeed,
   invAcceleration_ = (acceleration_ >= 1e-6f) ? (1.0f / acceleration_) : 1.0f;
 
   speed_ = 0.0f;
-  LOG_DEBUG("START: Starting acceleration phase.");
   state_ = State::Accelerating;
+
+  LOG_DEBUG("[Profile] START: dist=" + std::to_string(distance_) +
+            " mm, maxV=" + std::to_string(targetSpeed_) +
+            " mm/s, finalV=" + std::to_string(finalSpeed_) +
+            " mm/s, accel=" + std::to_string(acceleration_) + " mm/s^2");
 }
 
 void Profile::update(float currentPos) {
   if (state_ == State::Idle || state_ == State::Finished) return;
 
   float deltaV = acceleration_ * LOOP_INTERVAL_S;
-  LOG_DEBUG("IN LOOP: DeltaV: " + std::to_string(deltaV) + " mm/s");
   float remaining = remainingDistance(currentPos);
-  LOG_DEBUG("IN LOOP: Remaining Distance: " + std::to_string(remaining) + " mm");
+
+  LOG_DEBUG("[Profile] Phase=" + phaseName() +
+            ", RemDist=" + std::to_string(remaining) +
+            " mm, CurrSpeed=" + std::to_string(speed_) +
+            " mm/s, TargetSpeed=" + std::to_string(targetSpeed_));
 
   // Transition to braking if needed
   if (state_ == State::Accelerating && remaining < brakingDistance()) {
     state_ = State::Braking;
     targetSpeed_ = finalSpeed_;
-    LOG_DEBUG("SLOWING DOWN: Switching to braking phase.");
+    LOG_DEBUG("[Profile] SWITCH: Accel → Braking.");
   }
 
   // Adjust speed toward target
@@ -83,19 +92,19 @@ void Profile::update(float currentPos) {
   if (remaining < 1e-2f) {
     state_ = State::Finished;
     speed_ = finalSpeed_;
-    LOG_DEBUG("FINISHED LOOP: Profile finished. Target reached.");
+    LOG_DEBUG("[Profile] FINISHED: target reached, finalV=" +
+              std::to_string(finalSpeed_));
   }
-
-  LOG_DEBUG("IN LOOP: Current Speed: " + std::to_string(speed_) + " mm/s");
 }
 
 void Profile::stop() {
+  LOG_DEBUG("[Profile] STOP called, forcing Finished.");
   targetSpeed_ = 0.0f;
   speed_ = 0.0f;
   state_ = State::Finished;
 }
 
-bool Profile:: isFinished() const { return state_ == State::Finished; }
+bool Profile::isFinished() const { return state_ == State::Finished; }
 
 float Profile::speed() const { return speed_; }
 
@@ -109,4 +118,15 @@ float Profile::remainingDistance(float currentPos) const {
 float Profile::brakingDistance() const {
   return std::fabs(speed_ * speed_ - finalSpeed_ * finalSpeed_) * 0.5f *
          invAcceleration_;
+}
+
+// ----------------- Helper for Logging -----------------
+std::string Profile::phaseName() const {
+  switch (state_) {
+    case State::Idle: return "Idle";
+    case State::Accelerating: return "Accel";
+    case State::Braking: return "Braking";
+    case State::Finished: return "Finished";
+  }
+  return "Unknown";
 }
