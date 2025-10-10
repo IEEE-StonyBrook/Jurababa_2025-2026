@@ -59,8 +59,10 @@
 #define FWD_KD 0.6f  // Derivative gain for forward error.
 
 // Rotation PD controller gains.
-#define ROT_KP 0.15f  // Proportional gain for rotation error.
-#define ROT_KD 0.00f  // Derivative gain for rotation error.
+#define ROT_KP 0.5f  // Proportional gain for rotation error.
+#define ROT_KD 0.0f  // Derivative gain for rotation error.
+
+//0.15f
 
 // ================== Motion Constants ================== //
 // Distances.

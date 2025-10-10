@@ -58,16 +58,16 @@ void processCommand(Motion* motion) {
                         FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
         break;
       case CommandType::TURN_LEFT:
-        motion->spinTurn(-cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        motion->turn(-90.0f, TURN_TOP_SPEED, 0.0f, TURN_ACCEL, true);
         break;
       case CommandType::TURN_RIGHT:
-        motion->spinTurn(cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        motion->turn(90.0f, TURN_TOP_SPEED, 0.0f, TURN_ACCEL, true);
         break;
       case CommandType::STOP:
         motion->stop();
         break;
       case CommandType::TURN_ARBITRARY:
-        motion->spinTurn(cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
+        motion->turn(cmd.param, TURN_TOP_SPEED, 0.0f, TURN_ACCEL, true);
         break;
       case CommandType::CENTER_FROM_EDGE:
         motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED,
@@ -139,7 +139,8 @@ int main() {
   API api(&mouse);
 
   // api.goToCenterFromEdge();
-  api.executeSequence("L#L#L#");
+//   api.executeSequence("F#F#F#F#R#F#");
+api.executeSequence("R#");
   // CommandHub::send(CommandType::MOVE_FWD, 1);
   // CommandHub::send(CommandType::TURN_RIGHT, 45);
   // CommandHub::send(CommandType::MOVE_FWD, 2);
