@@ -121,12 +121,12 @@ void Motion::turn(float angle_deg, float omega, float final_omega, float alpha,
   if (blocking) {
     while (!isTurnFinished()) {
       update();
-      LOG_DEBUG("Angle: " +
-                std::to_string(drivetrain_->getOdometry()->getAngleDeg()) +
-                " deg, Omega: " +
-                std::to_string(
-                    drivetrain_->getOdometry()->getAngularVelocityDegPerSec()) +
-                " deg/s");
+      // LOG_DEBUG("Angle: " +
+      //           std::to_string(drivetrain_->getOdometry()->getAngleDeg()) +
+      //           " deg, Omega: " +
+      //           std::to_string(
+      //               drivetrain_->getOdometry()->getAngularVelocityDegPerSec()) +
+      //           " deg/s");
       sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
     }
   }

@@ -59,11 +59,15 @@
 #define FWD_KD 0.020f   // Derivative gain on filtered diff
 
 // Rotation position controller gains
-#define ROT_KP 0.080f   // Proportional gain per degree error
-#define ROT_KI 0.0015f  // Integral gain per deg*s error
-#define ROT_KD 0.030f   // Derivative gain on filtered diff
+// #define ROT_KP 0.085f   // Proportional gain per degree error
+// #define ROT_KI 0.0015f  // Integral gain per deg*s error
+// #define ROT_KD 0.030f   // Derivative gain on filtered diff
 
-// 0.15f
+#define ROT_KP 0.15f   // Proportional gain per degree error
+#define ROT_KI 0.00f  // Integral gain per deg*s error
+#define ROT_KD 0.00f   // Derivative gain on filtered diff
+
+// 0.15f, 0.0015, 0.08
 
 // ================== Motion Constants ================== //
 // Distances.
@@ -76,9 +80,9 @@
 #define FORWARD_ACCEL 200.0f      // Forward accel (mm/s^2).
 
 // Rotational speed/acceleration.
-#define TURN_TOP_SPEED 100.0f  // Max angular speed (deg/s).
+#define TURN_TOP_SPEED 400.0f  // Max angular speed (deg/s).
 #define TURN_FINAL_SPEED 0.0f  // End angular speed.
-#define TURN_ACCEL 50.0f       // Angular accel (deg/s^2).
+#define TURN_ACCEL 300.0f       // Angular accel (deg/s^2).
 
 // ================= IMU UART CONFIG ================= //
 #define IMU_UART_ID uart1            // UART interface used by IMU.

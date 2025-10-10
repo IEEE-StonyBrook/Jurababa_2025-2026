@@ -61,9 +61,9 @@ void Profile::update(float currentPos) {
   if (state_ == State::Idle || state_ == State::Finished) return;
 
   float deltaV = acceleration_ * LOOP_INTERVAL_S;
-  LOG_DEBUG("IN LOOP: DeltaV: " + std::to_string(deltaV) + " mm/s");
+  // LOG_DEBUG("IN LOOP: DeltaV: " + std::to_string(deltaV) + " mm/s");
   float remaining = remainingDistance(currentPos);
-  LOG_DEBUG("IN LOOP: Remaining Distance: " + std::to_string(remaining) + " mm");
+  LOG_DEBUG("IN LOOP: Remaining Distance: " + std::to_string(remaining) + " deg");
 
   // Transition to braking if needed
   if (state_ == State::Accelerating && remaining < brakingDistance()) {
@@ -78,6 +78,7 @@ void Profile::update(float currentPos) {
   } else if (speed_ > targetSpeed_) {
     speed_ = std::max(speed_ - deltaV, targetSpeed_);
   }
+  LOG_DEBUG("IN LOOP: Adjusted Speed: " + std::to_string(speed_) + " deg/s");
 
   // Finish when close enough
   if (remaining < 1e-2f) {
@@ -85,8 +86,6 @@ void Profile::update(float currentPos) {
     speed_ = finalSpeed_;
     LOG_DEBUG("FINISHED LOOP: Profile finished. Target reached.");
   }
-
-  LOG_DEBUG("IN LOOP: Current Speed: " + std::to_string(speed_) + " mm/s");
 }
 
 void Profile::stop() {

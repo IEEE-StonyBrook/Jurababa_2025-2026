@@ -101,14 +101,14 @@ static void core1_publisher() {
   LOG_DEBUG("Initialization complete.");
   motion.resetDriveSystem();
 
-  //   while (true) {
-  // 	drivetrain.runControl(0.0f, 100.0f, 0.0f);
-  // 	LOG_DEBUG("Angle: " +
-  // std::to_string(drivetrain.getOdometry()->getAngleDeg()) + " deg");
-  // 	LOG_DEBUG("Omega: " +
-  // std::to_string(drivetrain.getOdometry()->getAngularVelocityDegPerSec()) + "
-  // deg/s"); 	sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
-  //   }
+//   while (true) {
+//     drivetrain.runControl(0.0f, 200.0f, 0.0f);
+//     LOG_DEBUG("Angle: " +
+//               std::to_string(drivetrain.getOdometry()->getAngleDeg()) + " deg");
+//     LOG_DEBUG("Omega: " +
+//               std::to_string(drivetrain.getOdometry()->getAngularVelocityDegPerSec()) + " deg/s");
+//     sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
+//   }
 
   // LOG_DEBUG("CORE1 Init")
   // Signal Core0 that Core1 is ready
@@ -143,8 +143,9 @@ int main() {
   InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
   API api(&mouse);
 
-  // api.goToCenterFromEdge();
-  api.executeSequence("F#F#F#F#R#F#");
+//   api.goToCenterFromEdge();
+//   api.executeSequence("F#F#F#F#L#F#");
+api.executeSequence("L#");
   // api.executeSequence("R#");
   // CommandHub::send(CommandType::MOVE_FWD, 1);
   // CommandHub::send(CommandType::TURN_RIGHT, 45);

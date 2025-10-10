@@ -160,22 +160,24 @@ void Drivetrain::runControl(float forwardVelocityMMPerSec,
   // Combine forward and rotation control.
   float leftOut = forwardOut - rotationOut;
   float rightOut = forwardOut + rotationOut;
-  LOG_DEBUG("Left PD Output: " + std::to_string(leftOut));
-  LOG_DEBUG("Right PD Output: " + std::to_string(rightOut));
-  LOG_DEBUG("Forward Output: " + std::to_string(forwardOut));
-  LOG_DEBUG("Rotation Output: " + std::to_string(rotationOut));
+  // LOG_DEBUG("Left PD Output: " + std::to_string(leftOut));
+  // LOG_DEBUG("Right PD Output: " + std::to_string(rightOut));
+  // LOG_DEBUG("Forward Output: " + std::to_string(forwardOut));
+  // LOG_DEBUG("Rotation Output: " + std::to_string(rotationOut));
 
   // Calculate wheel speeds for feedforward terms. 
   float tangentSpeed =
       (targetAngularVel * (M_PI / 180.0f)) * (WHEEL_BASE_MM / 2.0f);
   float leftWheelSpeed = targetForwardVel - tangentSpeed;
   float rightWheelSpeed = targetForwardVel + tangentSpeed; 
-  LOG_DEBUG("Left Wheel Speed: " + std::to_string(leftWheelSpeed) + " mm/s");
-  LOG_DEBUG("Right Wheel Speed: " + std::to_string(rightWheelSpeed) + " mm/s");
+  // LOG_DEBUG("Left Wheel Speed: " + std::to_string(leftWheelSpeed) + " mm/s");
+  // LOG_DEBUG("Right Wheel Speed: " + std::to_string(rightWheelSpeed) + " mm/s");
 
   // Add feedforward predictions.
-  leftOut += feedforwardLeft(leftWheelSpeed);
-  rightOut += feedforwardRight(rightWheelSpeed);
+  leftOut += -feedforwardLeft(leftWheelSpeed);
+  rightOut += -feedforwardRight(rightWheelSpeed);
+  // LOG_DEBUG ("Left FF Output: " + std::to_string(feedforwardLeft(leftWheelSpeed)));
+  // LOG_DEBUG ("Right FF Output: " + std::to_string(feedforwardRight(rightWheelSpeed)));
 
   LOG_DEBUG("Applying voltage of " + std::to_string(leftOut) + " V to left motor.");
   LOG_DEBUG("Applying voltage of " + std::to_string(rightOut) + " V to right motor.");
