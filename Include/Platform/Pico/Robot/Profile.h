@@ -1,75 +1,62 @@
-#ifndef PROFILE_H_
-#define PROFILE_H_
+#ifndef PROFILE_H
+#define PROFILE_H
 
+#include "pico/stdlib.h"
+#include <cmath>
 #include <cstdint>
 
-/**
- * @brief Motion profile for trapezoidal velocity control.
- *
- * This class generates smooth velocity commands (accel, cruise, brake)
- * based on a desired distance, speed, and acceleration. It relies on
- * odometry for actual position feedback.
- */
+// Equivalent to the loop update rate, e.g., 1 kHz = 0.001s
+#ifndef LOOP_INTERVAL
+#define LOOP_INTERVAL 0.001f
+#endif
+
 class Profile {
  public:
-  enum class State {
-    Idle,        ///< Not running
-    Accelerating,///< Speeding up
-    Cruising,    ///< Constant velocity
-    Braking,     ///< Slowing down to final speed
-    Finished     ///< Motion completed
+  enum State : uint8_t {
+    PS_IDLE = 0,
+    PS_ACCELERATING = 1,
+    PS_BRAKING = 2,
+    PS_FINISHED = 3,
   };
 
   Profile();
 
-  /** Reset profile to idle state. */
   void reset();
+  bool is_finished();
 
-  /**
-   * @brief Start a new motion profile.
-   * @param distance    Target distance (absolute mm or deg).
-   * @param maxSpeed    Max speed allowed.
-   * @param finalSpeed  Speed at the end of motion.
-   * @param acceleration Positive acceleration (mm/s² or deg/s²).
-   * @param startPos     Current odometry position at start (mm or deg).
-   */
-  void start(float distance, float maxSpeed, float finalSpeed,
-             float acceleration, float startPos);
-
-  /**
-   * @brief Update profile based on current odometry.
-   * @param currentPos Current odometry reading (mm or deg).
-   */
-  void update(float currentPos);
-
-  /** Stop immediately and mark as finished. */
+  void start(float distance, float top_speed, float final_speed, float acceleration);
+  void move(float distance, float top_speed, float final_speed, float acceleration);
   void stop();
+  void finish();
+  void wait_until_finished();
+  void set_state(State state);
 
-  /** @return True if motion has finished. */
-  bool isFinished() const;
+  float get_braking_distance();
+  float position();
+  float speed();
+  float acceleration();
 
-  /** @return Current commanded speed. */
-  float speed() const;
+  void set_speed(float speed);
+  void set_target_speed(float speed);
+  void adjust_position(float adjustment);
+  void set_position(float position);
 
-  /** @return Configured acceleration. */
-  float acceleration() const;
+  void update();
 
  private:
-  /** @return Remaining distance to target. */
-  float remainingDistance(float currentPos) const;
-
-  /** @return Braking distance required at current speed. */
-  float brakingDistance() const;
-
-  State state_;
-  float speed_;
-  float targetSpeed_;
-  float finalSpeed_;
-  float distance_;       ///< Target distance (always positive)
-  float startPosition_;  ///< Odometry position at profile start
-  float acceleration_;
-  float invAcceleration_;
-  int directionSign_;
+  uint8_t m_state;
+  float m_speed;
+  float m_position;
+  int8_t m_sign;
+  float m_acceleration;
+  float m_one_over_acc;
+  float m_target_speed;
+  float m_final_speed;
+  float m_final_position;
 };
+
+// Global instances
+extern Profile forward;
+extern Profile rotation;
 
 #endif

@@ -4,13 +4,13 @@
  ******************************************************************************/
 
 #include "../../../Include/Platform/Pico/Robot/Motion.h"
-#include "../../../Include/Platform/Pico/MulticoreSensors.h"
-#include "../../../Include/Platform/Pico/CommandHub.h"
 
 #include <cmath>
 #include <string>
 
 #include "../../../Include/Common/LogSystem.h"
+#include "../../../Include/Platform/Pico/CommandHub.h"
+#include "../../../Include/Platform/Pico/MulticoreSensors.h"
 
 namespace {
 /**
@@ -34,16 +34,17 @@ Motion::Motion(Drivetrain* drivetrain)
 // -----------------------------------------------------------------------------
 void Motion::resetDriveSystem() {
   LOG_DEBUG("Resetting drive system...");
+  drivetrain_->stop();
   drivetrain_->reset();
-  forward_profile_.reset();
-  rotation_profile_.reset();
+  forward.reset();
+  rotation.reset();
   LOG_DEBUG("Drive system reset complete.");
 }
 
 void Motion::stop() {
   drivetrain_->stop();
-  forward_profile_.reset();
-  rotation_profile_.reset();
+  forward.reset();
+  rotation.reset();
 }
 
 void Motion::disableDrive() { drivetrain_->stop(); }
@@ -51,153 +52,146 @@ void Motion::disableDrive() { drivetrain_->stop(); }
 // -----------------------------------------------------------------------------
 // Forward motion
 // -----------------------------------------------------------------------------
-void Motion::startForward(float distance_mm, float top_speed, float final_speed,
-                          float accel) {
-  // Provide odometry start position to the profile so it can compute progress.
-  const float start_pos_mm = drivetrain_->getOdometry()->getDistanceMM();
-  forward_profile_.start(distance_mm, top_speed, final_speed, accel,
-                         start_pos_mm);
+void Motion::start_move(float distance, float top_speed, float final_speed,
+                        float acceleration) {
+  forward.start(distance, top_speed, final_speed, acceleration);
 }
 
-void Motion::forward(float distance_mm, float top_speed, float final_speed,
-                     float accel, bool blocking) {
-  float distanceMoved = 0.0f;
+bool Motion::move_finished() { return forward.is_finished(); }
 
-  LOG_DEBUG("Starting forward motion: " + std::to_string(distance_mm) + " mm");
-  startForward(distance_mm, top_speed, final_speed, accel);
-
-  if (blocking) {
-    while (!isForwardFinished()) {
-      distanceMoved =
-          drivetrain_->getOdometry()->getVelocityMMPerSec() * LOOP_INTERVAL_S +
-          distanceMoved;
-      // LOG_DEBUG("IsForwardFinished: " + std::to_string(isForwardFinished()));
-      LOG_DEBUG("Pos: " + std::to_string(positionMM()) +
-                " mm, Speed: " + std::to_string(velocityMMPerSec()) + " mm/s");
-      // LOG_DEBUG("Angle: " + std::to_string(angleDeg()) +
-      //           " deg, Omega: " + std::to_string(omegaDegPerSec()) + "
-      //           deg/s");
-      if (distanceMoved == TOF_CELL_DEPTH_TO_CHECK_MM) {
-        MulticoreSensorData local{};
-        LOG_DEBUG("Publishing sensor snapshot at " +
-                  std::to_string(positionMM()) + " mm");
-
-        local.tof_left_exist = drivetrain_->isWallLeft();
-        local.tof_front_exist = drivetrain_->isWallFront();
-        local.tof_right_exist = drivetrain_->isWallRight();
-        local.valid_sensors = (SensorMask) (static_cast<uint8_t>(SensorMask::TOF_LEFT_EXIST) | static_cast<uint8_t>(SensorMask::TOF_FRONT_EXIST) | static_cast<uint8_t>(SensorMask::TOF_RIGHT_EXIST));
-        local.timestamp_ms = to_ms_since_boot(get_absolute_time());
-        MulticoreSensorHub::publish(local);
-
-        CommandHub::send(CommandType::SNAPSHOT, static_cast<int32_t>(local.valid_sensors));
-        distanceMoved = 0.0f;
-      }
-      update();
-      sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
-    }
-  }
+void Motion::move(float distance, float top_speed, float final_speed,
+                  float acceleration) {
+  forward.move(distance, top_speed, final_speed, acceleration);
 }
 
-bool Motion::isForwardFinished() const { return forward_profile_.isFinished(); }
-
-// -----------------------------------------------------------------------------
-// Rotational motion
-// -----------------------------------------------------------------------------
-void Motion::startTurn(float angle_deg, float omega, float final_omega,
-                       float alpha) {
-  // Record absolute IMU-based target angle (for truth-based completion).
-  const float current_deg = drivetrain_->getOdometry()->getAngleDeg();
-  target_angle_deg_ = current_deg + angle_deg;
-
-  // Provide IMU start angle to the profile so it can compute progress.
-  rotation_profile_.start(angle_deg, omega, final_omega, alpha, current_deg);
+void Motion::start_turn(float distance, float top_speed, float final_speed,
+                        float acceleration) {
+  rotation.start(distance, top_speed, final_speed, acceleration);
 }
 
-void Motion::turn(float angle_deg, float omega, float final_omega, float alpha,
-                  bool blocking) {
-  startTurn(angle_deg, omega, final_omega, alpha);
-  LOG_DEBUG("Starting turn: " + std::to_string(angle_deg) + " degrees");
+bool Motion::turn_finished() { return rotation.is_finished(); }
 
-  if (blocking) {
-    while (!isTurnFinished()) {
-      update();
-      // LOG_DEBUG("Angle: " +
-      //           std::to_string(drivetrain_->getOdometry()->getAngleDeg()) +
-      //           " deg, Omega: " +
-      //           std::to_string(
-      //               drivetrain_->getOdometry()->getAngularVelocityDegPerSec()) +
-      //           " deg/s");
-      sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
-    }
-  }
-}
-
-bool Motion::isTurnFinished() const {
-  const float imu_angle = drivetrain_->getOdometry()->getAngleDeg();
-  const float err = Wrap180(target_angle_deg_ - imu_angle);
-  return std::fabs(err) < 1.0f;  // 1 degree tolerance
-}
-
-// -----------------------------------------------------------------------------
-// Integrated turns
-// -----------------------------------------------------------------------------
-void Motion::integratedTurn(float angle_deg, float omega, float alpha) {
-  rotation_profile_.reset();
-  const float start_angle = drivetrain_->getOdometry()->getAngleDeg();
-  rotation_profile_.start(angle_deg, omega, 0.0f, alpha, start_angle);
-}
-
-void Motion::spinTurn(float angle_deg, float omega, float alpha) {
-  drivetrain_->runControl(0.0f, 0.0f, 0.0f);
-  integratedTurn(angle_deg, omega, alpha);
-}
-
-// -----------------------------------------------------------------------------
-// Stopping utilities
-// -----------------------------------------------------------------------------
-void Motion::stopAt(float target_mm) {
-  // Build a decel profile to the specific position target.
-  const float current_pos = positionMM();
-  const float remaining = target_mm - current_pos;
-  forward_profile_.start(
-      remaining,
-      velocityMMPerSec(),  // use current speed as max to ramp down
-      0.0f,                // final stop
-      accelerationMMPerSec2(),
-      current_pos);  // start position (odometry)
-}
-
-void Motion::stopAfter(float distance_mm) {
-  // Build a decel profile beginning now for a relative distance.
-  const float current_pos = positionMM();
-  forward_profile_.start(distance_mm, velocityMMPerSec(), 0.0f,
-                         accelerationMMPerSec2(),
-                         current_pos);  // start position (odometry)
-}
-
-void Motion::waitUntilPosition(float target_mm) {
-  while (positionMM() < target_mm) {
-    sleep_ms(2);
-  }
-}
-
-void Motion::waitUntilDistance(float delta_mm) {
-  waitUntilPosition(positionMM() + delta_mm);
+void Motion::turn(float distance, float top_speed, float final_speed,
+                  float acceleration) {
+  rotation.move(distance, top_speed, final_speed, acceleration);
 }
 
 // -----------------------------------------------------------------------------
 // Update loop
 // -----------------------------------------------------------------------------
 void Motion::update() {
-  // Feed CURRENT odometry positions to the profiles so they can compute
-  // remaining.
-  const float current_mm = drivetrain_->getOdometry()->getDistanceMM();
-  const float current_deg = drivetrain_->getOdometry()->getAngleDeg();
+  forward.update();
+  rotation.update();
+}
 
-  forward_profile_.update(current_mm);
-  rotation_profile_.update(current_deg);
+// Example Usages
+//***************************************************************************//
 
-  // Drivetrain expects forward (mm/s) and rotation (deg/s).
-  drivetrain_->runControl(forward_profile_.speed(), rotation_profile_.speed(),
-                          0.0f);
+/**
+ * Performs a turn. Regardless of whether the robot is moving or not
+ *
+ * The function is given three parameters
+ *
+ *  - angle  : positive is a left turn (deg)
+ *  - omega  : angular velocity of middle phase (deg/s)
+ *  - alpha  : angular acceleration of in/out phases (deg/s/s)
+ *
+ * If the robot is moving forward, it will execute a smooth, integrated
+ * turn. The turn will only be repeatable if it is always performed at the
+ * same forward speed.
+ *
+ * If the robot is stationary, it will execute an in-place spin turn.
+ *
+ * The parameter alpha will indirectly determine the turn radius. During
+ * the accelerating phase, the angular velocity, will increase until it
+ * reaches the value omega.
+ * The minimum radius during the constant phase is
+ *   radius = (speed/omega) * (180/PI)
+ * The effective radius will be larger because it takes some time
+ * for the rotation to accelerate and decelerate. The parameter alpha
+ * controls that.
+ *
+ * Note that a real mouse may behave slightly different for left and
+ * right turns and so the parameters for, say, a 90 degree left turn
+ * may be slightly different to those for a 90 degree right turn.
+ *
+ * @brief execute an arbitrary in-place or smooth turn
+ */
+void Motion::turn(float angle, float omega, float alpha) {
+  // get ready to turn
+  rotation.reset();
+  rotation.move(angle, omega, 0, alpha);
+}
+
+/**
+ *
+ * @brief turn in place. Force forward speed to zero
+ */
+void Motion::spin_turn(float angle, float omega, float alpha) {
+  forward.set_target_speed(0);
+  while (forward.speed() != 0) {
+    sleep_ms(2000);
+  }
+  turn(angle, omega, alpha);
+};
+
+//***************************************************************************//
+/**
+ * These are examples of ways to use the motion control functions
+ */
+
+/**
+ * The robot is assumed to be moving. This call will stop at a specific
+ * distance. Clearly, there must be enough distance remaining for it to
+ * brake to a halt.
+ *
+ * The current values for speed and acceleration are used.
+ *
+ * Calling this with the robot stationary is undefined. Don't do that.
+ *
+ * @brief bring the robot to a halt at a specific distance
+ */
+void Motion::stop_at(float position) {
+  float remaining = position - forward.position();
+  forward.move(remaining, forward.speed(), 0, forward.acceleration());
+}
+
+/**
+ * The robot is assumed to be moving. This call will stop  after a
+ * specific distance has been travelled
+ *
+ * Clearly, there must be enough distance remaining for it to
+ * brake to a halt.
+ *
+ * The current values for speed and acceleration are used.
+ *
+ * Calling this with the robot stationary is undefined. Don't do that.
+ *
+ * @brief bring the robot to a halt after a specific distance
+ */
+void Motion::stop_after(float distance) {
+  forward.move(distance, forward.speed(), 0, forward.acceleration());
+}
+
+/**
+ * The robot is assumed to be moving. This utility function call will just
+ * do a busy-wait until the forward profile gets to the supplied position.
+ *
+ * @brief wait until the given position is reached
+ */
+void Motion::wait_until_position(float position) {
+  while (forward.position() < position) {
+    sleep_ms(2000);
+  }
+}
+
+/**
+ * The robot is assumed to be moving. This utility function call will just
+ * do a busy-wait until the forward profile has moved by the given distance.
+ *
+ * @brief wait until the given distance has been travelled
+ */
+void Motion::wait_until_distance(float distance) {
+  float target = forward.position() + distance;
+  wait_until_position(target);
 }

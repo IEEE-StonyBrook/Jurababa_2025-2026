@@ -26,7 +26,7 @@
 
 // Battery reference.
 #define DEFAULT_BATTERY_VOLTAGE 7.92f  // Nominal charged battery voltage.
-#define MIN_VOLTAGE 2.5f              // Minimum operating voltage.
+#define MIN_VOLTAGE 2.5f               // Minimum operating voltage.
 // Feedforward constants.
 #define SPEED_FFL 0.0075918f  // Left wheel speed gain forward (volts per mm/s).
 #define SPEED_FFR \
@@ -58,10 +58,9 @@
 // #define FWD_KI 0.0003f  // Integral gain per mm*s error
 // #define FWD_KD 0.020f   // Derivative gain on filtered diff
 
-#define FWD_KP 0.125f   // Proportional gain per mm error
+#define FWD_KP 0.125f  // Proportional gain per mm error
 #define FWD_KI 0.001f  // Integral gain per mm*s error
-#define FWD_KD 0.5f   // Derivative gain on filtered diff
-
+#define FWD_KD 0.5f    // Derivative gain on filtered diff
 
 // Rotation position controller gains
 #define ROT_KP 0.085f   // Proportional gain per degree error
@@ -87,7 +86,7 @@
 // Rotational speed/acceleration.
 #define TURN_TOP_SPEED 400.0f  // Max angular speed (deg/s).
 #define TURN_FINAL_SPEED 0.0f  // End angular speed.
-#define TURN_ACCEL 300.0f       // Angular accel (deg/s^2).
+#define TURN_ACCEL 300.0f      // Angular accel (deg/s^2).
 
 // ================= IMU UART CONFIG ================= //
 #define IMU_UART_ID uart1            // UART interface used by IMU.

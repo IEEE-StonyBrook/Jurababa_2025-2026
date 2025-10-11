@@ -1,111 +1,138 @@
 #include "../../../Include/Platform/Pico/Robot/Profile.h"
 
-#include <algorithm>
-#include <cmath>
-#include <string>
-
-#include "../../../Include/Common/LogSystem.h"
-#include "../../../Include/Platform/Pico/Config.h"
+Profile forward;
+Profile rotation;
 
 Profile::Profile()
-    : state_(State::Idle),
-      speed_(0.0f),
-      targetSpeed_(0.0f),
-      finalSpeed_(0.0f),
-      distance_(0.0f),
-      startPosition_(0.0f),
-      acceleration_(0.0f),
-      invAcceleration_(1.0f),
-      directionSign_(1) {}
+    : m_state(PS_IDLE),
+      m_speed(0),
+      m_position(0),
+      m_sign(1),
+      m_acceleration(0),
+      m_one_over_acc(1),
+      m_target_speed(0),
+      m_final_speed(0),
+      m_final_position(0) {}
 
 void Profile::reset() {
-  state_ = State::Idle;
-  speed_ = 0.0f;
-  targetSpeed_ = 0.0f;
-  finalSpeed_ = 0.0f;
-  distance_ = 0.0f;
-  startPosition_ = 0.0f;
-  acceleration_ = 0.0f;
-  invAcceleration_ = 1.0f;
-  directionSign_ = 1;
+  m_position = 0;
+  m_speed = 0;
+  m_target_speed = 0;
+  m_state = PS_IDLE;
 }
 
-void Profile::start(float distance, float maxSpeed, float finalSpeed,
-                    float acceleration, float startPos) {
-  directionSign_ = (distance < 0) ? -1 : 1;
-  distance = std::fabs(distance);
+bool Profile::is_finished() {
+  return m_state == PS_FINISHED;
+}
 
-  if (distance < 1e-3f) {
-    state_ = State::Finished;
+void Profile::start(float distance, float top_speed, float final_speed, float acceleration) {
+  m_sign = (distance < 0) ? -1 : +1;
+  if (distance < 0) distance = -distance;
+  if (distance < 1.0f) {
+    m_state = PS_FINISHED;
     return;
   }
+  if (final_speed > top_speed) final_speed = top_speed;
 
-  if (finalSpeed > maxSpeed) {
-    finalSpeed = maxSpeed;
-  }
-
-  distance_ = distance;
-  startPosition_ = startPos;
-
-  targetSpeed_ = directionSign_ * std::fabs(maxSpeed);
-  finalSpeed_ = directionSign_ * std::fabs(finalSpeed);
-  acceleration_ = std::fabs(acceleration);
-  invAcceleration_ = (acceleration_ >= 1e-6f) ? (1.0f / acceleration_) : 1.0f;
-
-  speed_ = 0.0f;
-  LOG_DEBUG("START: Starting acceleration phase.");
-  state_ = State::Accelerating;
+  m_position = 0;
+  m_final_position = distance;
+  m_target_speed = m_sign * fabsf(top_speed);
+  m_final_speed = m_sign * fabsf(final_speed);
+  m_acceleration = fabsf(acceleration);
+  m_one_over_acc = (m_acceleration >= 1.0f) ? (1.0f / m_acceleration) : 1.0f;
+  m_state = PS_ACCELERATING;
 }
 
-void Profile::update(float currentPos) {
-  if (state_ == State::Idle || state_ == State::Finished) return;
-
-  float deltaV = acceleration_ * LOOP_INTERVAL_S;
-  // LOG_DEBUG("IN LOOP: DeltaV: " + std::to_string(deltaV) + " mm/s");
-  float remaining = remainingDistance(currentPos);
-  LOG_DEBUG("IN LOOP: Remaining Distance: " + std::to_string(remaining) + " deg");
-
-  // Transition to braking if needed
-  if (state_ == State::Accelerating && remaining < brakingDistance()) {
-    state_ = State::Braking;
-    targetSpeed_ = finalSpeed_;
-    LOG_DEBUG("SLOWING DOWN: Switching to braking phase.");
-  }
-
-  // Adjust speed toward target
-  if (speed_ < targetSpeed_) {
-    speed_ = std::min(speed_ + deltaV, targetSpeed_);
-  } else if (speed_ > targetSpeed_) {
-    speed_ = std::max(speed_ - deltaV, targetSpeed_);
-  }
-  LOG_DEBUG("IN LOOP: Adjusted Speed: " + std::to_string(speed_) + " deg/s");
-
-  // Finish when close enough
-  if (remaining < 1e-2f) {
-    state_ = State::Finished;
-    speed_ = finalSpeed_;
-    LOG_DEBUG("FINISHED LOOP: Profile finished. Target reached.");
-  }
+void Profile::move(float distance, float top_speed, float final_speed, float acceleration) {
+  start(distance, top_speed, final_speed, acceleration);
+  wait_until_finished();
 }
 
 void Profile::stop() {
-  targetSpeed_ = 0.0f;
-  speed_ = 0.0f;
-  state_ = State::Finished;
+  m_target_speed = 0;
+  finish();
 }
 
-bool Profile:: isFinished() const { return state_ == State::Finished; }
-
-float Profile::speed() const { return speed_; }
-
-float Profile::acceleration() const { return acceleration_; }
-
-float Profile::remainingDistance(float currentPos) const {
-  float traveled = std::fabs(currentPos - startPosition_);
-  return std::max(0.0f, distance_ - traveled);
+void Profile::finish() {
+  m_speed = m_target_speed;
+  m_state = PS_FINISHED;
 }
 
-float Profile::brakingDistance() const {
-  return std::fabs(speed_ * speed_ - finalSpeed_ * finalSpeed_) * 0.5f *
-         invAcceleration_;
+void Profile::wait_until_finished() {
+  while (m_state != PS_FINISHED) {
+    sleep_ms(2);
+  }
+}
+
+void Profile::set_state(State state) {
+  m_state = state;
+}
+
+float Profile::get_braking_distance() {
+  return fabsf(m_speed * m_speed - m_final_speed * m_final_speed) * 0.5f * m_one_over_acc;
+}
+
+float Profile::position() {
+  return m_position;
+}
+
+float Profile::speed() {
+  return m_speed;
+}
+
+float Profile::acceleration() {
+  return m_acceleration;
+}
+
+void Profile::set_speed(float speed) {
+  m_speed = speed;
+}
+
+void Profile::set_target_speed(float speed) {
+  m_target_speed = speed;
+}
+
+void Profile::adjust_position(float adjustment) {
+  m_position += adjustment;
+}
+
+void Profile::set_position(float position) {
+  m_position = position;
+}
+
+void Profile::update() {
+  if (m_state == PS_IDLE) return;
+
+  float delta_v = m_acceleration * LOOP_INTERVAL;
+  float remaining = fabsf(m_final_position) - fabsf(m_position);
+
+  if (m_state == PS_ACCELERATING) {
+    if (remaining < get_braking_distance()) {
+      m_state = PS_BRAKING;
+      if (m_final_speed == 0) {
+        // small velocity to ensure reaching zero (floating point safety)
+        m_target_speed = m_sign * 5.0f;
+      } else {
+        m_target_speed = m_final_speed;
+      }
+    }
+  }
+
+  // Adjust speed toward target
+  if (m_speed < m_target_speed) {
+    m_speed += delta_v;
+    if (m_speed > m_target_speed) m_speed = m_target_speed;
+  } else if (m_speed > m_target_speed) {
+    m_speed -= delta_v;
+    if (m_speed < m_target_speed) m_speed = m_target_speed;
+  }
+
+  // Update position
+  m_position += m_speed * LOOP_INTERVAL;
+
+  // End condition
+  if (m_state != PS_FINISHED && remaining < 0.125f) {
+    m_state = PS_FINISHED;
+    m_target_speed = m_final_speed;
+  }
 }

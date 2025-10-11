@@ -22,11 +22,8 @@ Drivetrain::Drivetrain(Motor* leftMotor, Motor* rightMotor,
       prevRotationError(0.0f) {}
 
 void Drivetrain::reset() {
-  LOG_DEBUG("Resetting odometry...");
   odometry.reset();
-  LOG_DEBUG("Stopping motors...");
   stop();
-  LOG_DEBUG("Clearing controller states...");
   forwardError = rotationError = 0.0f;
   prevForwardError = prevRotationError = 0.0f;
   targetForwardVel = targetAngularVel = 0.0f;
@@ -111,6 +108,7 @@ void Drivetrain::runControl(float forwardVelocityMMPerSec,
   float right_output = 0;
   left_output = pos_output - rot_output;
   right_output = pos_output + rot_output;
+  // FIXME: Might need to negate rot_output]
 
   float tangent_speed = m_omega * WHEEL_BASE_MM / 2 * RADIANS_PER_DEGREE;
   float left_speed = m_velocity - tangent_speed;
