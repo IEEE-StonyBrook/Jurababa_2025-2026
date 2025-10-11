@@ -14,6 +14,7 @@
 #include "Drivetrain.h"
 #include "Profile.h"
 #include <functional>   // for std::function
+#include "ToF.h"
 
 /**
  * @class Motion
@@ -50,6 +51,7 @@ class Motion {
   void stopAfter(float distance_mm);
   void waitUntilPosition(float target_mm);
   void waitUntilDistance(float delta_mm);
+  void centerFromFront(ToF* frontToF);
 
   // ---------------- Update Loop ----------------
   void update();

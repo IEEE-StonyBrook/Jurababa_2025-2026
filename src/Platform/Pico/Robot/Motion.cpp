@@ -185,6 +185,13 @@ void Motion::waitUntilDistance(float delta_mm) {
   waitUntilPosition(positionMM() + delta_mm);
 }
 
+void Motion::centerFromFront(ToF* frontToF) {
+
+  const float initialDistance = frontToF->getToFDistanceFromWallMM();
+  const float targetDistance = initialDistance - TO_CENTER_DISTANCE_MM;
+  forward(targetDistance, 100.0f, 0.0f, 200.0f, true);
+
+}
 // -----------------------------------------------------------------------------
 // Update loop
 // -----------------------------------------------------------------------------

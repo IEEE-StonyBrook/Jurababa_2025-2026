@@ -188,10 +188,10 @@ int main() {
     }
 
     // Example: print sensor values or feed into planner
-    // LOG_DEBUG("\nLeft encoder: " +
-    // std::to_string(sensors.left_encoder_count)); LOG_DEBUG("\nFront ToF: " +
-    // std::to_string(sensors.tof_front_mm)); LOG_DEBUG("\nIMU_YAW: " +
-    // std::to_string(sensors.imu_yaw));
+    LOG_DEBUG("\nLeft encoder: " +
+    std::to_string(sensors.left_encoder_count)); LOG_DEBUG("\nFront ToF: " +
+    std::to_string(sensors.tof_front_mm)); LOG_DEBUG("\nIMU_YAW: " +
+    std::to_string(sensors.imu_yaw));
 
     sleep_ms(250);
   }
