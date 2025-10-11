@@ -77,6 +77,7 @@
 // Distances.
 #define CELL_DISTANCE_MM 180.0f      // One cell length in mm.
 #define HALF_CELL_DISTANCE_MM 90.0f  // Half cell length in mm.
+#define SENSING_POSITION 170.0f
 
 // Linear speed/acceleration.
 #define FORWARD_TOP_SPEED 300.0f  // Max forward speed (mm/s).

@@ -1,9 +1,10 @@
 #ifndef PROFILE_H
 #define PROFILE_H
 
-#include "pico/stdlib.h"
 #include <cmath>
 #include <cstdint>
+
+#include "pico/stdlib.h"
 
 // Equivalent to the loop update rate, e.g., 1 kHz = 0.001s
 #ifndef LOOP_INTERVAL
@@ -24,8 +25,10 @@ class Profile {
   void reset();
   bool is_finished();
 
-  void start(float distance, float top_speed, float final_speed, float acceleration);
-  void move(float distance, float top_speed, float final_speed, float acceleration);
+  void start(float distance, float top_speed, float final_speed,
+             float acceleration);
+  void move(float distance, float top_speed, float final_speed,
+            float acceleration);
   void stop();
   void finish();
   void wait_until_finished();
@@ -34,7 +37,7 @@ class Profile {
   float get_braking_distance();
   float position();
   float speed();
-  float acceleration();
+  float acceleration() const;
 
   void set_speed(float speed);
   void set_target_speed(float speed);
@@ -42,6 +45,8 @@ class Profile {
   void set_position(float position);
 
   void update();
+
+  void adjust_forward_position(float delta);
 
  private:
   uint8_t m_state;

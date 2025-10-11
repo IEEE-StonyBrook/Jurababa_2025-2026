@@ -21,11 +21,10 @@ void Profile::reset() {
   m_state = PS_IDLE;
 }
 
-bool Profile::is_finished() {
-  return m_state == PS_FINISHED;
-}
+bool Profile::is_finished() { return m_state == PS_FINISHED; }
 
-void Profile::start(float distance, float top_speed, float final_speed, float acceleration) {
+void Profile::start(float distance, float top_speed, float final_speed,
+                    float acceleration) {
   m_sign = (distance < 0) ? -1 : +1;
   if (distance < 0) distance = -distance;
   if (distance < 1.0f) {
@@ -43,7 +42,8 @@ void Profile::start(float distance, float top_speed, float final_speed, float ac
   m_state = PS_ACCELERATING;
 }
 
-void Profile::move(float distance, float top_speed, float final_speed, float acceleration) {
+void Profile::move(float distance, float top_speed, float final_speed,
+                   float acceleration) {
   start(distance, top_speed, final_speed, acceleration);
   wait_until_finished();
 }
@@ -64,41 +64,26 @@ void Profile::wait_until_finished() {
   }
 }
 
-void Profile::set_state(State state) {
-  m_state = state;
-}
+void Profile::set_state(State state) { m_state = state; }
 
 float Profile::get_braking_distance() {
-  return fabsf(m_speed * m_speed - m_final_speed * m_final_speed) * 0.5f * m_one_over_acc;
+  return fabsf(m_speed * m_speed - m_final_speed * m_final_speed) * 0.5f *
+         m_one_over_acc;
 }
 
-float Profile::position() {
-  return m_position;
-}
+float Profile::position() { return m_position; }
 
-float Profile::speed() {
-  return m_speed;
-}
+float Profile::speed() { return m_speed; }
 
-float Profile::acceleration() {
-  return m_acceleration;
-}
+float Profile::acceleration() const { return m_acceleration; }
 
-void Profile::set_speed(float speed) {
-  m_speed = speed;
-}
+void Profile::set_speed(float speed) { m_speed = speed; }
 
-void Profile::set_target_speed(float speed) {
-  m_target_speed = speed;
-}
+void Profile::set_target_speed(float speed) { m_target_speed = speed; }
 
-void Profile::adjust_position(float adjustment) {
-  m_position += adjustment;
-}
+void Profile::adjust_position(float adjustment) { m_position += adjustment; }
 
-void Profile::set_position(float position) {
-  m_position = position;
-}
+void Profile::set_position(float position) { m_position = position; }
 
 void Profile::update() {
   if (m_state == PS_IDLE) return;

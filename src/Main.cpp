@@ -49,28 +49,30 @@ void processCommand(Motion* motion) {
     CommandPacket cmd = CommandHub::receiveBlocking();
     switch (cmd.type) {
       case CommandType::MOVE_FWD_HALF:
-        motion->forward(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED,
-                        FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+        motion->adjust_forward_position(-CELL_DISTANCE_MM / 2);
+        motion->wait_until_position(SENSING_POSITION);
         break;
       case CommandType::MOVE_FWD:
-        motion->forward(cmd.param * CELL_DISTANCE_MM, FORWARD_TOP_SPEED,
-                        FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+        motion->adjust_forward_position(-CELL_DISTANCE_MM);
+        motion->wait_until_position(SENSING_POSITION);
         break;
       case CommandType::TURN_LEFT:
-        motion->turn(-90.0f, TURN_TOP_SPEED, 0.0f, TURN_ACCEL, true);
+        motion->spin_turn(-90.0f, TURN_TOP_SPEED, TURN_ACCEL);
         break;
       case CommandType::TURN_RIGHT:
-        motion->turn(90.0f, TURN_TOP_SPEED, 0.0f, TURN_ACCEL, true);
+        motion->spin_turn(90.0f, TURN_TOP_SPEED, TURN_ACCEL);
         break;
       case CommandType::STOP:
         motion->stop();
         break;
       case CommandType::TURN_ARBITRARY:
-        motion->turn(cmd.param, TURN_TOP_SPEED, 0.0f, TURN_ACCEL, true);
+        motion->spin_turn(cmd.param, TURN_TOP_SPEED, TURN_ACCEL);
         break;
       case CommandType::CENTER_FROM_EDGE:
-        motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED,
-                        FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
+        motion->resetDriveSystem();
+        motion->move(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED,
+                     FORWARD_TOP_SPEED, FORWARD_ACCEL);
+        motion->set_position(CELL_DISTANCE_MM / 2);
         break;
 
       default:
@@ -101,14 +103,20 @@ static void core1_publisher() {
   LOG_DEBUG("Initialization complete.");
   motion.resetDriveSystem();
 
-//   while (true) {
-//     drivetrain.runControl(0.0f, 200.0f, 0.0f);
-//     LOG_DEBUG("Angle: " +
-//               std::to_string(drivetrain.getOdometry()->getAngleDeg()) + " deg");
-//     LOG_DEBUG("Omega: " +
-//               std::to_string(drivetrain.getOdometry()->getAngularVelocityDegPerSec()) + " deg/s");
-//     sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
-//   }
+  for (int i = 0; i < 200; i++) {
+    sleep_ms(1);
+  }
+
+  //   while (true) {
+  //     drivetrain.runControl(0.0f, 200.0f, 0.0f);
+  //     LOG_DEBUG("Angle: " +
+  //               std::to_string(drivetrain.getOdometry()->getAngleDeg()) + "
+  //               deg");
+  //     LOG_DEBUG("Omega: " +
+  //               std::to_string(drivetrain.getOdometry()->getAngularVelocityDegPerSec())
+  //               + " deg/s");
+  //     sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
+  //   }
 
   // LOG_DEBUG("CORE1 Init")
   // Signal Core0 that Core1 is ready

@@ -24,6 +24,8 @@ class Motion {
  public:
   explicit Motion(Drivetrain* drivetrain);
 
+  void adjust_forward_position(float delta);
+
   // ---------------- System Control ----------------
   void resetDriveSystem();
   void stop();
@@ -124,6 +126,8 @@ class Motion {
   void setWallUpdateCallback(std::function<void(bool, bool, bool)> cb) {
     wallCallback_ = cb;
   }
+
+  void set_position(float pos) { forward.set_position(pos); }
 
  private:
   Drivetrain* drivetrain_;  ///< Pointer to drivetrain
