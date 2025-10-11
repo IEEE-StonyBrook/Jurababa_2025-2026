@@ -41,7 +41,7 @@ class Odometry {
 
   int lastLeftTicks;
   int lastRightTicks;
-  float lastAngleDeg;
+  float lastAngleDeg = 0.0f;
 
   float totalDistanceMM;
   float totalAngleDeg;

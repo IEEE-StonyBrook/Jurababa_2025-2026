@@ -67,6 +67,11 @@ void Odometry::update() {
 
   float currentAngleDeg = imu->getIMUYawDegreesNeg180ToPos180();
   deltaAngleDeg = currentAngleDeg - lastAngleDeg;
+
+  LOG_DEBUG("currentAngleDeg: " + std::to_string(currentAngleDeg));
+  LOG_DEBUG("lastAngleDeg: " + std::to_string(lastAngleDeg));
+
+
   if (deltaAngleDeg > 180.0f) deltaAngleDeg -= 360.0f;
   if (deltaAngleDeg < -180.0f) deltaAngleDeg += 360.0f;
   lastAngleDeg = currentAngleDeg;

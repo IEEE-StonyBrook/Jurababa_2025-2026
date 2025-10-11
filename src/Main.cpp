@@ -99,9 +99,20 @@ static void core1_publisher() {
   Motion motion(&drivetrain);
 
   LOG_DEBUG("Initialization complete.");
-  motion.resetDriveSystem();
 
-//   while (true) {
+//   float speed;
+//   int samples = 200;
+//   absolute_time_t start = get_absolute_time();
+//   leftMotor.applyVoltage(5.0f);
+//   for(int i = 0; i < samples; i++) {
+// 	absolute_time_t now = get_absolute_time();
+// 	speed = motion.velocityMMPerSec() * 2;
+// 	printf("%f, %f\n", absolute_time_diff_us(start, now) / 1000.0f, speed);
+// 	sleep_ms(1);
+//   }
+	
+
+//   while (rue) {
 //     drivetrain.runControl(0.0f, 200.0f, 0.0f);
 //     LOG_DEBUG("Angle: " +
 //               std::to_string(drivetrain.getOdometry()->getAngleDeg()) + " deg");
@@ -143,10 +154,10 @@ int main() {
   InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
   API api(&mouse);
 
-//   api.goToCenterFromEdge();
-//   api.executeSequence("F#F#F#F#L#F#");
-api.executeSequence("L#");
-  // api.executeSequence("R#");
+//   api.goToCenterFromEdge(); 
+  api.executeSequence("F#F#F#F#L#F#");
+  
+//   api.executeSequence("R#");
   // CommandHub::send(CommandType::MOVE_FWD, 1);
   // CommandHub::send(CommandType::TURN_RIGHT, 45);
   // CommandHub::send(CommandType::MOVE_FWD, 2);
