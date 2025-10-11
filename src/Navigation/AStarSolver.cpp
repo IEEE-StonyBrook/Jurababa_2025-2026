@@ -15,8 +15,8 @@ std::string AStarSolver::go(std::vector<std::array<int, 2>> endCells,
      internalMouse->getCurrentRobotNode(),
      internalMouse->getCurrentRobotDirArray(), aStarPath);
   LOG_DEBUG(lfrPath);
-  std::string diagonalizedPath = Diagonalizer().diagonalize(lfrPath);
-  return diagonalizedPath;
+  // std::string diagonalizedPath = Diagonalizer().diagonalize(lfrPath);
+  return lfrPath;
 }
 
 std::vector<MazeNode*> AStarSolver::getBestPathToEndCell(

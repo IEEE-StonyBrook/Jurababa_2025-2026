@@ -1,28 +1,66 @@
-#ifndef FRONTIER_BASED_SEARCH_SOLVER_H
-#define FRONTIER_BASED_SEARCH_SOLVER_H
+#ifndef FRONTIERBASED_H
+#define FRONTIERBASED_H
 
-#include <unordered_set>
+#include <limits>
+#include <queue>
 #include <unordered_map>
-#include "../Platform/Simulator/API.h"
-#include "../Maze/MazeNode.h"
+#include <unordered_set>
+#include <vector>
+
+#include "../Common/LogSystem.h"
 #include "../Maze/InternalMouse.h"
+#include "../Maze/MazeGraph.h"
+#include "../Platform/Simulator/API.h"
 
-class FrontierBasedSearchSolver {
+/**
+ * @class FrontierBased
+ * @brief Implements the Frontier-Based exploration algorithm.
+ *
+ * This class provides exploration logic for the micromouse by
+ * expanding frontiers (unexplored nodes) until all reachable
+ * nodes are visited. It uses BFS distance to select the closest
+ * frontier and traverses using A*.
+ */
+class FrontierBased {
  public:
-  FrontierBasedSearchSolver(API* api, InternalMouse* internalMouse,
-                            bool diagMovementAllowed);
-
-  void exploreMaze();
+  /**
+   * @brief Explores the maze using the Frontier-Based algorithm.
+   *
+   * @param mouse Reference to the InternalMouse instance representing the
+   * mouse's state.
+   * @param api Reference to the API instance for interacting with the maze
+   * display.
+   * @param diagonalsAllowed Whether diagonal movements are permitted.
+   */
+  static void explore(InternalMouse& mouse, API& api, bool diagonalsAllowed);
 
  private:
-  API* api;
-  InternalMouse* internalMouse;
-  bool diagMovementAllowed;
+  /**
+   * @brief Picks the closest frontier using BFS to find distances from the
+   * current node.
+   *
+   * @param mouse Reference to the InternalMouse instance.
+   * @param frontiers Reference to the set of frontier nodes.
+   * @param diagonalsAllowed Whether diagonal movements are permitted.
+   * @return MazeNode* Pointer to the closest frontier node, or nullptr if none
+   * is reachable.
+   */
+  static MazeNode* pickNextFrontier(InternalMouse& mouse,
+                                    std::unordered_set<MazeNode*>& frontiers,
+                                    bool diagonalsAllowed);
 
-  std::unordered_set<MazeNode*> frontierNodes;
-
-  MazeNode* getOptimalFrontierToExploreNext();
-  std::unordered_map<MazeNode*, float> getBFSCosts(MazeNode* startBFSCell);
+  /**
+   * @brief Performs BFS to calculate distances from the start node to all
+   * reachable nodes.
+   *
+   * @param mouse Reference to the InternalMouse instance.
+   * @param startNode Pointer to the starting MazeNode.
+   * @param diagonalsAllowed Whether diagonal movements are permitted.
+   * @return std::unordered_map<MazeNode*, double> Map of nodes to their
+   * distance from the start node.
+   */
+  static std::unordered_map<MazeNode*, double> getBFSDist(
+      InternalMouse& mouse, MazeNode* startNode, bool diagonalsAllowed);
 };
 
-#endif  // FRONTIER_BASED_SEARCH_SOLVER_H
+#endif  // FRONTIERBASED_H

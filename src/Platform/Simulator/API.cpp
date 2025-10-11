@@ -27,7 +27,7 @@ bool API::wallFront() {
   return false;
 }
 bool API::wallRight() {
-  if (runOnSimulator) return getSimulatorBoolResponse("wallFront");
+  if (runOnSimulator) return getSimulatorBoolResponse("wallRight");
   return false;
 }
 
@@ -92,11 +92,11 @@ void API::executeSequence(const std::string& seq) {
       moveForwardHalf();
     } else if (command == "L45") {
       turnLeft45();
-    } else if (command == "L90") {
+    } else if (command == "L") {
       turnLeft90();
     } else if (command == "R45") {
       turnRight45();
-    } else if (command == "R90") {
+    } else if (command == "R") {
       turnRight90();
     } else {
       LOG_WARNING("API.cpp: Unknown command in sequence: " + command);
