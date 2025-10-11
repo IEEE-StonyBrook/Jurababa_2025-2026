@@ -54,7 +54,7 @@
   0.0000000f  // Right wheel acceleration gain reverse (volts per mm/s²).
 
 // Forward position controller gains
-#define FWD_KP 0.025f   // Proportional gain per mm error
+#define FWD_KP 0.5f   // Proportional gain per mm error
 #define FWD_KI 0.000f  // Integral gain per mm*s error
 #define FWD_KD 0.000f   // Derivative gain on filtered diff
 
