@@ -82,14 +82,29 @@ void processCommand(Motion* motion) {
 
 // Example publisher run on core1: read sensors and publish into hub
 static void core1_publisher() {
+  gpio_set_function(10, GPIO_FUNC_SPI);
+  gpio_set_function(11, GPIO_FUNC_SPI);
+  gpio_set_function(12, GPIO_FUNC_SPI);
+
   // Sensors
-  Encoder leftEncoder(pio0, 20, true);
-  Encoder rightEncoder(pio0, 8, false);  // was 7
-  ToF leftToF(11, 'L');
-  ToF frontToF(12, 'F');
-  ToF rightToF(13, 'R');
+  Encoder leftEncoder(spi1, 9);
+  Encoder rightEncoder(spi1, 13);  // was 7
+  ToF leftToF(0, 'L');
+  ToF frontToF(26, 'F');
+  ToF rightToF(27, 'R');
   IMU imu(5);
   imu.resetIMUYawToZero();
+
+  leftEncoder.init(1'000'000);
+  rightEncoder.init(1'000'000);
+
+  while (true) {
+    LOG_DEBUG("Left encoder reading: " +
+              std::to_string(leftEncoder.readRawAngle()));
+    LOG_DEBUG("Right encoder reading: " +
+              std::to_string(rightEncoder.readRawAngle()));
+    sleep_ms(1000);
+  }
 
   // Motors
   Motor leftMotor(18, 19, nullptr, true);
@@ -101,14 +116,16 @@ static void core1_publisher() {
   LOG_DEBUG("Initialization complete.");
   motion.resetDriveSystem();
 
-//   while (true) {
-//     drivetrain.runControl(0.0f, 200.0f, 0.0f);
-//     LOG_DEBUG("Angle: " +
-//               std::to_string(drivetrain.getOdometry()->getAngleDeg()) + " deg");
-//     LOG_DEBUG("Omega: " +
-//               std::to_string(drivetrain.getOdometry()->getAngularVelocityDegPerSec()) + " deg/s");
-//     sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
-//   }
+  //   while (true) {
+  //     drivetrain.runControl(0.0f, 200.0f, 0.0f);
+  //     LOG_DEBUG("Angle: " +
+  //               std::to_string(drivetrain.getOdometry()->getAngleDeg()) + "
+  //               deg");
+  //     LOG_DEBUG("Omega: " +
+  //               std::to_string(drivetrain.getOdometry()->getAngularVelocityDegPerSec())
+  //               + " deg/s");
+  //     sleep_ms(static_cast<int>(LOOP_INTERVAL_S * 1000));
+  //   }
 
   // LOG_DEBUG("CORE1 Init")
   // Signal Core0 that Core1 is ready
@@ -136,54 +153,58 @@ int main() {
 
   LOG_DEBUG("Test");
 
-  // Maze / planning objects
-  std::array<int, 2> startCell = {0, 0};
-  std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
-  MazeGraph maze(16, 16);
-  InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
-  API api(&mouse);
-
-  api.goToCenterFromEdge();
-  api.executeSequence("F#F#F#L#F#");
-  // api.executeSequence("R#");
-  // CommandHub::send(CommandType::MOVE_FWD, 1);
-  // CommandHub::send(CommandType::TURN_RIGHT, 45);
-  // CommandHub::send(CommandType::MOVE_FWD, 2);
-
-  // std::string path = aStar.go(goalCells, true, true);
-  // LOG_DEBUG(path);
-  // interpretLFRPath(&api, path);
-  // // while (true) {
-  // //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
-  // // }
-  // LOG_DEBUG("Initialize")
-  // Main loop: high-level planning, sensor reads, etc.
   while (true) {
-    // LOG_DEBUG("Loop")
-    MulticoreSensorData sensors;
-    MulticoreSensorHub::snapshot(sensors);  // lock-free read
-
-    if (CommandHub::hasPendingCommands()) {
-      CommandPacket cmd = CommandHub::receiveBlocking();
-      if (cmd.type == CommandType::SNAPSHOT) {
-        LOG_DEBUG("Snapshot received with mask: " +
-                  std::to_string(static_cast<uint32_t>(
-                      static_cast<SensorMask>(cmd.param))));
-        if (sensors.tof_left_exist) mouse.setWallExistsLFR('L');
-        if (sensors.tof_front_exist) mouse.setWallExistsLFR('F');
-        if (sensors.tof_right_exist) mouse.setWallExistsLFR('R');
-      }
-    }
-
-    // Example: print sensor values or feed into planner
-    // LOG_DEBUG("\nLeft encoder: " +
-    // std::to_string(sensors.left_encoder_count)); LOG_DEBUG("\nFront ToF: " +
-    // std::to_string(sensors.tof_front_mm)); LOG_DEBUG("\nIMU_YAW: " +
-    // std::to_string(sensors.imu_yaw));
-
-    sleep_ms(250);
+    sleep_ms(1000);
   }
-  return 0;
+
+  // // Maze / planning objects
+  // std::array<int, 2> startCell = {0, 0};
+  // std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8,
+  // 8}}; MazeGraph maze(16, 16); InternalMouse mouse(startCell,
+  // std::string("n"), goalCells, &maze); API api(&mouse);
+
+  // api.goToCenterFromEdge();
+  // api.executeSequence("F#F#F#L#F#");
+  // // api.executeSequence("R#");
+  // // CommandHub::send(CommandType::MOVE_FWD, 1);
+  // // CommandHub::send(CommandType::TURN_RIGHT, 45);
+  // // CommandHub::send(CommandType::MOVE_FWD, 2);
+
+  // // std::string path = aStar.go(goalCells, true, true);
+  // // LOG_DEBUG(path);
+  // // interpretLFRPath(&api, path);
+  // // // while (true) {
+  // // //   LOG_WARNING(aStar.go({{8, 8}}, false, false));
+  // // // }
+  // // LOG_DEBUG("Initialize")
+  // // Main loop: high-level planning, sensor reads, etc.
+  // while (true) {
+  //   // LOG_DEBUG("Loop")
+  //   MulticoreSensorData sensors;
+  //   MulticoreSensorHub::snapshot(sensors);  // lock-free read
+
+  //   if (CommandHub::hasPendingCommands()) {
+  //     CommandPacket cmd = CommandHub::receiveBlocking();
+  //     if (cmd.type == CommandType::SNAPSHOT) {
+  //       LOG_DEBUG("Snapshot received with mask: " +
+  //                 std::to_string(static_cast<uint32_t>(
+  //                     static_cast<SensorMask>(cmd.param))));
+  //       if (sensors.tof_left_exist) mouse.setWallExistsLFR('L');
+  //       if (sensors.tof_front_exist) mouse.setWallExistsLFR('F');
+  //       if (sensors.tof_right_exist) mouse.setWallExistsLFR('R');
+  //     }
+  //   }
+
+  //   // Example: print sensor values or feed into planner
+  //   // LOG_DEBUG("\nLeft encoder: " +
+  //   // std::to_string(sensors.left_encoder_count)); LOG_DEBUG("\nFront ToF: "
+  //   +
+  //   // std::to_string(sensors.tof_front_mm)); LOG_DEBUG("\nIMU_YAW: " +
+  //   // std::to_string(sensors.imu_yaw));
+
+  //   sleep_ms(250);
+  // }
+  // return 0;
 }
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath) {
