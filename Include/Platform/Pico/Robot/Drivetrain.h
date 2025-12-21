@@ -11,17 +11,13 @@
 
 #include "../../../Include/Common/LogSystem.h"
 #include "../../../Include/Platform/Pico/Config.h"
-#include "IMU.h"
 #include "Motor.h"
-#include "Odometry.h"
-#include "ToF.h"
-
+#include "Encoders.h"
 
 class Drivetrain
 {
   public:
-    Drivetrain(Motor* leftMotor, Motor* rightMotor, Encoder* leftEncoder, Encoder* rightEncoder,
-               IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF);
+    Drivetrain(Motor* leftMotor, Motor* rightMotor, Encoder* leftEncoder, Encoder* rightEncoder, );
 
     // Reset odometry and all controller states.
     void reset();
@@ -56,10 +52,6 @@ class Drivetrain
     Motor*   rightMotor;
     Odometry odometry;
 
-    ToF* leftToF;
-    ToF* frontToF;
-    ToF* rightToF;
-
     // Targets.
     float targetForwardVel; // mm/s
     float targetAngularVel; // deg/s
@@ -71,4 +63,4 @@ class Drivetrain
     float prevRotationError;
 };
 
-#endif // DRIVETRAIN_H
+#endif

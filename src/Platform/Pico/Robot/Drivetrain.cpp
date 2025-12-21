@@ -49,6 +49,7 @@ float Drivetrain::rotationPD(float steeringCorrection)
 
 float Drivetrain::feedforward(std::string side, float wheelSpeed)
 {
+  // Checks if left or right motor.
     if (side != "left" && side != "right")
     {
         LOG_ERROR("Invalid side inputted for feedforward calculation: " + side);
