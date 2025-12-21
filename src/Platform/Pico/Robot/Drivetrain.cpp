@@ -47,54 +47,26 @@ float Drivetrain::rotationPD(float steeringCorrection)
     return (ROT_KP * rotationError) + (ROT_KD * errorRate);
 }
 
-// Predict left motor voltage from wheel speed and acceleration.
-float Drivetrain::feedforwardLeft(float wheelSpeed)
+float Drivetrain::feedforward(std::string side, float wheelSpeed)
 {
-    static float lastSpeed = 0.0f;
-    float        voltage   = 0.0f;
+    if (side != "left" && side != "right")
+    {
+        LOG_ERROR("Invalid side inputted for feedforward calculation: " + side);
+        return 0.0f;
+    }
 
+    // Calculations for feedforward term.
+    bool isLeft = (side == "left");
     if (wheelSpeed > 0)
     {
-        // Forward: slope + static bias.
-        voltage = (SPEED_FFL * wheelSpeed) + BIAS_FFL;
+        return (isLeft ? FORWARD_KVL : FORWARD_KVR) * wheelSpeed +
+               (isLeft ? FORWARD_KSL : FORWARD_KSR);
     }
     else if (wheelSpeed < 0)
     {
-        // Reverse: slope + static bias.
-        voltage = (SPEED_FBL * wheelSpeed) - BIAS_FBL;
+        return (isLeft ? REVERSE_KVL : REVERSE_KVR) * wheelSpeed -
+               (isLeft ? REVERSE_KSL : REVERSE_KSR);
     }
-
-    // Acceleration contribution.
-    float accel = (wheelSpeed - lastSpeed) * LOOP_FREQUENCY_HZ;
-    lastSpeed   = wheelSpeed;
-    voltage += (ACC_FFL * accel);
-
-    return voltage;
-}
-
-// Predict right motor voltage from wheel speed and acceleration.
-float Drivetrain::feedforwardRight(float wheelSpeed)
-{
-    static float lastSpeed = 0.0f;
-    float        voltage   = 0.0f;
-
-    if (wheelSpeed > 0)
-    {
-        // Forward.
-        voltage = (SPEED_FFR * wheelSpeed) + BIAS_FFR;
-    }
-    else if (wheelSpeed < 0)
-    {
-        // Reverse.
-        voltage = (SPEED_FBR * wheelSpeed) - BIAS_FBR;
-    }
-
-    // Acceleration contribution.
-    float accel = (wheelSpeed - lastSpeed) * LOOP_FREQUENCY_HZ;
-    lastSpeed   = wheelSpeed;
-    voltage += (ACC_FFR * accel);
-
-    return voltage;
 }
 
 bool Drivetrain::isWallLeft()

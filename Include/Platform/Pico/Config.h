@@ -25,20 +25,20 @@
 #define DEFAULT_BATTERY_VOLTAGE 7.92f // Nominal charged battery voltage.
 
 // Feedforward constants.
-#define SPEED_FFL 0.0075918f // Left wheel speed gain forward (volts per mm/s).
-#define SPEED_FFR 0.0081375f // Right wheel speed gain forward (volts per mm/s).
-#define BIAS_FFL  1.0049463f // Left wheel static friction voltage forward (volts).
-#define BIAS_FFR  1.1314120f // Right wheel static friction voltage forward (volts).
-#define ACC_FFL   0.0000000f // Left wheel acceleration gain forward (volts per mm/s²).
-#define ACC_FFR   0.0000000f // Right wheel acceleration gain forward (volts per mm/s²).
+#define FORWARD_KVL 0.0075918f // Left wheel speed gain forward (volts per mm/s).
+#define FORWARD_KVR 0.0081375f // Right wheel speed gain forward (volts per mm/s).
+#define FORWARD_KSL 1.0049463f // Left wheel static friction voltage forward (volts).
+#define FORWARD_KSR 1.1314120f // Right wheel static friction voltage forward (volts).
+#define ACC_FFL     0.0000000f // Left wheel acceleration gain forward (volts per mm/s²).
+#define ACC_FFR     0.0000000f // Right wheel acceleration gain forward (volts per mm/s²).
 
 // Feedbackward constants.
-#define SPEED_FBL 0.0079290f // Left wheel speed gain reverse (volts per mm/s).
-#define SPEED_FBR 0.0073686f // Right wheel speed gain reverse (volts per mm/s).
-#define BIAS_FBL  0.4491618f // Left wheel static friction voltage reverse (volts).
-#define BIAS_FBR  0.9882377f // Right wheel static friction voltage reverse (volts).
-#define ACC_FBL   0.0000000f // Left wheel acceleration gain reverse (volts per mm/s²).
-#define ACC_FBR   0.0000000f // Right wheel acceleration gain reverse (volts per mm/s²).
+#define REVERSE_KVL 0.0079290f // Left wheel speed gain reverse (volts per mm/s).
+#define REVERSE_KVR 0.0073686f // Right wheel speed gain reverse (volts per mm/s).
+#define REVERSE_KSL 0.4491618f // Left wheel static friction voltage reverse (volts).
+#define REVERSE_KSR 0.9882377f // Right wheel static friction voltage reverse (volts).
+#define ACC_FBL     0.0000000f // Left wheel acceleration gain reverse (volts per mm/s²).
+#define ACC_FBR     0.0000000f // Right wheel acceleration gain reverse (volts per mm/s²).
 
 // Forward PD controller gains.
 #define FWD_KP 0.05f // Proportional gain for forward error.

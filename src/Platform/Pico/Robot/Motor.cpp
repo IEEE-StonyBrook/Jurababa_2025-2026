@@ -56,10 +56,11 @@ void Motor::applyVoltage(float desiredVolts)
 {
     // Reads live battery voltage.
     // float batteryVolts = battery->readVoltage();
-    float batteryVolts = DEFAULT_BATTERY_VOLTAGE;
+    float batteryVolts = DEFAULT_BATTERY_VOLTAGE; // TEMPORARY
+    // Guard against invalid ADC read.
     if (batteryVolts < 1.0f)
-        return; // Guard against invalid ADC read.
-
+        return;
+      
     // Converts desired volts to duty cycle ratio.
     float dutyCycle = desiredVolts / batteryVolts;
     applyPWM(dutyCycle);
