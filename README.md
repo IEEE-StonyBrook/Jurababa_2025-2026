@@ -2,6 +2,8 @@
 ### Made with ❤️ by the Micromouse team!
 
 ## Awards:
+- MIT #1 Best Design.
+- MIT #2 Place Micromouse Classic.
 - NYIT #2 Place Micromouse Classic.
 - NYIT #1 and #3 Best Presentation.
 - NYIT $250 Scholarship for Micromouse.
