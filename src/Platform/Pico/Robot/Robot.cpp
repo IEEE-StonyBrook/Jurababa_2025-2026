@@ -5,18 +5,23 @@
 #include "../../../Include/Platform/Pico/Robot/Sensors.h"
 
 Robot::Robot(Drivetrain* drivetrain, Sensors* sensors)
-    : drivetrain(drivetrain), sensors(sensors), speedPID(), yawPID()
+    : drivetrain(drivetrain), sensors(sensors), yawPID(), leftWheelPID(), rightWheelPID()
 {
-    // Starting gains (Tune on your robot)
-    speedPID.setGains(0.003f, 0.0f, 0.0f);
-    speedPID.setOutputLimit(1.0f);
-    speedPID.setDeadband(0.0f);
-    speedPID.setDerivativeFilterAlpha(0.9f);
-
-    yawPID.setGains(0.03f, 0.0f, 0.001f);
-    yawPID.setOutputLimit(1.0f);
+    // Yaw PID: Output is wheel speed differential (mm/s)
+    yawPID.setGains(8.0f, 0.0f, 0.5f);
+    yawPID.setOutputLimit(maxYawDiffMMps);
     yawPID.setDeadband(1.5f);
     yawPID.setDerivativeFilterAlpha(0.9f);
+
+    // Wheel PIDs: Output is duty correction
+    leftWheelPID.setGains(0.01f, 0.0f, 0.0f);
+    rightWheelPID.setGains(0.01f, 0.0f, 0.0f);
+    leftWheelPID.setOutputLimit(1.0f);
+    rightWheelPID.setOutputLimit(1.0f);
+    leftWheelPID.setDeadband(0.0f);
+    rightWheelPID.setDeadband(0.0f);
+    leftWheelPID.setDerivativeFilterAlpha(0.9f);
+    rightWheelPID.setDerivativeFilterAlpha(0.9f);
 
     reset();
 }
@@ -26,15 +31,21 @@ void Robot::reset()
     drivetrain->reset();
     sensors->resetYaw();
 
-    speedPID.reset();
     yawPID.reset();
+    leftWheelPID.reset();
+    rightWheelPID.reset();
 
-    mode              = Mode::Idle;
+    mode = Mode::Idle;
+
     targetForwardMMps = 0.0f;
     targetYawDeg      = 0.0f;
 
-    driveStartDistMM  = 0.0f;
-    driveTargetDistMM = 0.0f;
+    targetLeftMMps  = 0.0f;
+    targetRightMMps = 0.0f;
+
+    driveStartLeftDistMM  = 0.0f;
+    driveStartRightDistMM = 0.0f;
+    driveTargetDistMM     = 0.0f;
 
     prevLeftDuty  = 0.0f;
     prevRightDuty = 0.0f;
@@ -44,8 +55,11 @@ void Robot::reset()
 
 void Robot::stop()
 {
-    mode              = Mode::Idle;
+    mode = Mode::Idle;
+
     targetForwardMMps = 0.0f;
+    targetLeftMMps    = 0.0f;
+    targetRightMMps   = 0.0f;
 
     prevLeftDuty  = 0.0f;
     prevRightDuty = 0.0f;
@@ -56,12 +70,14 @@ void Robot::stop()
 
 void Robot::driveStraightMMps(float forwardMMps, float holdYawDeg)
 {
-    mode              = Mode::DriveStraight;
+    mode = Mode::DriveStraight;
+
     targetForwardMMps = forwardMMps;
     targetYawDeg      = wrapDeg(holdYawDeg);
 
-    speedPID.reset();
     yawPID.reset();
+    leftWheelPID.reset();
+    rightWheelPID.reset();
 
     motionDone = false;
 }
@@ -73,28 +89,31 @@ void Robot::driveDistanceMM(float distanceMM, float forwardMMps)
 
     mode = Mode::DriveDistance;
 
-    // Hold the nearest 45-degree heading during the segment
     targetYawDeg = snapToNearest45Deg(sensors->getYaw());
 
-    driveStartDistMM =
-        0.5f * (drivetrain->getMotorDistanceMM("left") + drivetrain->getMotorDistanceMM("right"));
-    driveTargetDistMM = distanceMM;
+    driveStartLeftDistMM  = drivetrain->getMotorDistanceMM("left");
+    driveStartRightDistMM = drivetrain->getMotorDistanceMM("right");
+    driveTargetDistMM     = distanceMM;
 
     targetForwardMMps = forwardMMps;
 
-    speedPID.reset();
     yawPID.reset();
+    leftWheelPID.reset();
+    rightWheelPID.reset();
 
     motionDone = false;
 }
 
 void Robot::turnToYawDeg(float targetYawDeg)
 {
-    mode               = Mode::TurnInPlace;
+    mode = Mode::TurnInPlace;
+
     targetForwardMMps  = 0.0f;
     this->targetYawDeg = wrapDeg(targetYawDeg);
 
     yawPID.reset();
+    leftWheelPID.reset();
+    rightWheelPID.reset();
 
     motionDone = false;
 }
@@ -104,15 +123,17 @@ void Robot::turn45Degrees(std::string side)
     if (side != "left" && side != "right")
         return;
 
-    // Convention: "left" means -45, "right" means +45
     float delta = (side == "left") ? -45.0f : +45.0f;
 
     float currYaw = sensors->getYaw();
     float desired = wrapDeg(currYaw + delta);
 
-    float snapped = snapToNearest45Deg(desired);
+    turnToYawDeg(snapToNearest45Deg(desired));
+}
 
-    turnToYawDeg(snapped);
+bool Robot::isMotionDone() const
+{
+    return motionDone;
 }
 
 float Robot::applySlew(float cmd, float& prevCmd, float dt)
@@ -129,12 +150,57 @@ float Robot::applySlew(float cmd, float& prevCmd, float dt)
     return prevCmd;
 }
 
+void Robot::setWheelVelocityTargetsMMps(float vLeftMMps, float vRightMMps)
+{
+    targetLeftMMps  = clampAbs(vLeftMMps, maxWheelSpeedMMps);
+    targetRightMMps = clampAbs(vRightMMps, maxWheelSpeedMMps);
+}
+
+void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
+{
+    float yaw      = sensors->getYaw();
+    float yawError = wrapDeg(targetYawDeg - yaw);
+
+    // yawPID output is differential wheel speed (mm/s)
+    float vDiffMMps = yawPID.calculateOutput(yawError, dt);
+    vDiffMMps       = clampAbs(vDiffMMps, maxYawDiffMMps);
+
+    setWheelVelocityTargetsMMps(vBaseMMps - vDiffMMps, vBaseMMps + vDiffMMps);
+    runWheelVelocityControl(dt);
+}
+
+void Robot::runWheelVelocityControl(float dt)
+{
+    // Measure wheel speeds once per tick
+    float vL = drivetrain->getMotorVelocityMMps("left", dt);
+    float vR = drivetrain->getMotorVelocityMMps("right", dt);
+
+    // Feedforward (mm/s -> duty) + feedback (PID output in duty)
+    float ffL = drivetrain->getFeedforward("left", targetLeftMMps);
+    float ffR = drivetrain->getFeedforward("right", targetRightMMps);
+
+    float eL = targetLeftMMps - vL;
+    float eR = targetRightMMps - vR;
+
+    float fbL = leftWheelPID.calculateOutput(eL, dt);
+    float fbR = rightWheelPID.calculateOutput(eR, dt);
+
+    float leftDuty  = ffL + fbL;
+    float rightDuty = ffR + fbR;
+
+    leftDuty  = clampAbs(leftDuty, maxDuty);
+    rightDuty = clampAbs(rightDuty, maxDuty);
+
+    leftDuty  = applySlew(leftDuty, prevLeftDuty, dt);
+    rightDuty = applySlew(rightDuty, prevRightDuty, dt);
+
+    drivetrain->setDuty(leftDuty, rightDuty);
+}
+
 void Robot::update(float dt)
 {
     if (dt <= 0.0f)
         return;
-
-    float yaw = sensors->getYaw();
 
     switch (mode)
     {
@@ -147,18 +213,10 @@ void Robot::update(float dt)
 
         case Mode::TurnInPlace:
         {
+            float yaw      = sensors->getYaw();
             float yawError = wrapDeg(targetYawDeg - yaw);
 
-            float uOmega = yawPID.calculateOutput(yawError, dt);
-            uOmega       = clampAbs(uOmega, maxDuty);
-
-            float leftCmd  = -uOmega;
-            float rightCmd = +uOmega;
-
-            leftCmd  = applySlew(leftCmd, prevLeftDuty, dt);
-            rightCmd = applySlew(rightCmd, prevRightDuty, dt);
-
-            drivetrain->setDuty(leftCmd, rightCmd);
+            commandBaseAndYaw(0.0f, dt);
 
             if (std::fabs(yawError) <= yawToleranceDeg)
             {
@@ -170,44 +228,23 @@ void Robot::update(float dt)
 
         case Mode::DriveStraight:
         {
-            float vL   = drivetrain->getMotorVelocityMMps("left", dt);
-            float vR   = drivetrain->getMotorVelocityMMps("right", dt);
-            float vAvg = 0.5f * (vL + vR);
-
-            // Feedforward based on desired forward wheel speed
-            float ffL = drivetrain->getFeedforward("left", targetForwardMMps);
-            float ffR = drivetrain->getFeedforward("right", targetForwardMMps);
-
-            // Feedback: forward speed correction and yaw correction
-            float speedError = targetForwardMMps - vAvg;
-            float uV         = speedPID.calculateOutput(speedError, dt);
-
-            float yawError = wrapDeg(targetYawDeg - yaw);
-            float uOmega   = yawPID.calculateOutput(yawError, dt);
-
-            // Mix: base feedforward + feedback
-            float leftCmd  = ffL + (uV - uOmega);
-            float rightCmd = ffR + (uV + uOmega);
-
-            leftCmd  = clampAbs(leftCmd, maxDuty);
-            rightCmd = clampAbs(rightCmd, maxDuty);
-
-            leftCmd  = applySlew(leftCmd, prevLeftDuty, dt);
-            rightCmd = applySlew(rightCmd, prevRightDuty, dt);
-
-            drivetrain->setDuty(leftCmd, rightCmd);
-
+            commandBaseAndYaw(targetForwardMMps, dt);
             motionDone = false;
         }
         break;
 
         case Mode::DriveDistance:
         {
-            float currDist = 0.5f * (drivetrain->getMotorDistanceMM("left") +
-                                     drivetrain->getMotorDistanceMM("right"));
-            float traveled = std::fabs(currDist - driveStartDistMM);
+            float currLeft  = drivetrain->getMotorDistanceMM("left");
+            float currRight = drivetrain->getMotorDistanceMM("right");
 
-            float remaining = driveTargetDistMM - traveled;
+            float traveledLeft  = std::fabs(currLeft - driveStartLeftDistMM);
+            float traveledRight = std::fabs(currRight - driveStartRightDistMM);
+
+            float remainingLeft  = driveTargetDistMM - traveledLeft;
+            float remainingRight = driveTargetDistMM - traveledRight;
+
+            float remaining = (remainingLeft < remainingRight) ? remainingLeft : remainingRight;
             if (remaining <= 0.0f)
             {
                 stop();
@@ -215,39 +252,12 @@ void Robot::update(float dt)
                 break;
             }
 
-            // Simple slowdown near the end to reduce overshoot
-            float slowdownDistMM = 80.0f;
             float scale = (remaining < slowdownDistMM) ? (remaining / slowdownDistMM) : 1.0f;
-            if (scale < 0.2f)
-                scale = 0.2f;
+            if (scale < minSlowdownScale)
+                scale = minSlowdownScale;
 
-            float vL   = drivetrain->getMotorVelocityMMps("left", dt);
-            float vR   = drivetrain->getMotorVelocityMMps("right", dt);
-            float vAvg = 0.5f * (vL + vR);
-
-            float targetV = targetForwardMMps * scale;
-
-            // Feedforward based on desired forward wheel speed
-            float ffL = drivetrain->getFeedforward("left", targetV);
-            float ffR = drivetrain->getFeedforward("right", targetV);
-
-            // Feedback: speed correction and yaw correction
-            float speedError = targetV - vAvg;
-            float uV         = speedPID.calculateOutput(speedError, dt);
-
-            float yawError = wrapDeg(targetYawDeg - yaw);
-            float uOmega   = yawPID.calculateOutput(yawError, dt);
-
-            float leftCmd  = ffL + (uV - uOmega);
-            float rightCmd = ffR + (uV + uOmega);
-
-            leftCmd  = clampAbs(leftCmd, maxDuty);
-            rightCmd = clampAbs(rightCmd, maxDuty);
-
-            leftCmd  = applySlew(leftCmd, prevLeftDuty, dt);
-            rightCmd = applySlew(rightCmd, prevRightDuty, dt);
-
-            drivetrain->setDuty(leftCmd, rightCmd);
+            float vBase = targetForwardMMps * scale;
+            commandBaseAndYaw(vBase, dt);
 
             motionDone = false;
         }
@@ -255,26 +265,22 @@ void Robot::update(float dt)
     }
 }
 
-bool Robot::isMotionDone() const
-{
-    return motionDone;
-}
-
-void Robot::setSpeedGains(float kp, float ki, float kd)
-{
-    speedPID.setGains(kp, ki, kd);
-}
-
 void Robot::setYawGains(float kp, float ki, float kd)
 {
     yawPID.setGains(kp, ki, kd);
 }
 
+void Robot::setWheelGains(float kp, float ki, float kd)
+{
+    leftWheelPID.setGains(kp, ki, kd);
+    rightWheelPID.setGains(kp, ki, kd);
+}
+
 void Robot::setMaxDuty(float maxDuty)
 {
     this->maxDuty = (maxDuty < 0.0f) ? 0.0f : ((maxDuty > 1.0f) ? 1.0f : maxDuty);
-    speedPID.setOutputLimit(this->maxDuty);
-    yawPID.setOutputLimit(this->maxDuty);
+    leftWheelPID.setOutputLimit(this->maxDuty);
+    rightWheelPID.setOutputLimit(this->maxDuty);
 }
 
 void Robot::setMaxDutySlewPerSec(float maxDutyChangePerSec)
@@ -282,9 +288,34 @@ void Robot::setMaxDutySlewPerSec(float maxDutyChangePerSec)
     maxDutySlewPerSec = (maxDutyChangePerSec < 0.0f) ? 0.0f : maxDutyChangePerSec;
 }
 
+void Robot::setMaxWheelSpeedMMps(float maxWheelSpeedMMps)
+{
+    this->maxWheelSpeedMMps = (maxWheelSpeedMMps < 0.0f) ? 0.0f : maxWheelSpeedMMps;
+}
+
+void Robot::setMaxYawDiffMMps(float maxYawDiffMMps)
+{
+    this->maxYawDiffMMps = (maxYawDiffMMps < 0.0f) ? 0.0f : maxYawDiffMMps;
+    yawPID.setOutputLimit(this->maxYawDiffMMps);
+}
+
 void Robot::setYawToleranceDeg(float tolDeg)
 {
     yawToleranceDeg = (tolDeg < 0.0f) ? 0.0f : tolDeg;
+}
+
+void Robot::setSlowdownDistMM(float slowdownDistMM)
+{
+    this->slowdownDistMM = (slowdownDistMM < 1.0f) ? 1.0f : slowdownDistMM;
+}
+
+void Robot::setMinSlowdownScale(float minScale)
+{
+    if (minScale < 0.0f)
+        minScale = 0.0f;
+    if (minScale > 1.0f)
+        minScale = 1.0f;
+    minSlowdownScale = minScale;
 }
 
 float Robot::wrapDeg(float deg)
@@ -296,6 +327,15 @@ float Robot::wrapDeg(float deg)
     return deg;
 }
 
+float Robot::snapToNearest45Deg(float yawDeg)
+{
+    float snapped = 45.0f * std::round(yawDeg / 45.0f);
+    snapped       = wrapDeg(snapped);
+    if (snapped == -180.0f)
+        snapped = 180.0f;
+    return snapped;
+}
+
 float Robot::clampAbs(float value, float maxAbs)
 {
     if (value > maxAbs)
@@ -303,15 +343,4 @@ float Robot::clampAbs(float value, float maxAbs)
     if (value < -maxAbs)
         return -maxAbs;
     return value;
-}
-
-float Robot::snapToNearest45Deg(float yawDeg)
-{
-    float snapped = 45.0f * std::round(yawDeg / 45.0f);
-    snapped       = wrapDeg(snapped);
-
-    if (snapped == -180.0f)
-        snapped = 180.0f;
-
-    return snapped;
 }
