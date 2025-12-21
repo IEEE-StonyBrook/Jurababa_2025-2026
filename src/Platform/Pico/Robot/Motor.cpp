@@ -1,7 +1,7 @@
 #include "../../../Include/Platform/Pico/Robot/Motor.h"
 
-Motor::Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Battery* battery, bool invertDirection)
-    : gpioMotorPinOne(gpioMotorPinOne), gpioMotorPinTwo(gpioMotorPinTwo), battery(battery),
+Motor::Motor(int gpioMotorPinOne, int gpioMotorPinTwo, bool invertDirection)
+    : gpioMotorPinOne(gpioMotorPinOne), gpioMotorPinTwo(gpioMotorPinTwo),
       invertDirection(invertDirection)
 {
     configureMotorPins();
@@ -36,7 +36,7 @@ void Motor::configureMotorPWM()
     pwm_set_enabled(pwmSliceNumber, true);
 }
 
-void Motor::applyPWM(float dutyCycle)
+void Motor::applyDuty(float dutyCycle)
 {
     // Clamps duty cycle to range [-1.0, 1.0].
     dutyCycle    = std::clamp(dutyCycle, -1.0f, 1.0f);
@@ -55,15 +55,14 @@ void Motor::applyPWM(float dutyCycle)
 void Motor::applyVoltage(float desiredVolts)
 {
     // Reads live battery voltage.
-    // float batteryVolts = battery->readVoltage();
-    float batteryVolts = DEFAULT_BATTERY_VOLTAGE; // TEMPORARY
+    float batteryVolts = DEFAULT_BATTERY_VOLTAGE; // TEMPORARY, replace with actual read
     // Guard against invalid ADC read.
     if (batteryVolts < 1.0f)
         return;
-      
+
     // Converts desired volts to duty cycle ratio.
     float dutyCycle = desiredVolts / batteryVolts;
-    applyPWM(dutyCycle);
+    applyDuty(dutyCycle);
 }
 
 void Motor::stopMotor()

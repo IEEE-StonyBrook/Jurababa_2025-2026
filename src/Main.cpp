@@ -261,7 +261,7 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath)
 //  * https://www.desmos.com/calculator/qhiaubdod3 - kS and kV calculator
 //  * Do not include 0.0 velocity values!
 //  *
-//  * Note: Comment Motor::controlTick() applyPWM() call to run open-loop tests.
+//  * Note: Comment Motor::controlTick() applyDuty() call to run open-loop tests.
 //  */
 // std::vector<FeedforwardSample> runPWMSweep(Motor* motor, float startPWM,
 //                                            float endPWM, float stepPWM,
@@ -275,7 +275,7 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath)
 //   for (float pwm = startPWM; (stepPWM > 0 ? pwm <= endPWM : pwm >= endPWM);
 //        pwm += stepPWM) {
 //     // Apply raw PWM to motor.
-//     motor->applyPWM(pwm);
+//     motor->applyDuty(pwm);
 
 //     // Run control ticks during settle period so velocity updates.
 //     absolute_time_t settleStart = get_absolute_time();
@@ -337,7 +337,7 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath)
 //  * @param loopPeriodMS Period in milliseconds to run control ticks and log
 //  data.
 //  *
-//  * Note: Motor::controlTick() must call applyPWM() to actually drive motors.
+//  * Note: Motor::controlTick() must call applyDuty() to actually drive motors.
 //  */
 // void runVelocityStepTest(Motor& leftMotor, Motor& rightMotor,
 //                          const std::vector<float>& testVelocitiesMMps,

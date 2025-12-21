@@ -1,66 +1,52 @@
-/******************************************************************************
- * Project: Micromouse Robot
- * File: Drivetrain.h
- * -----
- * High-level drivetrain control. Uses odometry feedback and feedforward
- * prediction to calculate motor voltages from velocity and steering targets.
- ******************************************************************************/
-
 #ifndef DRIVETRAIN_H
 #define DRIVETRAIN_H
 
-#include "../../../Include/Common/LogSystem.h"
-#include "../../../Include/Platform/Pico/Config.h"
-#include "Motor.h"
-#include "Encoders.h"
+#include <cstdint>
+#include <string>
+
+class Motor;
+class Encoder;
 
 class Drivetrain
 {
   public:
-    Drivetrain(Motor* leftMotor, Motor* rightMotor, Encoder* leftEncoder, Encoder* rightEncoder, );
+    // Construct drivetrain with motors and encoders
+    Drivetrain(Motor* lMotor, Motor* rMotor, Encoder* lEncoder, Encoder* rEncoder);
 
-    // Reset odometry and all controller states.
+    // Reset encoder counts and internal state
     void reset();
 
-    // Run control loop: update odometry and apply new motor voltages.
-    void runControl(float forwardVelocityMMPerSec, float angularVelocityDegPerSec,
-                    float steeringCorrection);
+    // Returns total distance traveled by a motor in millimeters
+    // Side must be "left" or "right"
+    float getMotorDistanceMM(std::string side);
 
-    // Immediately stop both motors.
+    // Returns motor velocity in millimeters per second
+    // dt is the control loop timestep in seconds
+    // Side must be "left" or "right"
+    float getMotorVelocityMMps(std::string side, float dt);
+
+    // Feedforward term for motor control
+    // Converts desired wheel speed into base motor command
+    float getFeedforward(std::string side, float wheelSpeed);
+
+    // Sets duty cycles for both motors in range [-1.0, 1.0]
+    void setDuty(float leftDuty, float rightDuty);
+
+    // Immediately stop both motors
     void stop();
 
-    // Access odometry readings (distance, angle, velocity).
-    Odometry* getOdometry();
-
-    // Drive straight forward a set distance in mm at given velocity.
-    void driveForwardMM(float distanceMM, float velocityMMPerSec = 300.0f);
-
-    bool isWallLeft();
-    bool isWallFront();
-    bool isWallRight();
-
   private:
-    // Core controllers.
-    float forwardPD();
-    float rotationPD(float steeringCorrection);
+    // Motor drivers
+    Motor* leftMotor;
+    Motor* rightMotor;
 
-    // Feedforward helpers.
-    float feedforwardLeft(float wheelSpeed);
-    float feedforwardRight(float wheelSpeed);
+    // Encoders attached to each wheel
+    Encoder* leftEncoder;
+    Encoder* rightEncoder;
 
-    Motor*   leftMotor;
-    Motor*   rightMotor;
-    Odometry odometry;
-
-    // Targets.
-    float targetForwardVel; // mm/s
-    float targetAngularVel; // deg/s
-
-    // Errors for PD control.
-    float forwardError;
-    float rotationError;
-    float prevForwardError;
-    float prevRotationError;
+    // Previous encoder ticks for velocity computation
+    int32_t prevLeftTicks  = 0;
+    int32_t prevRightTicks = 0;
 };
 
 #endif

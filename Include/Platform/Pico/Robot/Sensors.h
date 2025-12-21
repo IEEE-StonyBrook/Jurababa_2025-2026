@@ -1,32 +1,39 @@
 #ifndef SENSORS_H
 #define SENSORS_H
 
-#include "../../../Include/Common/LogSystem.h"
-#include "../../../Include/Platform/Pico/Config.h"
-#include "IMU.h"
-#include "ToF.h"
+class IMU;
+class ToF;
 
 class Sensors
 {
   public:
+    // Construct sensors wrapper with IMU and ToF sensors
     Sensors(IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF);
 
-    // Reset odometry and all controller states.
-    void reset();
-
-    // Drive straight forward a set distance in mm at given velocity.
-    void driveForwardMM(float distanceMM, float velocityMMPerSec = 300.0f);
-
-    // ToF sensor wall detection.
+    // Returns true if a wall is detected on the left
     bool isWallLeft();
+
+    // Returns true if a wall is detected in front
     bool isWallFront();
+
+    // Returns true if a wall is detected on the right
     bool isWallRight();
 
+    // Returns current yaw angle in degrees
+    // Range is [-180, 180]
+    float getYaw();
+
+    // Resets current yaw to zero
+    void resetYaw();
+
   private:
+    // Inertial measurement unit (Heading)
+    IMU* imu;
+
+    // Time-of-flight distance sensors
     ToF* leftToF;
     ToF* frontToF;
     ToF* rightToF;
-    IMU* imu;
 };
 
 #endif

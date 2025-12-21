@@ -59,25 +59,35 @@ float Drivetrain::getMotorVelocityMMps(std::string side, float dt)
 
 float Drivetrain::getFeedforward(std::string side, float wheelSpeed)
 {
-    // Checks if left or right side.
     if (side != "left" && side != "right")
     {
         LOG_ERROR("Invalid side inputted for feedforward calculation: " + side);
         return 0.0f;
     }
 
-    // Calculations for feedforward term.
+    // Feedforward deadzone near zero to prevent buzzing/creep
+    const float FF_DEADZONE_MMPS = 10.0f;
+    if (fabs(wheelSpeed) < FF_DEADZONE_MMPS)
+        return 0.0f;
+
     bool isLeft = (side == "left");
-    if (wheelSpeed > 0)
+
+    if (wheelSpeed > 0.0f)
     {
         return (isLeft ? FORWARD_KVL : FORWARD_KVR) * wheelSpeed +
                (isLeft ? FORWARD_KSL : FORWARD_KSR);
     }
-    else if (wheelSpeed < 0)
+    else // wheelSpeed < 0.0f (deadzone handled above)
     {
         return (isLeft ? REVERSE_KVL : REVERSE_KVR) * wheelSpeed -
                (isLeft ? REVERSE_KSL : REVERSE_KSR);
     }
+}
+
+void Drivetrain::setDuty(float leftDuty, float rightDuty)
+{
+    leftMotor->applyDuty(leftDuty);
+    rightMotor->applyDuty(rightDuty);
 }
 
 void Drivetrain::stop()
