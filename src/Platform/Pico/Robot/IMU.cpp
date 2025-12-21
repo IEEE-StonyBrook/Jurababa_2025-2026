@@ -47,21 +47,6 @@ void IMU::imuInterruptHandler()
     // LOG_DEBUG("no handler");
 }
 
-// void IMU::processIMURXInterruptData() {
-//   // volatile int IMUBufferIndex = 0;
-//   // LOG_DEBUG("IMU RX Interrupt Start");
-//   while (uart_is_readable(IMU_UART_ID)) {
-//     // LOG_DEBUG("IMU RX Interrupt");
-//     uint8_t character = uart_getc(IMU_UART_ID);
-//     IMUBufferForYaw[IMUBufferIndex] = character;
-//     if (IMUBufferIndex == 18) {
-//       convertPacketDataToUsableYaw();
-//     }
-//     IMUBufferIndex++;
-//   }
-
-// }
-
 void IMU::processIMURXInterruptData()
 {
     while (uart_is_readable(IMU_UART_ID))

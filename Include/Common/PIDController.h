@@ -10,7 +10,7 @@ class PIDController
     PIDController(float K_P = 0.0f, float K_I = 0.0f, float K_D = 0.0f, float initialError = 0.0f,
                   float integralMax = 1000000.0f, float deadbandToReturnZero = 0.001f);
 
-    float calculateOutput(float newError);
+    float calculateOutput(float newError, float dt);
     void  setInitialError(float initialError);
     void  setDeadband(float deadband);
     void  reset();

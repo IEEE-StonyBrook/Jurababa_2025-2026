@@ -5,11 +5,10 @@ PIDController::PIDController(float K_P, float K_I, float K_D, float initialError
     : K_P(K_P), K_I(K_I), K_D(K_D), lastError(initialError), integralMax(integralMax),
       deadband(deadbandToReturnZero)
 {
-    lastTime      = get_absolute_time();
     integralAccum = 0.0f;
 }
 
-float PIDController::calculateOutput(float error)
+float PIDController::calculateOutput(float error, float dt)
 {
     float pOutput = K_P * error;
     // Return proportion if P-controller.
@@ -18,10 +17,6 @@ float PIDController::calculateOutput(float error)
         return pOutput;
     }
 
-    // Calculate dt in seconds.
-    absolute_time_t now = get_absolute_time();
-    float           dt  = absolute_time_diff_us(lastTime, now) / 1e6f;
-    lastTime            = now;
     // Eliminate extremely small dt.
     if (dt <= 1e-6f)
         dt = 1e-6f;

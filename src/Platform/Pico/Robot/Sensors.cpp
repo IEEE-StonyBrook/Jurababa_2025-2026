@@ -5,10 +5,6 @@ Sensors::Sensors(IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF)
 {
 }
 
-void Sensors::reset()
-{
-}
-
 bool Sensors::isWallLeft()
 {
     return leftToF->getToFDistanceFromWallMM() < TOF_LEFT_WALL_THRESHOLD_MM;
@@ -22,4 +18,14 @@ bool Sensors::isWallFront()
 bool Sensors::isWallRight()
 {
     return rightToF->getToFDistanceFromWallMM() < TOF_RIGHT_WALL_THRESHOLD_MM;
+}
+
+float Sensors::getYaw()
+{
+    return imu->getIMUYawDegreesNeg180ToPos180();
+}
+
+void Sensors::resetYaw()
+{
+    imu->resetIMUYawToZero();
 }
