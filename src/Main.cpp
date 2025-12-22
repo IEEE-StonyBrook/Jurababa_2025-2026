@@ -21,6 +21,7 @@
 #include "../Include/Platform/Pico/Robot/ToF.h"
 
 #include "pico/stdlib.h"
+#include "PathUtils.h"
 
 // -------------------------
 // Main helper functions
@@ -187,7 +188,7 @@ static void core1_Publisher()
 
     absolute_time_t next = make_timeout_time_ms(CONTROL_MS);
     absolute_time_t last = get_absolute_time();
-    
+
     static int ctr = 0;
 
     while (true)

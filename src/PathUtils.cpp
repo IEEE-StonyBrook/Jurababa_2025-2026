@@ -1,6 +1,6 @@
 #include "PathUtils.h"
 
-void interpretLFRPath(API* apiPtr, std::string lfrPath) {
+void interpretLFRPath(API_SIMULATOR* apiPtr, std::string lfrPath) {
   std::stringstream ss(lfrPath);
   std::string token;
 
@@ -43,7 +43,7 @@ void setAllExplored(InternalMouse* mouse) {
   }
 }
 
-bool traversePathIteratively(API* apiPtr, InternalMouse* mouse,
+bool traversePathIteratively(API_SIMULATOR* apiPtr, InternalMouse* mouse,
                              std::vector<std::array<int, 2>> goalCells,
                              bool diagonalsAllowed, bool allExplored,
                              bool avoidGoalCells) {
@@ -133,7 +133,7 @@ bool traversePathIteratively(API* apiPtr, InternalMouse* mouse,
   return true;
 }
 
-void detectWalls(API& api, InternalMouse& internalMouse) {
+void detectWalls(API_SIMULATOR& api, InternalMouse& internalMouse) {
   MazeNode* currCell = internalMouse.getCurrentRobotNode();
   // LOG_DEBUG("Detecting walls at (" +
   //           std::to_string(currCell->getCellXPos()) + "," +

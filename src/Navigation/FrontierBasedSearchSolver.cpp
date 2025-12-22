@@ -11,7 +11,7 @@
  * display.
  * @param diagonalsAllowed Whether diagonal movements are permitted.
  */
-void FrontierBased::explore(InternalMouse& mouse, API& api,
+void FrontierBased::explore(InternalMouse& mouse, API_SIMULATOR& api,
                             bool diagonalsAllowed) {
   std::unordered_set<MazeNode*> frontiers;
   MazeNode* start = mouse.getCurrentRobotNode();

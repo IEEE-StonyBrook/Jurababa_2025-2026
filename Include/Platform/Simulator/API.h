@@ -5,7 +5,7 @@
 
 #include "../../Maze/InternalMouse.h"
 
-class API
+class API_SIMULATOR
 {
   public:
     /**
@@ -15,7 +15,7 @@ class API
      * @param runOnSimulator Boolean indicating if the API should run on a
      * simulator.
      */
-    API(InternalMouse* internalMouse, bool runOnSimulator);
+    API_SIMULATOR(InternalMouse* internalMouse, bool runOnSimulator);
 
     /**
      * Gets the width of the maze.

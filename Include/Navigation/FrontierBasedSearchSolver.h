@@ -32,7 +32,7 @@ class FrontierBased {
    * display.
    * @param diagonalsAllowed Whether diagonal movements are permitted.
    */
-  static void explore(InternalMouse& mouse, API& api, bool diagonalsAllowed);
+  static void explore(InternalMouse& mouse, API_SIMULATOR& api, bool diagonalsAllowed);
 
  private:
   /**

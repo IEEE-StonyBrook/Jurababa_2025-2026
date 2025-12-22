@@ -3,53 +3,53 @@
 #include <iostream>
 #include <sstream>
 
-API::API(InternalMouse* internalMouse, bool runOnSimulator)
+API_SIMULATOR::API_SIMULATOR(InternalMouse* internalMouse, bool runOnSimulator)
     : internalMouse(internalMouse), runOnSimulator(runOnSimulator)
 {
 }
 
 #ifdef USING_ROBOT
-API::API(Drivetrain* drivetrain, InternalMouse* internalMouse, bool runOnSimulator)
+API_SIMULATOR::API(Drivetrain* drivetrain, InternalMouse* internalMouse, bool runOnSimulator)
     : drivetrain(drivetrain), internalMouse(internalMouse), runOnSimulator(runOnSimulator)
 {
 }
 #endif
 
-int API::mazeWidth()
+int API_SIMULATOR::mazeWidth()
 {
     return internalMouse->getMazeWidth();
 }
 
-int API::mazeHeight()
+int API_SIMULATOR::mazeHeight()
 {
     return internalMouse->getMazeHeight();
 }
 
-bool API::wallLeft()
+bool API_SIMULATOR::wallLeft()
 {
     if (runOnSimulator)
         return getSimulatorBoolResponse("wallLeft");
     return false;
 }
-bool API::wallFront()
+bool API_SIMULATOR::wallFront()
 {
     if (runOnSimulator)
         return getSimulatorBoolResponse("wallFront");
     return false;
 }
-bool API::wallRight()
+bool API_SIMULATOR::wallRight()
 {
     if (runOnSimulator)
         return getSimulatorBoolResponse("wallRight");
     return false;
 }
 
-void API::moveForwardHalf()
+void API_SIMULATOR::moveForwardHalf()
 {
     if (runOnSimulator)
         getSimulatorResponse("moveForwardHalf");
 }
-void API::moveForward()
+void API_SIMULATOR::moveForward()
 {
     if (runOnSimulator)
         getSimulatorResponse("moveForward");
@@ -59,7 +59,7 @@ void API::moveForward()
     setColor(XPos, YPos, 'y');
 }
 
-void API::moveForward(int steps)
+void API_SIMULATOR::moveForward(int steps)
 {
     if (runOnSimulator)
     {
@@ -71,31 +71,31 @@ void API::moveForward(int steps)
     internalMouse->moveIMForwardOneCell(steps);
 }
 
-void API::turnLeft45()
+void API_SIMULATOR::turnLeft45()
 {
     if (runOnSimulator)
         getSimulatorResponse("turnLeft45");
     internalMouse->turnIM45DegreeStepsRight(-1);
 }
-void API::turnLeft90()
+void API_SIMULATOR::turnLeft90()
 {
     if (runOnSimulator)
         getSimulatorResponse("turnLeft");
     internalMouse->turnIM45DegreeStepsRight(-2);
 }
-void API::turnRight45()
+void API_SIMULATOR::turnRight45()
 {
     if (runOnSimulator)
         getSimulatorResponse("turnRight45");
     internalMouse->turnIM45DegreeStepsRight(1);
 }
-void API::turnRight90()
+void API_SIMULATOR::turnRight90()
 {
     if (runOnSimulator)
         getSimulatorResponse("turnRight");
     internalMouse->turnIM45DegreeStepsRight(2);
 }
-void API::turn(int degreesDivisibleBy45)
+void API_SIMULATOR::turn(int degreesDivisibleBy45)
 {
     int turnsNeeded = (int)(degreesDivisibleBy45 / 45);
     if (runOnSimulator)
@@ -112,7 +112,7 @@ void API::turn(int degreesDivisibleBy45)
     internalMouse->turnIM45DegreeStepsRight(turnsNeeded);
 }
 
-void API::executeSequence(const std::string& seq)
+void API_SIMULATOR::executeSequence(const std::string& seq)
 {
     std::istringstream ss(seq);
     std::string        command;
@@ -149,7 +149,7 @@ void API::executeSequence(const std::string& seq)
     }
 }
 
-void API::setWall(int x, int y, const std::string& direction)
+void API_SIMULATOR::setWall(int x, int y, const std::string& direction)
 {
     bool isFourCardinal =
         direction == "n" || direction == "e" || direction == "s" || direction == "w";
@@ -177,7 +177,7 @@ void API::setWall(int x, int y, const std::string& direction)
         internalMouse->setWallExistsNESW(internalMouse->getNodeAtPos(x, y), direction[1]);
     }
 }
-void API::clearWall(int x, int y, const std::string& direction)
+void API_SIMULATOR::clearWall(int x, int y, const std::string& direction)
 {
     if (runOnSimulator)
         std::cout << "clearWall " << x << " " << y << " " << direction << '\n';
@@ -186,39 +186,39 @@ void API::clearWall(int x, int y, const std::string& direction)
     // works. Don't overcomplicate now.
 }
 
-void API::setColor(int x, int y, char color)
+void API_SIMULATOR::setColor(int x, int y, char color)
 {
     if (runOnSimulator)
         std::cout << "setColor " << x << " " << y << " " << color << '\n';
 }
-void API::clearColor(int x, int y)
+void API_SIMULATOR::clearColor(int x, int y)
 {
     if (runOnSimulator)
         std::cout << "clearColor " << x << " " << y << '\n';
 }
-void API::clearAllColor()
+void API_SIMULATOR::clearAllColor()
 {
     if (runOnSimulator)
         std::cout << "clearAllColor" << '\n';
 }
 
-void API::setText(int x, int y, const std::string& text)
+void API_SIMULATOR::setText(int x, int y, const std::string& text)
 {
     if (runOnSimulator)
         std::cout << "setText " << x << " " << y << " " << text << '\n';
 }
-void API::clearText(int x, int y)
+void API_SIMULATOR::clearText(int x, int y)
 {
     if (runOnSimulator)
         std::cout << "clearText " << x << " " << y << '\n';
 }
-void API::clearAllText()
+void API_SIMULATOR::clearAllText()
 {
     if (runOnSimulator)
         std::cout << "clearAllText" << '\n';
 }
 
-std::string API::getSimulatorResponse(std::string commandUsed)
+std::string API_SIMULATOR::getSimulatorResponse(std::string commandUsed)
 {
     std::cout << commandUsed << '\n';
     std::string simulatorResponse;
@@ -227,17 +227,17 @@ std::string API::getSimulatorResponse(std::string commandUsed)
     return simulatorResponse;
 }
 
-int API::getSimulatorIntegerResponse(std::string commmandUsed)
+int API_SIMULATOR::getSimulatorIntegerResponse(std::string commmandUsed)
 {
     return std::stoi(getSimulatorResponse(commmandUsed));
 }
 
-bool API::getSimulatorBoolResponse(std::string commandUsed)
+bool API_SIMULATOR::getSimulatorBoolResponse(std::string commandUsed)
 {
     return getSimulatorResponse(commandUsed) == "true";
 }
 
-void API::setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells)
+void API_SIMULATOR::setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells)
 {
     clearAllColor();
     clearAllText();
@@ -281,7 +281,7 @@ void API::setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> go
     }
 }
 
-void API::printMaze()
+void API_SIMULATOR::printMaze()
 {
     std::string mazeString = "Maze:\n";
     for (int i = 0; i < internalMouse->getMazeWidth(); ++i)
@@ -299,7 +299,7 @@ void API::printMaze()
     LOG_DEBUG(mazeString);
 }
 
-std::string API::printMazeRow(int row)
+std::string API_SIMULATOR::printMazeRow(int row)
 {
     std::string rowString      = "|";
     std::string eastRowString  = "";
