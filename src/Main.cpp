@@ -177,37 +177,45 @@ static void core1_Publisher()
 
     multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
 
-    const float dt = static_cast<float>(CORE_SLEEP_MS) / 1000.0f;
+    // ----- TEST CONFIG -----
+    const int   CONTROL_MS = 20; // Control loop period (20ms)
+    const float dt         = CONTROL_MS / 1000.0f;
 
-    // Left
-    runPWMSweep(&drivetrain, "left", 0.00f, 0.20f, 0.05f, 600, 10);
-    runPWMSweep(&drivetrain, "left", 0.20f, 0.45f, 0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "left", 0.45f, 1.00f, 0.05f, 700, 10);
+    // Start a straight drive test at 250 mm/s holding the current heading
+    float holdYaw = sensors.getYaw();
+    robot.driveStraightMMps(400.0f, holdYaw);
 
-    runPWMSweep(&drivetrain, "left", 1.00f, 0.45f, -0.05f, 700, 10);
-    runPWMSweep(&drivetrain, "left", 0.45f, 0.20f, -0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "left", 0.20f, 0.00f, -0.05f, 600, 10);
+    absolute_time_t next = make_timeout_time_ms(CONTROL_MS);
+    absolute_time_t last = get_absolute_time();
+    
+    static int ctr = 0;
 
-    // Right
-    runPWMSweep(&drivetrain, "right", 0.00f, 0.20f, 0.05f, 600, 10);
-    runPWMSweep(&drivetrain, "right", 0.20f, 0.45f, 0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "right", 0.45f, 1.00f, 0.05f, 700, 10);
+    while (true)
+    {
+        absolute_time_t now = get_absolute_time();
+        float           dt  = absolute_time_diff_us(last, now) * 1e-6f;
+        last                = now;
 
-    runPWMSweep(&drivetrain, "right", 1.00f, 0.45f, -0.05f, 700, 10);
-    runPWMSweep(&drivetrain, "right", 0.45f, 0.20f, -0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "right", 0.20f, 0.00f, -0.05f, 600, 10);
+        robot.update(dt);
+        processCommands(&robot, &sensors);
 
-    // while (true)
-    // {
-    //     robot.update(dt);
+        static absolute_time_t lastPub = get_absolute_time();
+        if (absolute_time_diff_us(lastPub, now) >= (int64_t)CORE_SLEEP_MS * 1000)
+        {
+            publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
+            lastPub = now;
+        }
 
-    //     // Mid-motion STOP interrupt + sequential command start
-    //     processCommands(&robot, &sensors);
+        if ((ctr++ % 50) == 0)
+        {
+            LOG_DEBUG("L_Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("left")) +
+                      " mm/s | R_Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("right")) +
+                      " mm/s");
+        }
 
-    //     publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
-
-    //     sleep_ms(CORE_SLEEP_MS);
-    // }
+        sleep_until(next);
+        next = delayed_by_ms(next, CONTROL_MS);
+    }
 }
 
 int main()
@@ -228,8 +236,8 @@ int main()
     InternalMouse                   mouse(startCell, std::string("n"), goalCells, &maze);
     API                             api(&mouse);
 
-    api.goToCenterFromEdge();
-    api.executeSequence("F#F#F#F#L#F#");
+    // api.goToCenterFromEdge();
+    // api.executeSequence("F#F#F#F#L#F#");
 
     // Core0 loop: read sensor snapshots, update maze state / planning.
     while (true)

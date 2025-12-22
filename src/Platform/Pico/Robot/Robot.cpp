@@ -178,16 +178,19 @@ void Robot::runWheelVelocityControl(float dt)
     // Measure wheel speeds once per tick
     float vL = drivetrain->getMotorVelocityMMps("left");
     float vR = drivetrain->getMotorVelocityMMps("right");
+    // LOG_DEBUG("Measured Velocities - Left: " + std::to_string(vL) + " mm/s | Right: " + std::to_string(vR) + " mm/s");
 
     // Feedforward (mm/s -> duty) + feedback (PID output in duty)
     float ffL = drivetrain->getFeedforward("left", targetLeftMMps);
     float ffR = drivetrain->getFeedforward("right", targetRightMMps);
+    // LOG_DEBUG("FF Left: " + std::to_string(ffL) + " | FF Right: " + std::to_string(ffR));
 
     float eL = targetLeftMMps - vL;
     float eR = targetRightMMps - vR;
 
     float fbL = leftWheelPID.calculateOutput(eL, dt);
     float fbR = rightWheelPID.calculateOutput(eR, dt);
+    // LOG_DEBUG("FB Left: " + std::to_string(fbL) + " | FB Right: " + std::to_string(fbR));
 
     float leftDuty  = ffL + fbL;
     float rightDuty = ffR + fbR;
