@@ -4,7 +4,7 @@
 #include <cmath>
 #include <cstdint>
 
-#include "../../../Include/Common/LogSystem.h"
+#include "../../Include/Common/LogSystem.h"
 #include "../Config.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"

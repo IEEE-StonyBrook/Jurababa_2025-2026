@@ -3,10 +3,10 @@
 
 #include <cmath>
 #include <string>
+#include "../../../Common/PIDController.h"
 
 class Drivetrain;
 class Sensors;
-class PIDController;
 
 class Robot
 {

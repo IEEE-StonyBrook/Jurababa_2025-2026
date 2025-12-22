@@ -1,16 +1,6 @@
 #include "../../Include/Common/LogSystem.h"
 
-#include <iostream>
-
-#include "../../Include/Common/Bluetooth.h"
-
 LogPriority LogSystem::printPriorityLevel = LogPriority::DEBUG;
-Bluetooth*  LogSystem::btInterface        = nullptr;
-
-void LogSystem::attachBluetooth(Bluetooth* bt)
-{
-    btInterface = bt;
-}
 
 void LogSystem::logMessage(LogPriority logPriority, std::string logMessage)
 {
@@ -41,10 +31,4 @@ void LogSystem::logMessage(LogPriority logPriority, std::string logMessage)
 
     // Console log (original)
     std::cout << finalMessage << '\n';
-
-    // Bluetooth log (new)
-    if (btInterface)
-    {
-        btInterface->sendString(finalMessage + "\r\n");
-    }
 }

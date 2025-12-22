@@ -1,11 +1,9 @@
 #ifndef LOGSYSTEM_H
 #define LOGSYSTEM_H
 
+#include <iostream>
 #include <sstream>
 #include <string>
-
-// Forward declaration (to avoid circular include)
-class Bluetooth;
 
 enum class LogPriority
 {
@@ -20,11 +18,9 @@ class LogSystem
 {
   public:
     static void logMessage(LogPriority logPriority, std::string logMessage);
-    static void attachBluetooth(Bluetooth* bt); // NEW
 
   private:
     static LogPriority printPriorityLevel;
-    static Bluetooth*  btInterface; // NEW
 };
 
 // ---------------- Macros ----------------

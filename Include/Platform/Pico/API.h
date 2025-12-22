@@ -12,7 +12,6 @@
 #include "../../Maze/InternalMouse.h"
 #include "CommandHub.h"
 #include "Robot/Drivetrain.h"
-#include "Robot/Motion.h"
 
 class API
 {
@@ -69,7 +68,6 @@ class API
   private:
     Drivetrain*    drivetrain;
     InternalMouse* internalMouse;
-    Motion*        motion;
 };
 
 #endif

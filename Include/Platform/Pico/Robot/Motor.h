@@ -5,7 +5,6 @@
 #include <cmath>
 
 #include "../../../Include/Platform/Pico/Config.h"
-#include "../../../Include/Platform/Pico/Robot/Battery.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
 

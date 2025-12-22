@@ -152,8 +152,8 @@ static void core1_Publisher()
     imu.resetIMUYawToZero();
 
     // Motors
-    Motor leftMotor(18, 19, nullptr, true);
-    Motor rightMotor(6, 7, nullptr, false);
+    Motor leftMotor(18, 19, true);
+    Motor rightMotor(6, 7, false);
 
     // Updated stack (Robot owns motion)
     Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder);
