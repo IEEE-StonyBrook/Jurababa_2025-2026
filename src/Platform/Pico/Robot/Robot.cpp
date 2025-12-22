@@ -171,9 +171,12 @@ void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
 
 void Robot::runWheelVelocityControl(float dt)
 {
+    // Update measured velocities
+    drivetrain->updateVelocities(dt);
+
     // Measure wheel speeds once per tick
-    float vL = drivetrain->getMotorVelocityMMps("left", dt);
-    float vR = drivetrain->getMotorVelocityMMps("right", dt);
+    float vL = drivetrain->getMotorVelocityMMps("left");
+    float vR = drivetrain->getMotorVelocityMMps("right");
 
     // Feedforward (mm/s -> duty) + feedback (PID output in duty)
     float ffL = drivetrain->getFeedforward("left", targetLeftMMps);
@@ -202,6 +205,7 @@ void Robot::update(float dt)
     if (dt <= 0.0f)
         return;
 
+    LOG_DEBUG("Robot Update: Mode = " + std::to_string(static_cast<int>(mode)));
     switch (mode)
     {
         case Mode::Idle:

@@ -25,36 +25,33 @@ float Drivetrain::getMotorDistanceMM(std::string side)
     return (isLeft ? leftEncoder->getTickCount() : rightEncoder->getTickCount()) * MM_PER_TICK;
 }
 
-float Drivetrain::getMotorVelocityMMps(std::string side, float dt)
+void Drivetrain::updateVelocities(float dt)
 {
-    // Checks if left or right side.
-    if (side != "left" && side != "right")
-    {
-        LOG_ERROR("Invalid side inputted for velocity retrieval: " + side);
-        return 0.0f;
-    }
-
     if (dt <= 0.0f)
-    {
-        LOG_ERROR("Invalid dt for velocity retrieval");
-        return 0.0f;
-    }
+        return;
 
-    // Select side
-    bool isLeft = (side == "left");
+    int32_t currLeftTicks  = leftEncoder->getTickCount();
+    int32_t currRightTicks = rightEncoder->getTickCount();
 
-    // Current ticks
-    int32_t currTicks = isLeft ? leftEncoder->getTickCount() : rightEncoder->getTickCount();
+    int32_t deltaLeftTicks  = currLeftTicks - prevLeftTicks;
+    int32_t deltaRightTicks = currRightTicks - prevRightTicks;
 
-    // Reference to previous ticks
-    int32_t& prevTicks = isLeft ? prevLeftTicks : prevRightTicks;
+    prevLeftTicks  = currLeftTicks;
+    prevRightTicks = currRightTicks;
 
-    // Delta
-    int32_t deltaTicks = currTicks - prevTicks;
-    prevTicks          = currTicks;
+    leftVelocityMMps  = (deltaLeftTicks * MM_PER_TICK) / dt;
+    rightVelocityMMps = (deltaRightTicks * MM_PER_TICK) / dt;
+}
 
-    // Convert to mm/s
-    return (deltaTicks * MM_PER_TICK) / dt;
+float Drivetrain::getMotorVelocityMMps(std::string side)
+{
+    if (side == "left")
+        return leftVelocityMMps;
+    if (side == "right")
+        return rightVelocityMMps;
+
+    LOG_ERROR("Invalid side for velocity read: " + side);
+    return 0.0f;
 }
 
 float Drivetrain::getFeedforward(std::string side, float wheelSpeed)

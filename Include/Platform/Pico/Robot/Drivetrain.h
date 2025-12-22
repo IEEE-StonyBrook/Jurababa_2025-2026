@@ -21,10 +21,12 @@ class Drivetrain
     // Side must be "left" or "right"
     float getMotorDistanceMM(std::string side);
 
+    // Updates wheel velocities; call every control tick with dt in seconds
+    void updateVelocities(float dt);
+
     // Returns motor velocity in millimeters per second
-    // dt is the control loop timestep in seconds
     // Side must be "left" or "right"
-    float getMotorVelocityMMps(std::string side, float dt);
+    float getMotorVelocityMMps(std::string side);
 
     // Feedforward term for motor control
     // Converts desired wheel speed into base motor command
@@ -48,6 +50,10 @@ class Drivetrain
     // Previous encoder ticks for velocity computation
     int32_t prevLeftTicks  = 0;
     int32_t prevRightTicks = 0;
+    
+    // Current wheel velocities in mm/s
+    float leftVelocityMMps  = 0.0f;
+    float rightVelocityMMps = 0.0f;
 };
 
 #endif
