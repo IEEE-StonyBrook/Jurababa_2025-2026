@@ -1,9 +1,9 @@
 // Robot.cpp
 #include "../../../Include/Platform/Pico/Robot/Robot.h"
 #include "../../../Include/Common/PIDController.h"
+#include "../../../Include/Platform/Pico/Config.h"
 #include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
 #include "../../../Include/Platform/Pico/Robot/Sensors.h"
-#include "../../../Include/Platform/Pico/Config.h"
 
 Robot::Robot(Drivetrain* drivetrain, Sensors* sensors)
     : drivetrain(drivetrain), sensors(sensors), yawPID(), leftWheelPID(), rightWheelPID()
@@ -178,7 +178,8 @@ void Robot::runWheelVelocityControl(float dt)
     // Measure wheel speeds once per tick
     float vL = drivetrain->getMotorVelocityMMps("left");
     float vR = drivetrain->getMotorVelocityMMps("right");
-    // LOG_DEBUG("Measured Velocities - Left: " + std::to_string(vL) + " mm/s | Right: " + std::to_string(vR) + " mm/s");
+    // LOG_DEBUG("Measured Velocities - Left: " + std::to_string(vL) + " mm/s | Right: " +
+    // std::to_string(vR) + " mm/s");
 
     // Feedforward (mm/s -> duty) + feedback (PID output in duty)
     float ffL = drivetrain->getFeedforward("left", targetLeftMMps);
@@ -188,9 +189,14 @@ void Robot::runWheelVelocityControl(float dt)
     float eL = targetLeftMMps - vL;
     float eR = targetRightMMps - vR;
 
-    float fbL = leftWheelPID.calculateOutput(eL, dt);
-    float fbR = rightWheelPID.calculateOutput(eR, dt);
-    // LOG_DEBUG("FB Left: " + std::to_string(fbL) + " | FB Right: " + std::to_string(fbR));
+    float   fbL = leftWheelPID.calculateOutput(eL, dt);
+    float   fbR = rightWheelPID.calculateOutput(eR, dt);
+    static int ctr = 0;
+    if ((ctr++ % 10) == 0)
+    {
+
+        LOG_DEBUG("FB Left: " + std::to_string(fbL) + " | FB Right: " + std::to_string(fbR));
+    }
 
     float leftDuty  = ffL + fbL;
     float rightDuty = ffR + fbR;
@@ -209,7 +215,7 @@ void Robot::update(float dt)
     if (dt <= 0.0f)
         return;
 
-    LOG_DEBUG("Robot Update: Mode = " + std::to_string(static_cast<int>(mode)));
+    // LOG_DEBUG("Robot Update: Mode = " + std::to_string(static_cast<int>(mode)));
     switch (mode)
     {
         case Mode::Idle:

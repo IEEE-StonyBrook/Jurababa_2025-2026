@@ -206,7 +206,7 @@ static void core1_Publisher()
             lastPub = now;
         }
 
-        if ((ctr++ % 50) == 0)
+        if ((ctr++ % 5) == 0)
         {
             LOG_DEBUG("L_Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("left")) +
                       " mm/s | R_Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("right")) +
