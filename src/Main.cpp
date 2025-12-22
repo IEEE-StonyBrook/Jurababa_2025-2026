@@ -20,8 +20,9 @@
 #include "../Include/Platform/Pico/Robot/Sensors.h"
 #include "../Include/Platform/Pico/Robot/ToF.h"
 
-#include "pico/stdlib.h"
 #include "PathUtils.h"
+#include "pico/stdlib.h"
+
 
 // -------------------------
 // Main helper functions

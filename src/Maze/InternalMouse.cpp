@@ -41,11 +41,10 @@ std::string InternalMouse::getNewDirectionAfterAddingHalfStepsRight(int halfStep
 
     int currentDirectionIndex = indexOfDirection(currentRobotDirection);
 
-  // Adding one to index = turning right half step in cardinal directions.
-  int newDirectionIndex =
-      ((currentDirectionIndex + halfStepsRight) % possibleDirections.size() +
-       possibleDirections.size()) %
-      possibleDirections.size();
+    // Adding one to index = turning right half step in cardinal directions.
+    int newDirectionIndex = ((currentDirectionIndex + halfStepsRight) % possibleDirections.size() +
+                             possibleDirections.size()) %
+                            possibleDirections.size();
 
     return possibleDirections[newDirectionIndex];
 }
@@ -162,6 +161,11 @@ bool InternalMouse::isAGoalCell(MazeNode* node)
     return false;
 }
 
+void InternalMouse::setGoalCells(std::vector<std::array<int, 2>> newGoalCells)
+{
+    goalCells = newGoalCells;
+}
+
 void InternalMouse::resetSolverVariables()
 {
     for (int col = 0; col < getMazeWidth(); col++)
@@ -194,81 +198,85 @@ std::vector<std::array<int, 2>> InternalMouse::getPossibleDirectionArrays()
     return directionArrays;
 }
 
-void InternalMouse::setCurrentPosition(MazeNode* node) {
-  currentRobotPosition = {node->getCellXPos(), node->getCellYPos()};
-  // NOTE: this only updates position, not direction.
-  // If you want to also adjust heading, you’ll need to add logic
-  // based on previous node vs new node.
+void InternalMouse::setCurrentPosition(MazeNode* node)
+{
+    currentRobotPosition = {node->getCellXPos(), node->getCellYPos()};
+    // NOTE: this only updates position, not direction.
+    // If you want to also adjust heading, you’ll need to add logic
+    // based on previous node vs new node.
 }
 
-std::vector<std::array<int, 2>> InternalMouse::getGoalCells() {
-  return goalCells;
+std::vector<std::array<int, 2>> InternalMouse::getGoalCells()
+{
+    return goalCells;
 }
 
-double InternalMouse::euclideanDistance(MazeNode& cell1, MazeNode& cell2) {
-  return std::sqrt(std::pow(cell1.getCellXPos() - cell2.getCellXPos(), 2) +
-                   std::pow(cell1.getCellYPos() - cell2.getCellYPos(), 2));
+double InternalMouse::euclideanDistance(MazeNode& cell1, MazeNode& cell2)
+{
+    return std::sqrt(std::pow(cell1.getCellXPos() - cell2.getCellXPos(), 2) +
+                     std::pow(cell1.getCellYPos() - cell2.getCellYPos(), 2));
 }
 
 // Static method to calculate octile distance
-double InternalMouse::octileDistance(MazeNode& cell1, MazeNode& cell2) {
-  int distanceX = std::abs(cell1.getCellXPos() - cell2.getCellXPos());
-  int distanceY = std::abs(cell1.getCellYPos() - cell2.getCellYPos());
-  return (distanceX + distanceY) +
-         (std::sqrt(2) - 2) * std::min(distanceX, distanceY);
+double InternalMouse::octileDistance(MazeNode& cell1, MazeNode& cell2)
+{
+    int distanceX = std::abs(cell1.getCellXPos() - cell2.getCellXPos());
+    int distanceY = std::abs(cell1.getCellYPos() - cell2.getCellYPos());
+    return (distanceX + distanceY) + (std::sqrt(2) - 2) * std::min(distanceX, distanceY);
 }
 
-std::string InternalMouse::getDirectionAsString(
-    const std::array<int, 2>& direction) const {
-  const std::vector<std::string> possibleDirections = {"n", "ne", "e", "se",
-                                                       "s", "sw", "w", "nw"};
-  const std::vector<std::array<int, 2>>& possibleMouseDirections = {
-      {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
-  for (size_t i = 0; i < possibleMouseDirections.size(); ++i) {
-    if (possibleMouseDirections[i][0] == direction[0] &&
-        possibleMouseDirections[i][1] == direction[1]) {
-      return possibleDirections[i];
+std::string InternalMouse::getDirectionAsString(const std::array<int, 2>& direction) const
+{
+    const std::vector<std::string>         possibleDirections      = {"n", "ne", "e", "se",
+                                                                      "s", "sw", "w", "nw"};
+    const std::vector<std::array<int, 2>>& possibleMouseDirections = {
+        {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
+    for (size_t i = 0; i < possibleMouseDirections.size(); ++i)
+    {
+        if (possibleMouseDirections[i][0] == direction[0] &&
+            possibleMouseDirections[i][1] == direction[1])
+        {
+            return possibleDirections[i];
+        }
     }
-  }
-  throw std::invalid_argument("Invalid direction offset.");
+    throw std::invalid_argument("Invalid direction offset.");
 }
 
 // Returns direction to the left
-std::string InternalMouse::getDirectionToTheLeft() const {
-  const std::vector<std::array<int, 2>>& possibleMouseDirections = {
-      {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
-  size_t currentIndex =
-      findDirectionIndexInPossibleDirections(currentRobotDirection);
-  size_t leftIndex =
-      (currentIndex + 6) %
-      possibleMouseDirections.size();  // Equivalent to turning left
-  std::array<int, 2> newDirection = possibleMouseDirections[leftIndex];
-  return getDirectionAsString(newDirection);
+std::string InternalMouse::getDirectionToTheLeft() const
+{
+    const std::vector<std::array<int, 2>>& possibleMouseDirections = {
+        {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
+    size_t currentIndex = findDirectionIndexInPossibleDirections(currentRobotDirection);
+    size_t leftIndex =
+        (currentIndex + 6) % possibleMouseDirections.size(); // Equivalent to turning left
+    std::array<int, 2> newDirection = possibleMouseDirections[leftIndex];
+    return getDirectionAsString(newDirection);
 }
 
 // Returns direction to the right
-std::string InternalMouse::getDirectionToTheRight() const {
-  const std::vector<std::array<int, 2>>& possibleMouseDirections = {
-      {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
-  size_t currentIndex =
-      findDirectionIndexInPossibleDirections(currentRobotDirection);
-  size_t rightIndex =
-      (currentIndex + 2) %
-      possibleMouseDirections.size();  // Equivalent to turning right
-  std::array<int, 2> newDirection = possibleMouseDirections[rightIndex];
-  return getDirectionAsString(newDirection);
+std::string InternalMouse::getDirectionToTheRight() const
+{
+    const std::vector<std::array<int, 2>>& possibleMouseDirections = {
+        {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
+    size_t currentIndex = findDirectionIndexInPossibleDirections(currentRobotDirection);
+    size_t rightIndex =
+        (currentIndex + 2) % possibleMouseDirections.size(); // Equivalent to turning right
+    std::array<int, 2> newDirection = possibleMouseDirections[rightIndex];
+    return getDirectionAsString(newDirection);
 }
 
 // Finds the index of a given direction
-int InternalMouse::findDirectionIndexInPossibleDirections(
-    const std::string& direction) const {
-  const auto& possibleMouseDirections =
-      std::vector<std::string>{"n", "ne", "e", "se", "s", "sw", "w", "nw"};
-  for (size_t i = 0; i < possibleMouseDirections.size(); i++) {
-    if (possibleMouseDirections[i] == direction) {
-      return i;
+int InternalMouse::findDirectionIndexInPossibleDirections(const std::string& direction) const
+{
+    const auto& possibleMouseDirections =
+        std::vector<std::string>{"n", "ne", "e", "se", "s", "sw", "w", "nw"};
+    for (size_t i = 0; i < possibleMouseDirections.size(); i++)
+    {
+        if (possibleMouseDirections[i] == direction)
+        {
+            return i;
+        }
     }
-  }
-  throw std::invalid_argument(
-      "Direction not listed as a possible mouse direction.");
+    throw std::invalid_argument("Direction not listed as a possible mouse direction.");
 }

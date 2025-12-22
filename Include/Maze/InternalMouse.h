@@ -32,59 +32,59 @@ class InternalMouse
     bool getCanMoveBetweenNodes(MazeNode* from, MazeNode* to, bool diagonalsAllowed = false);
 
     bool isAGoalCell(MazeNode* node);
+    void setGoalCells(std::vector<std::array<int, 2>> newGoalCells);
     void resetSolverVariables();
 
     std::vector<std::array<int, 2>> getPossibleDirectionArrays();
 
-  void setCurrentPosition(MazeNode* node);
-  std::vector<std::array<int, 2>> getGoalCells();
+    void                            setCurrentPosition(MazeNode* node);
+    std::vector<std::array<int, 2>> getGoalCells();
 
-  /**
-   * @brief Calculates the Euclidean distance between two cells.
-   *
-   * @param cell1 The first cell.
-   * @param cell2 The second cell.
-   * @return The Euclidean distance.
-   */
-  static double euclideanDistance(MazeNode& cell1, MazeNode& cell2);
+    /**
+     * @brief Calculates the Euclidean distance between two cells.
+     *
+     * @param cell1 The first cell.
+     * @param cell2 The second cell.
+     * @return The Euclidean distance.
+     */
+    static double euclideanDistance(MazeNode& cell1, MazeNode& cell2);
 
-  /**
-   * @brief Calculates the octile distance between two cells.
-   *
-   * @param cell1 The first cell.
-   * @param cell2 The second cell.
-   * @return The octile distance.
-   */
-  static double octileDistance(MazeNode& cell1, MazeNode& cell2);
+    /**
+     * @brief Calculates the octile distance between two cells.
+     *
+     * @param cell1 The first cell.
+     * @param cell2 The second cell.
+     * @return The octile distance.
+     */
+    static double octileDistance(MazeNode& cell1, MazeNode& cell2);
 
-  /**
-   * @brief Returns the direction as a string based on a given direction offset.
-   *
-   * @param direction The direction offset as an array [dx, dy].
-   * @return The direction string (n, ne, e, se, s, sw, w, nw).
-   */
-  std::string getDirectionAsString(const std::array<int, 2>& direction) const;
+    /**
+     * @brief Returns the direction as a string based on a given direction offset.
+     *
+     * @param direction The direction offset as an array [dx, dy].
+     * @return The direction string (n, ne, e, se, s, sw, w, nw).
+     */
+    std::string getDirectionAsString(const std::array<int, 2>& direction) const;
 
-  /**
-   * @brief Returns the direction to the left of the current mouse's direction.
-   *
-   * @return The direction string to the left (n, ne, e, se, s, sw, w, nw).
-   */
-  std::string getDirectionToTheLeft() const;
+    /**
+     * @brief Returns the direction to the left of the current mouse's direction.
+     *
+     * @return The direction string to the left (n, ne, e, se, s, sw, w, nw).
+     */
+    std::string getDirectionToTheLeft() const;
 
-  /**
-   * @brief Returns the direction to the right of the current mouse's direction.
-   *
-   * @return The direction string to the right (n, ne, e, se, s, sw, w, nw).
-   */
-  std::string getDirectionToTheRight() const;
+    /**
+     * @brief Returns the direction to the right of the current mouse's direction.
+     *
+     * @return The direction string to the right (n, ne, e, se, s, sw, w, nw).
+     */
+    std::string getDirectionToTheRight() const;
 
-  int findDirectionIndexInPossibleDirections(
-      const std::string& direction) const;
+    int findDirectionIndexInPossibleDirections(const std::string& direction) const;
 
- private:
-  int indexOfDirection(std::string direction);
-  std::string getNewDirectionAfterAddingHalfStepsRight(int halfStepsRight);
+  private:
+    int         indexOfDirection(std::string direction);
+    std::string getNewDirectionAfterAddingHalfStepsRight(int halfStepsRight);
 
     std::string                     currentRobotDirection;
     std::array<int, 2>              currentRobotPosition;
