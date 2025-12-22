@@ -9,6 +9,12 @@ void Drivetrain::reset()
 {
     leftEncoder->reset();
     rightEncoder->reset();
+
+    prevLeftTicks  = leftEncoder->getTickCount();
+    prevRightTicks = rightEncoder->getTickCount();
+
+    leftVelocityMMps  = 0.0f;
+    rightVelocityMMps = 0.0f;
 }
 
 float Drivetrain::getMotorDistanceMM(std::string side)
@@ -27,7 +33,7 @@ float Drivetrain::getMotorDistanceMM(std::string side)
 
 void Drivetrain::updateVelocities(float dt)
 {
-    if (dt <= 0.0f)
+    if (dt < 0.001f)
         return;
 
     int32_t currLeftTicks  = leftEncoder->getTickCount();

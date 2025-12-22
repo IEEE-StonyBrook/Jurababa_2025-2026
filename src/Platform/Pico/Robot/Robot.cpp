@@ -1,4 +1,3 @@
-// Robot.cpp
 #include "../../../Include/Platform/Pico/Robot/Robot.h"
 #include "../../../Include/Common/PIDController.h"
 #include "../../../Include/Platform/Pico/Config.h"
@@ -36,7 +35,8 @@ void Robot::reset()
     leftWheelPID.reset();
     rightWheelPID.reset();
 
-    mode = Mode::Idle;
+    mode     = Mode::Idle;
+    prevMode = Mode::Idle;
 
     targetForwardMMps = 0.0f;
     targetYawDeg      = 0.0f;
@@ -51,12 +51,15 @@ void Robot::reset()
     prevLeftDuty  = 0.0f;
     prevRightDuty = 0.0f;
 
+    vBaseCmdMMps = 0.0f;
+
     motionDone = true;
 }
 
 void Robot::stop()
 {
-    mode = Mode::Idle;
+    mode     = Mode::Idle;
+    prevMode = Mode::Idle;
 
     targetForwardMMps = 0.0f;
     targetLeftMMps    = 0.0f;
@@ -64,6 +67,8 @@ void Robot::stop()
 
     prevLeftDuty  = 0.0f;
     prevRightDuty = 0.0f;
+
+    vBaseCmdMMps = 0.0f;
 
     motionDone = true;
     drivetrain->stop();
@@ -157,8 +162,24 @@ void Robot::setWheelVelocityTargetsMMps(float vLeftMMps, float vRightMMps)
     targetRightMMps = clampAbs(vRightMMps, maxWheelSpeedMMps);
 }
 
+float Robot::rampToward(float desired, float current, float maxDelta)
+{
+    float diff = desired - current;
+    if (diff > maxDelta)
+        diff = maxDelta;
+    if (diff < -maxDelta)
+        diff = -maxDelta;
+    return current + diff;
+}
+
 void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
 {
+    // Apply ramping to base speed command
+    float maxStep = maxBaseAccelMMps2 * dt;
+    vBaseCmdMMps  = rampToward(vBaseMMps, vBaseCmdMMps, maxStep);
+    vBaseMMps     = vBaseCmdMMps;
+
+    // Compute yaw error
     float yaw      = sensors->getYaw();
     float yawError = wrapDeg(targetYawDeg - yaw);
 
@@ -178,23 +199,20 @@ void Robot::runWheelVelocityControl(float dt)
     // Measure wheel speeds once per tick
     float vL = drivetrain->getMotorVelocityMMps("left");
     float vR = drivetrain->getMotorVelocityMMps("right");
-    // LOG_DEBUG("Measured Velocities - Left: " + std::to_string(vL) + " mm/s | Right: " +
-    // std::to_string(vR) + " mm/s");
 
     // Feedforward (mm/s -> duty) + feedback (PID output in duty)
     float ffL = drivetrain->getFeedforward("left", targetLeftMMps);
     float ffR = drivetrain->getFeedforward("right", targetRightMMps);
-    // LOG_DEBUG("FF Left: " + std::to_string(ffL) + " | FF Right: " + std::to_string(ffR));
 
     float eL = targetLeftMMps - vL;
     float eR = targetRightMMps - vR;
 
-    float   fbL = leftWheelPID.calculateOutput(eL, dt);
-    float   fbR = rightWheelPID.calculateOutput(eR, dt);
+    float fbL = leftWheelPID.calculateOutput(eL, dt);
+    float fbR = rightWheelPID.calculateOutput(eR, dt);
+
     static int ctr = 0;
     if ((ctr++ % 10) == 0)
     {
-
         LOG_DEBUG("FB Left: " + std::to_string(fbL) + " | FB Right: " + std::to_string(fbR));
     }
 
@@ -215,7 +233,29 @@ void Robot::update(float dt)
     if (dt <= 0.0f)
         return;
 
-    // LOG_DEBUG("Robot Update: Mode = " + std::to_string(static_cast<int>(mode)));
+    // NEW: Mode-entry behavior for ramp state (smooth transitions + safe resets)
+    if (mode != prevMode)
+    {
+        switch (mode)
+        {
+            case Mode::Idle:
+                vBaseCmdMMps = 0.0f;
+                break;
+
+            case Mode::TurnInPlace:
+                vBaseCmdMMps = 0.0f;
+                break;
+
+            case Mode::DriveStraight:
+            case Mode::DriveDistance:
+                // Only reset when coming from Idle/Turn. Otherwise preserve for smooth changes.
+                if (prevMode == Mode::Idle || prevMode == Mode::TurnInPlace)
+                    vBaseCmdMMps = 0.0f;
+                break;
+        }
+        prevMode = mode;
+    }
+
     switch (mode)
     {
         case Mode::Idle:

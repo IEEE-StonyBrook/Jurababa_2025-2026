@@ -38,8 +38,8 @@
 // PID constants.
 #define LEFT_WHEEL_KP   0.0075f
 #define RIGHT_WHEEL_KP  0.0075f
-#define LEFT_WHEEL_KI   0.0f
-#define RIGHT_WHEEL_KI  0.0f
+#define LEFT_WHEEL_KI   0.00375f
+#define RIGHT_WHEEL_KI  0.00375f
 #define LEFT_WHEEL_KD   0.0f
 #define RIGHT_WHEEL_KD  0.0f
 #define YAW_KP          0.0f

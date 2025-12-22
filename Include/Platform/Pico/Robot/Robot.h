@@ -83,6 +83,9 @@ class Robot
     // Sets wheel velocity targets (mm/s)
     void setWheelVelocityTargetsMMps(float vLeftMMps, float vRightMMps);
 
+    // Ramps a value toward a desired target by maxDelta
+    float rampToward(float desired, float current, float maxDelta);
+
     // Converts base speed + yaw correction into wheel targets and runs low-level wheel control
     void commandBaseAndYaw(float vBaseMMps, float dt);
 
@@ -101,6 +104,7 @@ class Robot
     PIDController rightWheelPID;
 
     Mode mode = Mode::Idle;
+    Mode prevMode = Mode::Idle;
 
     // Motion targets
     float targetForwardMMps = 0.0f;
@@ -131,6 +135,10 @@ class Robot
     // DriveDistance shaping
     float slowdownDistMM   = 80.0f;
     float minSlowdownScale = 0.2f;
+
+    // Ramping state
+    float vBaseCmdMMps      = 0.0f;    // ramped command actually used
+    float maxBaseAccelMMps2 = 1500.0f; // tune: 1500–5000
 
     bool motionDone = true;
 };
