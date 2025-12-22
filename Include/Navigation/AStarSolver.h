@@ -8,6 +8,7 @@
 
 #include "../Common/LogSystem.h"
 #include "../Navigation/PathConverter.h"
+#include "../Navigation/Diagonalizer.h"
 
 class AStarSolver
 {

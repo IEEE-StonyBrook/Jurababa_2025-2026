@@ -162,8 +162,9 @@ class API
     void printMaze();
     bool runOnSimulator;
 
-  private:
-    InternalMouse* internalMouse;
+  void executeSequence(const std::string& seq);
+ private:
+  InternalMouse* internalMouse;
 
     std::string getSimulatorResponse(std::string commandUsed);
     int         getSimulatorIntegerResponse(std::string commandUsed);

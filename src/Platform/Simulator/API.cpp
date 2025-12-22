@@ -40,7 +40,7 @@ bool API::wallFront()
 bool API::wallRight()
 {
     if (runOnSimulator)
-        return getSimulatorBoolResponse("wallFront");
+        return getSimulatorBoolResponse("wallRight");
     return false;
 }
 
@@ -110,6 +110,43 @@ void API::turn(int degreesDivisibleBy45)
     }
 
     internalMouse->turnIM45DegreeStepsRight(turnsNeeded);
+}
+
+void API::executeSequence(const std::string& seq)
+{
+    std::istringstream ss(seq);
+    std::string        command;
+    while (ss >> command)
+    {
+        if (command == "F")
+        {
+            moveForward();
+        }
+        else if (command == "FH")
+        {
+            moveForwardHalf();
+        }
+        else if (command == "L45")
+        {
+            turnLeft45();
+        }
+        else if (command == "L")
+        {
+            turnLeft90();
+        }
+        else if (command == "R45")
+        {
+            turnRight45();
+        }
+        else if (command == "R")
+        {
+            turnRight90();
+        }
+        else
+        {
+            LOG_WARNING("API.cpp: Unknown command in sequence: " + command);
+        }
+    }
 }
 
 void API::setWall(int x, int y, const std::string& direction)

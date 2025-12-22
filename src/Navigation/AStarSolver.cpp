@@ -4,17 +4,20 @@ AStarSolver::AStarSolver(InternalMouse* internalMouse) : internalMouse(internalM
 {
 }
 
-std::string AStarSolver::go(std::vector<std::array<int, 2>> endCells, bool diagMovementAllowed,
-                            bool passThroughGoalCells)
-{
-    std::vector<MazeNode*> aStarPath =
-        getBestPathToEndCell(endCells, diagMovementAllowed, passThroughGoalCells);
-    std::string stringPath = getStringPath(aStarPath);
-    LOG_DEBUG(stringPath);
-    std::array<int, 2> c       = internalMouse->getCurrentRobotDirArray();
-    std::string        lfrPath = PathConverter::buildLFRPath(
-        internalMouse->getCurrentRobotNode(), internalMouse->getCurrentRobotDirArray(), aStarPath);
-    return lfrPath;
+std::string AStarSolver::go(std::vector<std::array<int, 2>> endCells,
+                            bool diagMovementAllowed,
+                            bool passThroughGoalCells) {
+  std::vector<MazeNode*> aStarPath =
+      getBestPathToEndCell(endCells, diagMovementAllowed, passThroughGoalCells);
+  std::string stringPath = getStringPath(aStarPath);
+  LOG_DEBUG(stringPath);
+  std::array<int, 2> c = internalMouse->getCurrentRobotDirArray();
+  std::string lfrPath = PathConverter::buildLFRPath(
+     internalMouse->getCurrentRobotNode(),
+     internalMouse->getCurrentRobotDirArray(), aStarPath);
+  LOG_DEBUG(lfrPath);
+  // std::string diagonalizedPath = Diagonalizer().diagonalize(lfrPath);
+  return lfrPath;
 }
 
 std::vector<MazeNode*> AStarSolver::getBestPathToEndCell(std::vector<std::array<int, 2>> endCells,
