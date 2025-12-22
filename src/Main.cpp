@@ -45,6 +45,12 @@ static float snapToNearest45Deg(float yawDeg)
     return snapped;
 }
 
+struct FeedforwardSample
+{
+    float appliedPWM;
+    float measuredVelMMps;
+};
+
 // -------------------------
 // Sensor publishing (Core1 -> Core0)
 // -------------------------
@@ -169,7 +175,14 @@ static void core1_Publisher()
 
     while (true)
     {
-        robot.update(dt);
+        // robot.update(dt);
+        drivetrain.updateVelocities(dt);
+        LOG_DEBUG("Left Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("left")) +
+                  " mm/s, Right Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("right")) +
+                  " mm/s");
+        LOG_INFO("Left Distance: " + std::to_string(drivetrain.getMotorDistanceMM("left")) +
+                 " mm, Right Distance: " + std::to_string(drivetrain.getMotorDistanceMM("right")) +
+                 " mm");
 
         // Mid-motion STOP interrupt + sequential command start
         processCommands(&robot, &sensors);
@@ -267,90 +280,147 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath)
     }
 }
 
-// /**
-//  * Runs a PWM sweep on the given motor, applying PWM values from startPWM to
-//  * endPWM.
-//  *
-//  * @param motor Pointer to the motor to test.
-//  * @param startPWM Starting PWM value (e.g., 0.0f).
-//  * @param endPWM Ending PWM value (e.g., 1.0f or -1.0f).
-//  * @param stepPWM Step size for PWM (e.g., 0.05f). Automatically negated if
-//  * startPWM > endPWM.
-//  * @param settleTimeMs Time in milliseconds to wait at each PWM step for
-//  * velocity to stabilize.
-//  * @param controlTickPeriodMs Period in milliseconds to call
-//  * motor->controlTick() during settling.
-//  * @return Vector of FeedforwardSample containing applied PWM and measured
-//  * velocity.
-//  *
-//  * Use printed values and the following calculators:
-//  * https://www.desmos.com/calculator/qhiaubdod3 - kS and kV calculator
-//  * Do not include 0.0 velocity values!
-//  *
-//  * Note: Comment Motor::controlTick() applyDuty() call to run open-loop tests.
-//  */
-// std::vector<FeedforwardSample> runPWMSweep(Motor* motor, float startPWM,
-//                                            float endPWM, float stepPWM,
-//                                            int settleTimeMs,
-//                                            int controlTickPeriodMs) {
-//   if (startPWM > endPWM && stepPWM > 0) stepPWM = -stepPWM;
+/**
+ * Runs a PWM sweep on the given motor, applying PWM values from startPWM to
+ * endPWM.
+ *
+ * @param motor Pointer to the motor to test.
+ * @param startPWM Starting PWM value (e.g., 0.0f).
+ * @param endPWM Ending PWM value (e.g., 1.0f or -1.0f).
+ * @param stepPWM Step size for PWM (e.g., 0.05f). Automatically negated if
+ * startPWM > endPWM.
+ * @param settleTimeMs Time in milliseconds to wait at each PWM step for
+ * velocity to stabilize.
+ * @param controlTickPeriodMs Period in milliseconds to call
+ * motor->controlTick() during settling.
+ * @return Vector of FeedforwardSample containing applied PWM and measured
+ * velocity.
+ *
+ * Use printed values and the following calculators:
+ * https://www.desmos.com/calculator/qhiaubdod3 - kS and kV calculator
+ * Do not include 0.0 velocity values!
+ *
+ */
+std::vector<FeedforwardSample> runPWMSweep(Drivetrain* drivetrain, std::string side, float startPWM,
+                                           float endPWM, float stepPWM, int settleTimeMs,
+                                           int controlTickPeriodMs)
+{
+    if (!drivetrain)
+    {
+        LOG_ERROR("Drivetrain is null in runPWMSweep");
+        return {};
+    }
 
-//   std::vector<FeedforwardSample> sweepResults;
+    if (side != "left" && side != "right")
+    {
+        LOG_ERROR("Invalid side inputted for PWM sweep: " + side);
+        return {};
+    }
 
-//   // Sweep PWM from startPWM to endPWM in steps of stepPWM.
-//   for (float pwm = startPWM; (stepPWM > 0 ? pwm <= endPWM : pwm >= endPWM);
-//        pwm += stepPWM) {
-//     // Apply raw PWM to motor.
-//     motor->applyDuty(pwm);
+    if (controlTickPeriodMs <= 0 || settleTimeMs <= 0)
+    {
+        LOG_ERROR("Invalid timing parameters for PWM sweep");
+        return {};
+    }
 
-//     // Run control ticks during settle period so velocity updates.
-//     absolute_time_t settleStart = get_absolute_time();
-//     while (absolute_time_diff_us(settleStart, get_absolute_time()) <
-//            settleTimeMs * 1000) {
-//       motor->controlTick();
-//       sleep_ms(controlTickPeriodMs);
-//     }
+    // Fix step direction if caller gave an inconsistent sign.
+    if (startPWM > endPWM && stepPWM > 0)
+        stepPWM = -stepPWM;
+    if (startPWM < endPWM && stepPWM < 0)
+        stepPWM = -stepPWM;
 
-//     // Read steady-state velocity from motor.
-//     float velocity = motor->getWheelVelocityMMPerSec();
+    std::vector<FeedforwardSample> sweepResults;
 
-//     sweepResults.push_back({pwm, velocity});
-//     LOG_DEBUG("PWM=" + std::to_string(pwm) +
-//               " | Velocity=" + std::to_string(velocity) + " mm/s.");
-//   }
+    // Start from a known state.
+    drivetrain->stop();
+    drivetrain->reset();
 
-//   // Log all results in one go for Desmos.
-//   std::string pwmList, velList;
-//   for (size_t i = 0; i < sweepResults.size(); i++) {
-//     if (sweepResults[i].measuredVelMMps != 0.0f) {
-//       pwmList += std::to_string(sweepResults[i].appliedPWM);
-//       velList += std::to_string(sweepResults[i].measuredVelMMps);
-//       if (i != sweepResults.size() - 1) {
-//         pwmList += ", ";
-//         velList += ", ";
-//       }
-//     }
-//   }
-//   LOG_DEBUG("Velocity Values: x = [" + velList + "]");
-//   LOG_DEBUG("PWM Values: p = [" + pwmList + "]");
+    const float dt = controlTickPeriodMs / 1000.0f;
 
-//   motor->stopMotor();
-//   return sweepResults;
-// }
-// /* Example Usage:
-// LOG_DEBUG("Running right motor sweep...");
-// // Sweep from 0.0 to 1.0 in steps of 0.05.
-// runPWMSweep(&rightMotor, 0.0f, 1.0f, 0.05f, 10000, 25);
-// sleep_ms(2000);
-// LOG_DEBUG("Running right motor reverse sweep...");
-// // Sweep from 0.0 to -1.0 in steps of -0.05.
-// runPWMSweep(&rightMotor, 0.0f, -1.0f, -0.05f, 10000, 25);
-// sleep_ms(2000);
+    // Compute how many samples we get per settle window.
+    int totalSamples = settleTimeMs / controlTickPeriodMs;
+    if (totalSamples < 1)
+        totalSamples = 1;
 
-// leftMotor.stopMotor();
-// rightMotor.stopMotor();
-// LOG_DEBUG("Motors stopped.");
-// */
+    // Average only the last ~25% of samples (At least 3 samples).
+    int avgSamples = totalSamples / 4;
+    if (avgSamples < 3)
+        avgSamples = (totalSamples < 3 ? totalSamples : 3);
+
+    for (float pwm = startPWM; (stepPWM > 0 ? pwm <= endPWM : pwm >= endPWM); pwm += stepPWM)
+    {
+        // Apply duty to selected side only.
+        if (side == "left")
+            drivetrain->setDuty(pwm, 0.0f);
+        else
+            drivetrain->setDuty(0.0f, pwm);
+
+        float velSum   = 0.0f;
+        int   velCount = 0;
+
+        // Run settle ticks; only average the last avgSamples ticks.
+        for (int i = 0; i < totalSamples; i++)
+        {
+            sleep_ms(controlTickPeriodMs);
+            drivetrain->updateVelocities(dt);
+
+            float v = drivetrain->getMotorVelocityMMps(side);
+
+            if (i >= totalSamples - avgSamples)
+            {
+                velSum += v;
+                velCount++;
+            }
+        }
+
+        float avgVel = (velCount > 0) ? (velSum / (float)velCount) : 0.0f;
+
+        sweepResults.push_back({pwm, avgVel});
+        LOG_DEBUG("Side=" + side + " | PWM=" + std::to_string(pwm) +
+                  " | AvgVel=" + std::to_string(avgVel) + " mm/s (Last " +
+                  std::to_string(avgSamples) + " samples).");
+    }
+
+    // Log all results in one go for Desmos.
+    std::string pwmList, velList;
+    bool        first = true;
+
+    for (const auto& s : sweepResults)
+    {
+        if (s.measuredVelMMps == 0.0f)
+            continue;
+
+        if (!first)
+        {
+            pwmList += ", ";
+            velList += ", ";
+        }
+        first = false;
+
+        pwmList += std::to_string(s.appliedPWM);
+        velList += std::to_string(s.measuredVelMMps);
+    }
+
+    LOG_DEBUG("Velocity Values: x = [" + velList + "]");
+    LOG_DEBUG("PWM Values: p = [" + pwmList + "]");
+
+    drivetrain->stop();
+    return sweepResults;
+}
+/* Example Usage:
+LOG_DEBUG("Running right motor sweep...");
+// Sweep from 0.0 to 1.0 in steps of 0.05.
+runPWMSweep(&rightMotor, 0.0f, 1.0f, 0.05f, 10000, 25);
+sleep_ms(2000);
+LOG_DEBUG("Running right motor reverse sweep...");
+// Sweep from 0.0 to -1.0 in steps of -0.05.
+runPWMSweep(&rightMotor, 0.0f, -1.0f, -0.05f, 10000, 25);
+sleep_ms(2000);
+
+leftMotor.stopMotor();
+rightMotor.stopMotor();
+LOG_DEBUG("Motors stopped.");
+*/
 
 // /**
 //  * Run step-based velocity test on both motors at given loop frequency.
