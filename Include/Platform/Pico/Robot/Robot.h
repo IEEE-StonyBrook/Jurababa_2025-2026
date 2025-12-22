@@ -126,7 +126,7 @@ class Robot
     float maxDuty           = 1.0f;
     float maxDutySlewPerSec = 10.0f;
     float maxWheelSpeedMMps = 800.0f;
-    float maxYawDiffMMps    = 400.0f; // yawPID output limit in mm/s differential
+    float maxYawDiffMMps    = 100.0f; // yawPID output limit in mm/s differential
 
     // Slew state
     float prevLeftDuty  = 0.0f;

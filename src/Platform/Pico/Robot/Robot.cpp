@@ -180,13 +180,19 @@ void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
     vBaseMMps     = vBaseCmdMMps;
 
     // Compute yaw error
-    float yaw      = sensors->getYaw();
+    float      yaw = sensors->getYaw();
     float yawError = wrapDeg(targetYawDeg - yaw);
 
     // yawPID output is differential wheel speed (mm/s)
     float vDiffMMps = yawPID.calculateOutput(yawError, dt);
     vDiffMMps       = clampAbs(vDiffMMps, maxYawDiffMMps);
-
+    static int ctr = 0;
+    if ((ctr++ % 10) == 0)
+    {
+        LOG_DEBUG("Yaw diff: " + std::to_string(vDiffMMps) + " mm/s | Yaw error: " +
+                  std::to_string(yawError) + " deg");
+    }
+    
     setWheelVelocityTargetsMMps(vBaseMMps - vDiffMMps, vBaseMMps + vDiffMMps);
     runWheelVelocityControl(dt);
 }

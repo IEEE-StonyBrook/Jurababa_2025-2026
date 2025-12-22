@@ -183,7 +183,7 @@ static void core1_Publisher()
 
     // Start a straight drive test at 250 mm/s holding the current heading
     float holdYaw = sensors.getYaw();
-    robot.driveStraightMMps(600.0f, holdYaw);
+    robot.driveStraightMMps(-300.0f, holdYaw);
 
     absolute_time_t next = make_timeout_time_ms(CONTROL_MS);
     absolute_time_t last = get_absolute_time();
