@@ -22,6 +22,18 @@
 
 #include "pico/stdlib.h"
 
+// -------------------------
+// Main helper functions
+// -------------------------
+struct FeedforwardSample
+{
+    float appliedPWM;
+    float measuredVelMMps;
+};
+std::vector<FeedforwardSample> runPWMSweep(Drivetrain* drivetrain, std::string side, float startPWM,
+                                           float endPWM, float stepPWM, int settleTimeMs,
+                                           int controlTickPeriodMs);
+
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
 // -------------------------
@@ -44,12 +56,6 @@ static float snapToNearest45Deg(float yawDeg)
         snapped = 180.0f;
     return snapped;
 }
-
-struct FeedforwardSample
-{
-    float appliedPWM;
-    float measuredVelMMps;
-};
 
 // -------------------------
 // Sensor publishing (Core1 -> Core0)
@@ -173,24 +179,35 @@ static void core1_Publisher()
 
     const float dt = static_cast<float>(CORE_SLEEP_MS) / 1000.0f;
 
-    while (true)
-    {
-        // robot.update(dt);
-        drivetrain.updateVelocities(dt);
-        LOG_DEBUG("Left Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("left")) +
-                  " mm/s, Right Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("right")) +
-                  " mm/s");
-        LOG_INFO("Left Distance: " + std::to_string(drivetrain.getMotorDistanceMM("left")) +
-                 " mm, Right Distance: " + std::to_string(drivetrain.getMotorDistanceMM("right")) +
-                 " mm");
+    // Left
+    runPWMSweep(&drivetrain, "left", 0.00f, 0.20f, 0.05f, 600, 10);
+    runPWMSweep(&drivetrain, "left", 0.20f, 0.45f, 0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "left", 0.45f, 1.00f, 0.05f, 700, 10);
 
-        // Mid-motion STOP interrupt + sequential command start
-        processCommands(&robot, &sensors);
+    runPWMSweep(&drivetrain, "left", 1.00f, 0.45f, -0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "left", 0.45f, 0.20f, -0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "left", 0.20f, 0.00f, -0.05f, 600, 10);
 
-        publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
+    // Right
+    runPWMSweep(&drivetrain, "right", 0.00f, 0.20f, 0.05f, 600, 10);
+    runPWMSweep(&drivetrain, "right", 0.20f, 0.45f, 0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "right", 0.45f, 1.00f, 0.05f, 700, 10);
 
-        sleep_ms(CORE_SLEEP_MS);
-    }
+    runPWMSweep(&drivetrain, "right", 1.00f, 0.45f, -0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "right", 0.45f, 0.20f, -0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "right", 0.20f, 0.00f, -0.05f, 600, 10);
+
+    // while (true)
+    // {
+    //     robot.update(dt);
+
+    //     // Mid-motion STOP interrupt + sequential command start
+    //     processCommands(&robot, &sensors);
+
+    //     publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
+
+    //     sleep_ms(CORE_SLEEP_MS);
+    // }
 }
 
 int main()
@@ -284,15 +301,13 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath)
  * Runs a PWM sweep on the given motor, applying PWM values from startPWM to
  * endPWM.
  *
- * @param motor Pointer to the motor to test.
+ * @param drivetrain Pointer to the drivetrain to test.
+ * @param side "left" or "right" to indicate which motor to test.
  * @param startPWM Starting PWM value (e.g., 0.0f).
  * @param endPWM Ending PWM value (e.g., 1.0f or -1.0f).
- * @param stepPWM Step size for PWM (e.g., 0.05f). Automatically negated if
- * startPWM > endPWM.
- * @param settleTimeMs Time in milliseconds to wait at each PWM step for
- * velocity to stabilize.
- * @param controlTickPeriodMs Period in milliseconds to call
- * motor->controlTick() during settling.
+ * @param stepPWM Step size for each PWM increment (e.g., 0.05f).
+ * @param settleTimeMs Time in milliseconds to let the motor settle at each PWM
+ * @param controlTickPeriodMs Control loop period in milliseconds for velocity updates.
  * @return Vector of FeedforwardSample containing applied PWM and measured
  * velocity.
  *

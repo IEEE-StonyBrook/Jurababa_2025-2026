@@ -22,31 +22,29 @@
 #define MAX_VOLTAGE     6.0f   // Max safe motor voltage.
 
 // Battery reference.
-#define DEFAULT_BATTERY_VOLTAGE 7.92f // Nominal charged battery voltage.
+#define DEFAULT_BATTERY_VOLTAGE 8.35f // Nominal charged battery voltage.
 
 // Feedforward constants.
-#define FORWARD_KVL 0.0075918f // Left wheel speed gain forward (volts per mm/s).
-#define FORWARD_KVR 0.0081375f // Right wheel speed gain forward (volts per mm/s).
-#define FORWARD_KSL 1.0049463f // Left wheel static friction voltage forward (volts).
-#define FORWARD_KSR 1.1314120f // Right wheel static friction voltage forward (volts).
-#define ACC_FFL     0.0000000f // Left wheel acceleration gain forward (volts per mm/s²).
-#define ACC_FFR     0.0000000f // Right wheel acceleration gain forward (volts per mm/s²).
+#define FORWARD_KVL 0.000876f  // Left duty gain forward (duty per mm/s)
+#define FORWARD_KVR 0.000850f  // Right duty gain forward (duty per mm/s)
+#define FORWARD_KSL 0.1333f    // Left static friction duty forward (duty)
+#define FORWARD_KSR 0.2038f    // Right static friction duty forward (duty)
 
-// Feedbackward constants.
-#define REVERSE_KVL 0.0079290f // Left wheel speed gain reverse (volts per mm/s).
-#define REVERSE_KVR 0.0073686f // Right wheel speed gain reverse (volts per mm/s).
-#define REVERSE_KSL 0.4491618f // Left wheel static friction voltage reverse (volts).
-#define REVERSE_KSR 0.9882377f // Right wheel static friction voltage reverse (volts).
-#define ACC_FBL     0.0000000f // Left wheel acceleration gain reverse (volts per mm/s²).
-#define ACC_FBR     0.0000000f // Right wheel acceleration gain reverse (volts per mm/s²).
+#define REVERSE_KVL 0.000876f // TEMP: set after reverse sweep fit
+#define REVERSE_KVR 0.000850f // TEMP: set after reverse sweep fit
+#define REVERSE_KSL 0.1333f   // TEMP: set after reverse sweep fit
+#define REVERSE_KSR 0.2038f   // TEMP: set after reverse sweep fit
 
-// Forward PD controller gains.
-#define FWD_KP 0.05f // Proportional gain for forward error.
-#define FWD_KD 0.6f  // Derivative gain for forward error.
-
-// Rotation PD controller gains.
-#define ROT_KP 0.15f // Proportional gain for rotation error.
-#define ROT_KD 0.5f  // Derivative gain for rotation error.
+// PID constants.
+#define LEFT_WHEEL_KP   0.0f
+#define LEFT_WHEEL_KI   0.0f
+#define LEFT_WHEEL_KD   0.0f
+#define RIGHT_WHEEL_KP  0.0f
+#define RIGHT_WHEEL_KI  0.0f
+#define RIGHT_WHEEL_KD  0.0f
+#define YAW_KP          0.0f
+#define YAW_KI          0.0f
+#define YAW_KD          0.0f
 
 // ================== Motion Constants ================== //
 // Distances.

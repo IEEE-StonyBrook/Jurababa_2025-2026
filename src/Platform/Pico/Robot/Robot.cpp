@@ -3,19 +3,20 @@
 #include "../../../Include/Common/PIDController.h"
 #include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
 #include "../../../Include/Platform/Pico/Robot/Sensors.h"
+#include "../../../Include/Platform/Pico/Config.h"
 
 Robot::Robot(Drivetrain* drivetrain, Sensors* sensors)
     : drivetrain(drivetrain), sensors(sensors), yawPID(), leftWheelPID(), rightWheelPID()
 {
     // Yaw PID: Output is wheel speed differential (mm/s)
-    yawPID.setGains(8.0f, 0.0f, 0.5f);
+    yawPID.setGains(YAW_KP, YAW_KI, YAW_KD);
     yawPID.setOutputLimit(maxYawDiffMMps);
     yawPID.setDeadband(1.5f);
     yawPID.setDerivativeFilterAlpha(0.9f);
 
     // Wheel PIDs: Output is duty correction
-    leftWheelPID.setGains(0.01f, 0.0f, 0.0f);
-    rightWheelPID.setGains(0.01f, 0.0f, 0.0f);
+    leftWheelPID.setGains(LEFT_WHEEL_KP, LEFT_WHEEL_KI, LEFT_WHEEL_KD);
+    rightWheelPID.setGains(RIGHT_WHEEL_KP, RIGHT_WHEEL_KI, RIGHT_WHEEL_KD);
     leftWheelPID.setOutputLimit(1.0f);
     rightWheelPID.setOutputLimit(1.0f);
     leftWheelPID.setDeadband(0.0f);
