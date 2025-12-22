@@ -1,29 +1,56 @@
 #include <stdio.h>
 
-#include "../Include/Common/Bluetooth.h"
+#include <array>
+#include <cmath>
+#include <sstream>
+#include <string>
+#include <vector>
+
 #include "../Include/Common/LogSystem.h"
 #include "../Include/Navigation/AStarSolver.h"
 #include "../Include/Platform/Pico/API.h"
 #include "../Include/Platform/Pico/Config.h"
 #include "../Include/Platform/Pico/MulticoreSensors.h"
-#include "../Include/Platform/Pico/Robot/Battery.h"
+
 #include "../Include/Platform/Pico/Robot/Drivetrain.h"
 #include "../Include/Platform/Pico/Robot/Encoder.h"
 #include "../Include/Platform/Pico/Robot/IMU.h"
-#include "../Include/Platform/Pico/Robot/Motion.h"
 #include "../Include/Platform/Pico/Robot/Motor.h"
+#include "../Include/Platform/Pico/Robot/Robot.h"
+#include "../Include/Platform/Pico/Robot/Sensors.h"
 #include "../Include/Platform/Pico/Robot/ToF.h"
-#include "hardware/uart.h"
-#include "pico/stdlib.h"
 
-// #include "../Include/Platform/Simulator/API.h"
+#include "pico/stdlib.h"
 
 void interpretLFRPath(API* apiPtr, std::string lfrPath);
 
+// -------------------------
+// Small angle helpers (Local to main)
+// -------------------------
+static float wrapDeg(float deg)
+{
+    while (deg > 180.0f)
+        deg -= 360.0f;
+    while (deg < -180.0f)
+        deg += 360.0f;
+    return deg;
+}
+
+static float snapToNearest45Deg(float yawDeg)
+{
+    float snapped = 45.0f * std::round(yawDeg / 45.0f);
+    snapped       = wrapDeg(snapped);
+    if (snapped == -180.0f)
+        snapped = 180.0f;
+    return snapped;
+}
+
+// -------------------------
+// Sensor publishing (Core1 -> Core0)
+// -------------------------
 void publishSensors(Encoder* leftEncoder, Encoder* rightEncoder, ToF* leftToF, ToF* frontToF,
                     ToF* rightToF, IMU* imu)
 {
-    // Read Sensors
     MulticoreSensorData local{};
     local.left_encoder_count  = leftEncoder->getTickCount();
     local.right_encoder_count = rightEncoder->getTickCount();
@@ -33,70 +60,91 @@ void publishSensors(Encoder* leftEncoder, Encoder* rightEncoder, ToF* leftToF, T
     local.imu_yaw             = imu->getIMUYawDegreesNeg180ToPos180();
     local.timestamp_ms        = to_ms_since_boot(get_absolute_time());
 
-    // Publish sensor snapshot to Core0
     MulticoreSensorHub::publish(local);
-    // MulticoreSensorData test{};
-    // MulticoreSensorHub::snapshot(test);
-    // LOG_DEBUG("Left encoder CORE1: " +
-    // std::to_string(local.left_encoder_count)); LOG_DEBUG("Front ToF CORE1: " +
-    // std::to_string(local.tof_front_mm)); LOG_DEBUG("Left TEST encoder CORE1: "
-    // + std::to_string(test.left_encoder_count)); LOG_DEBUG("Front TEST ToF
-    // CORE1: " + std::to_string(test.tof_front_mm));
 }
 
-void processCommand(Motion* motion)
+// -------------------------
+// Core1 command handling
+// - STOP interrupts immediately (mid-motion)
+// - Other commands only start when robot is done
+// - No blocking reads (prevents control-loop hiccups)
+// -------------------------
+void processCommands(Robot* robot, Sensors* sensors)
 {
-    if (CommandHub::hasPendingCommands())
+    CommandPacket cmd;
+    bool          sawStop = false;
+
+    // Drain all pending commands each tick
+    while (CommandHub::receiveNonBlocking(cmd))
     {
-        CommandPacket cmd = CommandHub::receiveBlocking();
+        if (cmd.type == CommandType::STOP)
+        {
+            sawStop = true;
+            continue; // Flush remaining commands behind STOP
+        }
+
+        // Never start a new motion while one is still running
+        if (!robot->isMotionDone())
+            continue;
+
         switch (cmd.type)
         {
             case CommandType::MOVE_FWD_HALF:
-                motion->forward(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED,
-                                FORWARD_ACCEL, true);
-                break;
-            case CommandType::MOVE_FWD:
-                motion->forward(cmd.param * CELL_DISTANCE_MM, FORWARD_TOP_SPEED,
-                                FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
-                break;
-            case CommandType::TURN_LEFT:
-                motion->turn(-cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-                break;
-            case CommandType::TURN_RIGHT:
-                motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-                break;
-            case CommandType::STOP:
-                motion->stop();
-                break;
-            case CommandType::TURN_ARBITRARY:
-                motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-                break;
-            case CommandType::CENTER_FROM_EDGE:
-                motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED,
-                                FORWARD_ACCEL, true);
+                robot->driveDistanceMM(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED);
                 break;
 
+            case CommandType::MOVE_FWD:
+                robot->driveDistanceMM(cmd.param * CELL_DISTANCE_MM, FORWARD_TOP_SPEED);
+                break;
+
+            case CommandType::CENTER_FROM_EDGE:
+                robot->driveDistanceMM(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED);
+                break;
+
+            case CommandType::TURN_LEFT:
+            {
+                float currYaw = sensors->getYaw();
+                float desired = wrapDeg(currYaw - static_cast<float>(cmd.param));
+                robot->turnToYawDeg(snapToNearest45Deg(desired));
+            }
+            break;
+
+            case CommandType::TURN_RIGHT:
+            {
+                float currYaw = sensors->getYaw();
+                float desired = wrapDeg(currYaw + static_cast<float>(cmd.param));
+                robot->turnToYawDeg(snapToNearest45Deg(desired));
+            }
+            break;
+
+            case CommandType::TURN_ARBITRARY:
+            {
+                float currYaw = sensors->getYaw();
+                float desired = wrapDeg(currYaw + static_cast<float>(cmd.param)); // signed ok
+                robot->turnToYawDeg(snapToNearest45Deg(desired));
+            }
+            break;
+
+            // Core0 may send this, but Core1 doesn't need to act on it
+            case CommandType::SNAPSHOT:
+            case CommandType::NONE:
             default:
-                LOG_ERROR("Unknown command type received.");
                 break;
         }
+    }
+
+    if (sawStop)
+    {
+        robot->stop();
     }
 }
 
 // Publisher for Core1: All robot specific logic
 static void core1_Publisher()
 {
-    Bluetooth bt(uart0, 16, 17, 9600);
-    bt.init();
-
-    // Bluetooth
-    LogSystem::attachBluetooth(&bt);
-    LOG_INFO("System initialized");
-    LOG_DEBUG("Bluetooth logging enabled");
-
     // Sensors
     Encoder leftEncoder(pio0, 20, true);
-    Encoder rightEncoder(pio0, 8, false); // was 7
+    Encoder rightEncoder(pio0, 8, false);
     ToF     leftToF(11, 'L');
     ToF     frontToF(12, 'F');
     ToF     rightToF(13, 'R');
@@ -104,20 +152,28 @@ static void core1_Publisher()
     imu.resetIMUYawToZero();
 
     // Motors
-    Motor      leftMotor(18, 19, nullptr, true);
-    Motor      rightMotor(6, 7, nullptr, false);
-    Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder, &imu, &leftToF,
-                          &frontToF, &rightToF);
-    Motion     motion(&drivetrain);
+    Motor leftMotor(18, 19, nullptr, true);
+    Motor rightMotor(6, 7, nullptr, false);
+
+    // Updated stack (Robot owns motion)
+    Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder);
+    Sensors    sensors(&imu, &leftToF, &frontToF, &rightToF);
+    Robot      robot(&drivetrain, &sensors);
 
     LOG_DEBUG("Initialization complete.");
-    motion.resetDriveSystem();
+    robot.reset();
 
     multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
 
+    const float dt = static_cast<float>(CORE_SLEEP_MS) / 1000.0f;
+
     while (true)
     {
-        processCommand(&motion);
+        robot.update(dt);
+
+        // Mid-motion STOP interrupt + sequential command start
+        processCommands(&robot, &sensors);
+
         publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
 
         sleep_ms(CORE_SLEEP_MS);
@@ -145,50 +201,22 @@ int main()
     api.goToCenterFromEdge();
     api.executeSequence("F#F#F#F#L#F#");
 
-    // std::string path = aStar.go(goalCells, true, true);
-    // LOG_DEBUG(path);
-    // interpretLFRPath(&api, path);
-
-    // Main loop: high-level planning, sensor reads, etc.
+    // Core0 loop: read sensor snapshots, update maze state / planning.
     while (true)
     {
         MulticoreSensorData sensors;
-        MulticoreSensorHub::snapshot(sensors); // lock-free read
+        MulticoreSensorHub::snapshot(sensors);
 
-        if (CommandHub::hasPendingCommands())
-        {
-            CommandPacket cmd = CommandHub::receiveBlocking();
-            if (cmd.type == CommandType::SNAPSHOT)
-            {
-                LOG_DEBUG(
-                    "Snapshot received with mask: " +
-                    std::to_string(static_cast<uint32_t>(static_cast<SensorMask>(cmd.param))));
-                if (sensors.tof_left_exist)
-                {
-                    mouse.setWallExistsLFR('L');
-                    LOG_DEBUG("Left ToF Detects Wall" + std::to_string(sensors.tof_left_exist));
-                }
-                if (sensors.tof_front_exist)
-                {
-                    mouse.setWallExistsLFR('F');
-                    LOG_DEBUG("Front ToF Detects Wall" + std::to_string(sensors.tof_front_exist));
-                }
-                if (sensors.tof_right_exist)
-                {
-                    mouse.setWallExistsLFR('R');
-                    LOG_DEBUG("Right ToF Detects Wall" + std::to_string(sensors.tof_right_exist));
-                }
-            }
-        }
-
-        // Example: print sensor values or feed into planner
-        // LOG_DEBUG("\nLeft encoder: " +
-        // std::to_string(sensors.left_encoder_count)); LOG_DEBUG("\nFront ToF: " +
-        // std::to_string(sensors.tof_front_mm)); LOG_DEBUG("\nIMU_YAW: " +
-        // std::to_string(sensors.imu_yaw));
+        if (sensors.tof_left_exist)
+            mouse.setWallExistsLFR('L');
+        if (sensors.tof_front_exist)
+            mouse.setWallExistsLFR('F');
+        if (sensors.tof_right_exist)
+            mouse.setWallExistsLFR('R');
 
         sleep_ms(CORE_SLEEP_MS);
     }
+
     return 0;
 }
 
@@ -197,7 +225,6 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath)
     std::stringstream ss(lfrPath);
     std::string       token;
 
-    // Seperate into tokens.
     std::vector<std::string> tokens;
     while (std::getline(ss, token, '#'))
     {
@@ -207,7 +234,6 @@ void interpretLFRPath(API* apiPtr, std::string lfrPath)
         }
     }
 
-    // Go through each token and run movement.
     for (std::string t : tokens)
     {
         if (t == "R")
