@@ -117,7 +117,7 @@ float IMU::getIMUYawDegreesNeg180ToPos180()
 {
     if (!yawReady)
     {
-        // LOG_DEBUG("IMU yaw not ready yet, returning 0");
+        LOG_DEBUG("IMU yaw not ready yet, returning 0");
         return 0.0f;
     }
     return robotYawNeg180To180Degrees - resetOffSet;

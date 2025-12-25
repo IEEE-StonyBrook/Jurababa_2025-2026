@@ -162,7 +162,6 @@ static void core1_Publisher()
     ToF     frontToF(12, 'F');
     ToF     rightToF(13, 'R');
     IMU     imu(5);
-    imu.resetIMUYawToZero();
 
     // Motors
     Motor leftMotor(18, 19, true);
@@ -182,9 +181,9 @@ static void core1_Publisher()
     const int   CONTROL_MS = 15; // Control loop period (15ms)
     const float dt         = CONTROL_MS / 1000.0f;
 
-    // Start a straight drive test at 250 mm/s holding the current heading
-    float holdYaw = sensors.getYaw();
-    robot.driveStraightMMps(400.0f, holdYaw);
+    robot.turn45Degrees("right", 4); // Turn to 90 degrees
+    // float holdYaw = sensors.getYaw();
+    // robot.driveStraightMMps(200.0f, holdYaw); // Drive forward at 200 mm/s
 
     absolute_time_t next = make_timeout_time_ms(CONTROL_MS);
     absolute_time_t last = get_absolute_time();

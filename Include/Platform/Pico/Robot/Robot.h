@@ -34,7 +34,7 @@ class Robot
 
     // Turn to the nearest 45-degree heading after applying a +/-45 step
     // side must be "left" or "right"
-    void turn45Degrees(std::string side);
+    void turn45Degrees(std::string side, int times);
 
     // Call every control tick (e.g. 5ms or 10ms) to run controllers and update motor outputs
     void update(float dt);
@@ -120,13 +120,13 @@ class Robot
     float driveTargetDistMM     = 0.0f;
 
     // Completion criteria
-    float yawToleranceDeg = 1.0f;
+    float yawToleranceDeg = 0.25f;
 
     // Limits
     float maxDuty           = 1.0f;
     float maxDutySlewPerSec = 10.0f;
     float maxWheelSpeedMMps = 800.0f;
-    float maxYawDiffMMps    = 100.0f; // yawPID output limit in mm/s differential
+    float maxYawDiffMMps    = 250.0f; // yawPID output limit in mm/s differential
 
     // Slew state
     float prevLeftDuty  = 0.0f;

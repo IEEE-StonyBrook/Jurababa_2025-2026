@@ -44,7 +44,7 @@
 #define RIGHT_WHEEL_KI 0.00375f
 #define LEFT_WHEEL_KD  0.00015f
 #define RIGHT_WHEEL_KD 0.00015f
-#define YAW_KP         2.5f
+#define YAW_KP         4.5f
 #define YAW_KI         0.0f
 #define YAW_KD         0.0f
 

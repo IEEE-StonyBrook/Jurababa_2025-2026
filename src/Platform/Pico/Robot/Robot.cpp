@@ -124,7 +124,7 @@ void Robot::turnToYawDeg(float targetYawDeg)
     motionDone = false;
 }
 
-void Robot::turn45Degrees(std::string side)
+void Robot::turn45Degrees(std::string side, int times)
 {
     if (side != "left" && side != "right")
         return;
@@ -132,7 +132,7 @@ void Robot::turn45Degrees(std::string side)
     float delta = (side == "left") ? -45.0f : +45.0f;
 
     float currYaw = sensors->getYaw();
-    float desired = wrapDeg(currYaw + delta);
+    float desired = wrapDeg(currYaw + delta * static_cast<float>(times));
 
     turnToYawDeg(snapToNearest45Deg(desired));
 }
@@ -181,6 +181,7 @@ void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
 
     // Compute yaw error
     float      yaw = sensors->getYaw();
+    // LOG_DEBUG("Current Yaw: " + std::to_string(yaw) + " deg");
     float yawError = wrapDeg(targetYawDeg - yaw);
 
     // yawPID output is differential wheel speed (mm/s)
