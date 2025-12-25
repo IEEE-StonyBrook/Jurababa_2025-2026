@@ -27,22 +27,24 @@
 // Feedforward constants.
 #define FORWARD_KVL 0.000410f // Left duty gain forward (duty per mm/s)
 #define FORWARD_KVR 0.000382f // Right duty gain forward (duty per mm/s)
-#define FORWARD_KSL 0.56f     // Left static friction duty forward (duty)
-#define FORWARD_KSR 0.555f    // Right static friction duty forward (duty)
+#define FORWARD_KSL 0.505f     // Left static friction duty forward (duty)
+#define FORWARD_KSR 0.52f    // Right static friction duty forward (duty)
 
 #define REVERSE_KVL 0.000410f // TEMP: set after reverse sweep fit
 #define REVERSE_KVR 0.000382f // TEMP: set after reverse sweep fit
-#define REVERSE_KSL 0.56f     // TEMP: set after reverse sweep fit
-#define REVERSE_KSR 0.555f    // TEMP: set after reverse sweep fit
+#define REVERSE_KSL 0.51f     // TEMP: set after reverse sweep fit
+#define REVERSE_KSR 0.525f    // TEMP: set after reverse sweep fit
 
 // PID constants.
-#define LEFT_WHEEL_KP  0.0075f
-#define RIGHT_WHEEL_KP 0.0075f
+// #define LEFT_WHEEL_KP  0.0075f / 10.00f
+// #define RIGHT_WHEEL_KP 0.0075f / 10.00f
+#define LEFT_WHEEL_KP  0.00015f
+#define RIGHT_WHEEL_KP 0.00015f
 #define LEFT_WHEEL_KI  0.00375f
 #define RIGHT_WHEEL_KI 0.00375f
-#define LEFT_WHEEL_KD  0.0f
-#define RIGHT_WHEEL_KD 0.0f
-#define YAW_KP         0.1f
+#define LEFT_WHEEL_KD  0.00015f
+#define RIGHT_WHEEL_KD 0.00015f
+#define YAW_KP         2.5f
 #define YAW_KI         0.0f
 #define YAW_KD         0.0f
 

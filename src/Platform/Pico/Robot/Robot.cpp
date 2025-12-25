@@ -192,8 +192,8 @@ void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
         LOG_DEBUG("Yaw diff: " + std::to_string(vDiffMMps) + " mm/s | Yaw error: " +
                   std::to_string(yawError) + " deg");
     }
-    
-    setWheelVelocityTargetsMMps(vBaseMMps - vDiffMMps, vBaseMMps + vDiffMMps);
+
+    setWheelVelocityTargetsMMps(vBaseMMps + vDiffMMps, vBaseMMps - vDiffMMps);
     runWheelVelocityControl(dt);
 }
 

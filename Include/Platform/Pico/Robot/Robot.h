@@ -120,7 +120,7 @@ class Robot
     float driveTargetDistMM     = 0.0f;
 
     // Completion criteria
-    float yawToleranceDeg = 2.0f;
+    float yawToleranceDeg = 1.0f;
 
     // Limits
     float maxDuty           = 1.0f;
@@ -138,7 +138,7 @@ class Robot
 
     // Ramping state
     float vBaseCmdMMps      = 0.0f;    // ramped command actually used
-    float maxBaseAccelMMps2 = 1500.0f; // tune: 1500–5000
+    float maxBaseAccelMMps2 = 600.0f; // tune: 1500–5000
 
     bool motionDone = true;
 };

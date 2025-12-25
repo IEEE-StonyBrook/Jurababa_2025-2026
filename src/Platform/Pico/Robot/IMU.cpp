@@ -127,10 +127,10 @@ void IMU::resetIMUYawToZero()
 {
     if (!yawReady)
     {
-        // LOG_DEBUG("Cannot reset yaw - IMU not ready yet.");
+        LOG_DEBUG("Cannot reset yaw - IMU not ready yet.");
         return;
     }
-    // LOG_DEBUG("Resetting IMU yaw to zero...");
+    LOG_DEBUG("Resetting IMU yaw to zero...");
     float currentYaw = getIMUYawDegreesNeg180ToPos180();
     resetOffSet      = currentYaw;
 }
