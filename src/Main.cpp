@@ -88,53 +88,60 @@ void processCommands(Robot* robot, Sensors* sensors)
     bool          sawStop = false;
 
     // Drain all pending commands each tick
+    // LOG_DEBUG("Checking for commands..." + std::to_string(CommandHub::hasPendingCommands()));
     while (CommandHub::receiveNonBlocking(cmd))
     {
+        LOG_DEBUG("Received command of type " + std::to_string(static_cast<uint8_t>(cmd.type)));
         if (cmd.type == CommandType::STOP)
         {
             sawStop = true;
+            LOG_DEBUG("Received STOP command.");
             continue; // Flush remaining commands behind STOP
         }
 
         // Never start a new motion while one is still running
         if (!robot->isMotionDone())
+        {
+            LOG_DEBUG("Ignoring command; robot still in motion.")
             continue;
+        }
 
         switch (cmd.type)
         {
             case CommandType::MOVE_FWD_HALF:
-                robot->driveDistanceMM(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED);
+                robot->driveDistanceMM(HALF_CELL_DISTANCE_MM, 400.0f);
                 break;
 
             case CommandType::MOVE_FWD:
-                robot->driveDistanceMM(cmd.param * CELL_DISTANCE_MM, FORWARD_TOP_SPEED);
+                robot->driveDistanceMM(cmd.param * CELL_DISTANCE_MM, 400.0f);
                 break;
 
             case CommandType::CENTER_FROM_EDGE:
-                robot->driveDistanceMM(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED);
+                LOG_DEBUG("Robot is centering from edge");
+                robot->driveDistanceMM(TO_CENTER_DISTANCE_MM, 400.0f);
                 break;
 
             case CommandType::TURN_LEFT:
             {
-                float currYaw = sensors->getYaw();
-                float desired = wrapDeg(currYaw - static_cast<float>(cmd.param));
-                robot->turnToYawDeg(snapToNearest45Deg(desired));
+                LOG_DEBUG("Robot is turning left");
+                robot->turn45Degrees("left", cmd.param);
             }
             break;
 
             case CommandType::TURN_RIGHT:
             {
-                float currYaw = sensors->getYaw();
-                float desired = wrapDeg(currYaw + static_cast<float>(cmd.param));
-                robot->turnToYawDeg(snapToNearest45Deg(desired));
+                LOG_DEBUG("Robot is turning right");
+                robot->turn45Degrees("right", cmd.param);
             }
             break;
 
             case CommandType::TURN_ARBITRARY:
             {
-                float currYaw = sensors->getYaw();
-                float desired = wrapDeg(currYaw + static_cast<float>(cmd.param)); // signed ok
-                robot->turnToYawDeg(snapToNearest45Deg(desired));
+                float stepsOf45 = static_cast<float>(cmd.param) / 45.0f;
+                if (stepsOf45 > 0)
+                    robot->turn45Degrees("right", static_cast<int>(stepsOf45));
+                else
+                    robot->turn45Degrees("left", static_cast<int>(-stepsOf45));
             }
             break;
 
@@ -149,6 +156,24 @@ void processCommands(Robot* robot, Sensors* sensors)
     if (sawStop)
     {
         robot->stop();
+    }
+}
+
+void runUntilDone(Robot& robot, Sensors& sensors, Drivetrain& drivetrain, int CONTROL_MS)
+{
+    absolute_time_t next = make_timeout_time_ms(CONTROL_MS);
+    absolute_time_t last = get_absolute_time();
+
+    while (!robot.isMotionDone())
+    {
+        absolute_time_t now = get_absolute_time();
+        float           dt  = absolute_time_diff_us(last, now) * 1e-6f;
+        last                = now;
+
+        robot.update(dt);
+
+        sleep_until(next);
+        next = delayed_by_ms(next, CONTROL_MS);
     }
 }
 
@@ -179,43 +204,75 @@ static void core1_Publisher()
 
     // ----- TEST CONFIG -----
     const int   CONTROL_MS = 15; // Control loop period (15ms)
-    const float dt         = CONTROL_MS / 1000.0f;
+    robot.driveDistanceMM(TO_CENTER_DISTANCE_MM, 400.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    robot.turn45Degrees("right", 4); // Turn to 90 degrees
-    // float holdYaw = sensors.getYaw();
-    // robot.driveStraightMMps(200.0f, holdYaw); // Drive forward at 200 mm/s
+    robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    absolute_time_t next = make_timeout_time_ms(CONTROL_MS);
-    absolute_time_t last = get_absolute_time();
+    LOG_DEBUG("Turning left 90 degrees");
+    robot.turn45Degrees("left", 2);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    static int ctr = 0;
+    LOG_DEBUG("Driving forward");
+    robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    while (true)
-    {
-        absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(last, now) * 1e-6f;
-        last                = now;
+    LOG_DEBUG("Turning left 90 degrees");
+    robot.turn45Degrees("left", 2);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-        robot.update(dt);
-        processCommands(&robot, &sensors);
+    LOG_DEBUG("Driving forward");
+    robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-        static absolute_time_t lastPub = get_absolute_time();
-        if (absolute_time_diff_us(lastPub, now) >= (int64_t)CORE_SLEEP_MS * 1000)
-        {
-            publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
-            lastPub = now;
-        }
+    LOG_DEBUG("Turning left 90 degrees");
+    robot.turn45Degrees("left", 2);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-        if ((ctr++ % 10) == 0)
-        {
-            LOG_DEBUG("L_Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("left")) +
-                      " mm/s | R_Vel: " +
-                      std::to_string(drivetrain.getMotorVelocityMMps("right")) + " mm/s");
-        }
+    LOG_DEBUG("Driving forward");
+    robot.driveDistanceMM(CELL_DISTANCE_MM * 3, 500.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-        sleep_until(next);
-        next = delayed_by_ms(next, CONTROL_MS);
-    }
+    LOG_DEBUG("Turning left 90 degrees");
+    robot.turn45Degrees("left", 2);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    LOG_DEBUG("Driving forward");
+    robot.driveDistanceMM(CELL_DISTANCE_MM * 3, 500.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    LOG_DEBUG("Turning left 90 degrees");
+    robot.turn45Degrees("left", 2);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    LOG_DEBUG("Driving forward");
+    robot.driveDistanceMM(CELL_DISTANCE_MM * 2, 500.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    LOG_DEBUG("Turning left 90 degrees");
+    robot.turn45Degrees("left", 2);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    LOG_DEBUG("Driving forward");
+    robot.driveDistanceMM(CELL_DISTANCE_MM * 2, 500.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    LOG_DEBUG("Turning left 90 degrees");
+    robot.turn45Degrees("left", 2);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    LOG_DEBUG("Driving forward");
+    robot.driveDistanceMM(CELL_DISTANCE_MM, 500.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    LOG_DEBUG("Turning left 90 degrees");
+    robot.turn45Degrees("left", 2);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    LOG_DEBUG("Driving forward");
+    robot.driveDistanceMM(CELL_DISTANCE_MM, 500.0f);
+    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 }
 
 int main()

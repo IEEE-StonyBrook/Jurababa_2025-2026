@@ -66,7 +66,8 @@ void API::turnLeft45()
     if (runOnSimulator)
         getSimulatorResponse("turnLeft45");
     else
-        CommandHub::send(CommandType::TURN_LEFT, 45);
+        LOG_DEBUG("API: Sending TURN_LEFT 45");
+        CommandHub::send(CommandType::TURN_LEFT, 1);
     internalMouse->turnIM45DegreeStepsRight(-1);
 }
 
@@ -75,7 +76,8 @@ void API::turnLeft90()
     if (runOnSimulator)
         getSimulatorResponse("turnLeft90");
     else
-        CommandHub::send(CommandType::TURN_LEFT, 90);
+        LOG_DEBUG("API: Sending TURN_LEFT 90");
+        CommandHub::send(CommandType::TURN_LEFT, 2);
     internalMouse->turnIM45DegreeStepsRight(-2);
 }
 
@@ -84,7 +86,8 @@ void API::turnRight45()
     if (runOnSimulator)
         getSimulatorResponse("turnRight45");
     else
-        CommandHub::send(CommandType::TURN_RIGHT, 45);
+        LOG_DEBUG("API: Sending TURN_RIGHT 45");
+        CommandHub::send(CommandType::TURN_RIGHT, 1);
     internalMouse->turnIM45DegreeStepsRight(1);
 }
 
@@ -93,7 +96,8 @@ void API::turnRight90()
     if (runOnSimulator)
         getSimulatorResponse("turnRight90");
     else
-        CommandHub::send(CommandType::TURN_RIGHT, 90);
+        LOG_DEBUG("API: Sending TURN_RIGHT 90");
+        CommandHub::send(CommandType::TURN_RIGHT, 2);
     internalMouse->turnIM45DegreeStepsRight(2);
 }
 
@@ -126,15 +130,15 @@ void API::executeSequence(const std::string& sequence)
         else if (cmd == 'L')
         {
             LOG_DEBUG("Turning left " + std::to_string(value > 0 ? value : 90) + " degrees");
-            turn(-(value > 0 ? value : 90));
+            turnLeft90();
         }
         else if (cmd == 'R')
         {
             LOG_DEBUG("Turning right " + std::to_string(value > 0 ? value : 90) + " degrees");
-            turn(value > 0 ? value : 90);
+            turnRight90();
         }
     }
-    CommandHub::send(CommandType::STOP); // Ensure stop at end
+    // CommandHub::send(CommandType::STOP); // Ensure stop at end
 }
 
 // ================== Maze State ================== //

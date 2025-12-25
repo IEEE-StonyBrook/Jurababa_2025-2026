@@ -120,13 +120,13 @@ class Robot
     float driveTargetDistMM     = 0.0f;
 
     // Completion criteria
-    float yawToleranceDeg = 0.25f;
+    float yawToleranceDeg = 1.0f;
 
     // Limits
     float maxDuty           = 1.0f;
     float maxDutySlewPerSec = 10.0f;
     float maxWheelSpeedMMps = 800.0f;
-    float maxYawDiffMMps    = 250.0f; // yawPID output limit in mm/s differential
+    float maxYawDiffMMps    = 400.0f; // yawPID output limit in mm/s differential
 
     // Slew state
     float prevLeftDuty  = 0.0f;
