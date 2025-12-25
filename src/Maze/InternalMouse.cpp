@@ -239,7 +239,8 @@ std::string InternalMouse::getDirectionAsString(const std::array<int, 2>& direct
             return possibleDirections[i];
         }
     }
-    throw std::invalid_argument("Invalid direction offset.");
+    // throw std::invalid_argument("Invalid direction offset.");
+    return "invalid direction";
 }
 
 // Returns direction to the left
@@ -278,5 +279,6 @@ int InternalMouse::findDirectionIndexInPossibleDirections(const std::string& dir
             return i;
         }
     }
-    throw std::invalid_argument("Direction not listed as a possible mouse direction.");
+    // throw std::invalid_argument("Direction not listed as a possible mouse direction.");
+    return -1;
 }

@@ -23,7 +23,6 @@
 #include "PathUtils.h"
 #include "pico/stdlib.h"
 
-
 // -------------------------
 // Main helper functions
 // -------------------------
@@ -179,45 +178,63 @@ static void core1_Publisher()
 
     multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
 
+    // Left
+    runPWMSweep(&drivetrain, "left", 0.00f, 0.20f, 0.05f, 600, 10);
+    runPWMSweep(&drivetrain, "left", 0.20f, 0.45f, 0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "left", 0.45f, 1.00f, 0.05f, 700, 10);
+
+    runPWMSweep(&drivetrain, "left", 1.00f, 0.45f, -0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "left", 0.45f, 0.20f, -0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "left", 0.20f, 0.00f, -0.05f, 600, 10);
+
+    // Right
+    runPWMSweep(&drivetrain, "right", 0.00f, 0.20f, 0.05f, 600, 10);
+    runPWMSweep(&drivetrain, "right", 0.20f, 0.45f, 0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "right", 0.45f, 1.00f, 0.05f, 700, 10);
+
+    runPWMSweep(&drivetrain, "right", 1.00f, 0.45f, -0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "right", 0.45f, 0.20f, -0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "right", 0.20f, 0.00f, -0.05f, 600, 10);
+
     // ----- TEST CONFIG -----
-    const int   CONTROL_MS = 20; // Control loop period (20ms)
-    const float dt         = CONTROL_MS / 1000.0f;
+    // const int   CONTROL_MS = 20; // Control loop period (20ms)
+    // const float dt         = CONTROL_MS / 1000.0f;
 
-    // Start a straight drive test at 250 mm/s holding the current heading
-    float holdYaw = sensors.getYaw();
-    robot.driveStraightMMps(-300.0f, holdYaw);
+    // // Start a straight drive test at 250 mm/s holding the current heading
+    // float holdYaw = sensors.getYaw();
+    // robot.driveStraightMMps(-300.0f, holdYaw);
 
-    absolute_time_t next = make_timeout_time_ms(CONTROL_MS);
-    absolute_time_t last = get_absolute_time();
+    // absolute_time_t next = make_timeout_time_ms(CONTROL_MS);
+    // absolute_time_t last = get_absolute_time();
 
-    static int ctr = 0;
+    // static int ctr = 0;
 
-    while (true)
-    {
-        absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(last, now) * 1e-6f;
-        last                = now;
+    // while (true)
+    // {
+    //     absolute_time_t now = get_absolute_time();
+    //     float           dt  = absolute_time_diff_us(last, now) * 1e-6f;
+    //     last                = now;
 
-        robot.update(dt);
-        processCommands(&robot, &sensors);
+    //     robot.update(dt);
+    //     processCommands(&robot, &sensors);
 
-        static absolute_time_t lastPub = get_absolute_time();
-        if (absolute_time_diff_us(lastPub, now) >= (int64_t)CORE_SLEEP_MS * 1000)
-        {
-            publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
-            lastPub = now;
-        }
+    //     static absolute_time_t lastPub = get_absolute_time();
+    //     if (absolute_time_diff_us(lastPub, now) >= (int64_t)CORE_SLEEP_MS * 1000)
+    //     {
+    //         publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
+    //         lastPub = now;
+    //     }
 
-        if ((ctr++ % 5) == 0)
-        {
-            LOG_DEBUG("L_Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("left")) +
-                      " mm/s | R_Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("right")) +
-                      " mm/s");
-        }
+    //     if ((ctr++ % 5) == 0)
+    //     {
+    //         LOG_DEBUG("L_Vel: " + std::to_string(drivetrain.getMotorVelocityMMps("left")) +
+    //                   " mm/s | R_Vel: " +
+    //                   std::to_string(drivetrain.getMotorVelocityMMps("right")) + " mm/s");
+    //     }
 
-        sleep_until(next);
-        next = delayed_by_ms(next, CONTROL_MS);
-    }
+    //     sleep_until(next);
+    //     next = delayed_by_ms(next, CONTROL_MS);
+    // }
 }
 
 int main()
