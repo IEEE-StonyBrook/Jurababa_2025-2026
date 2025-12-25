@@ -25,31 +25,31 @@
 #define DEFAULT_BATTERY_VOLTAGE 8.35f // Nominal charged battery voltage.
 
 // Feedforward constants.
-#define FORWARD_KVL 0.000876f  // Left duty gain forward (duty per mm/s)
-#define FORWARD_KVR 0.000850f  // Right duty gain forward (duty per mm/s)
-#define FORWARD_KSL 0.1333f    // Left static friction duty forward (duty)
-#define FORWARD_KSR 0.2038f    // Right static friction duty forward (duty)
+#define FORWARD_KVL 0.001503f // Left duty gain forward (duty per mm/s)
+#define FORWARD_KVR 0.001429f // Right duty gain forward (duty per mm/s)
+#define FORWARD_KSL 0.529f    // Left static friction duty forward (duty)
+#define FORWARD_KSR 0.551f    // Right static friction duty forward (duty)
 
-#define REVERSE_KVL 0.000876f // TEMP: set after reverse sweep fit
-#define REVERSE_KVR 0.000850f // TEMP: set after reverse sweep fit
-#define REVERSE_KSL 0.1333f   // TEMP: set after reverse sweep fit
-#define REVERSE_KSR 0.2038f   // TEMP: set after reverse sweep fit
+#define REVERSE_KVL 0.001503f // TEMP: set after reverse sweep fit
+#define REVERSE_KVR 0.001429f // TEMP: set after reverse sweep fit
+#define REVERSE_KSL 0.529f    // TEMP: set after reverse sweep fit
+#define REVERSE_KSR 0.551f    // TEMP: set after reverse sweep fit
 
 // PID constants.
-#define LEFT_WHEEL_KP   0.0075f
-#define RIGHT_WHEEL_KP  0.0075f
-#define LEFT_WHEEL_KI   0.00375f
-#define RIGHT_WHEEL_KI  0.00375f
-#define LEFT_WHEEL_KD   0.0f
-#define RIGHT_WHEEL_KD  0.0f
-#define YAW_KP          0.1f
-#define YAW_KI          0.0f
-#define YAW_KD          0.0f
+#define LEFT_WHEEL_KP  0.0075f
+#define RIGHT_WHEEL_KP 0.0075f
+#define LEFT_WHEEL_KI  0.00375f
+#define RIGHT_WHEEL_KI 0.00375f
+#define LEFT_WHEEL_KD  0.0f
+#define RIGHT_WHEEL_KD 0.0f
+#define YAW_KP         0.1f
+#define YAW_KI         0.0f
+#define YAW_KD         0.0f
 
 // ================== Motion Constants ================== //
 // Distances.
-#define CELL_DISTANCE_MM      180.0f // One cell length in mm.
-#define HALF_CELL_DISTANCE_MM 90.0f  // Half cell length in mm.
+#define CELL_DISTANCE_MM      180.0f                    // One cell length in mm.
+#define HALF_CELL_DISTANCE_MM (CELL_DISTANCE_MM / 2.0f) // Half cell length in mm.
 
 // Linear speed/acceleration.
 #define FORWARD_TOP_SPEED   300.0f // Max forward speed (mm/s).

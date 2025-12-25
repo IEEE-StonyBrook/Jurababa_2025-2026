@@ -179,22 +179,22 @@ static void core1_Publisher()
     multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
 
     // Left
-    runPWMSweep(&drivetrain, "left", 0.00f, 0.20f, 0.05f, 600, 10);
-    runPWMSweep(&drivetrain, "left", 0.20f, 0.45f, 0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "left", 0.45f, 1.00f, 0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "left", 0.00f, 0.45f, 0.05f, 600, 10);
+    runPWMSweep(&drivetrain, "left", 0.45f, 0.60f, 0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "left", 0.60f, 1.00f, 0.05f, 700, 10);
 
-    runPWMSweep(&drivetrain, "left", 1.00f, 0.45f, -0.05f, 700, 10);
-    runPWMSweep(&drivetrain, "left", 0.45f, 0.20f, -0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "left", 0.20f, 0.00f, -0.05f, 600, 10);
+    runPWMSweep(&drivetrain, "left", 1.00f, 0.60f, -0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "left", 0.60f, 0.45f, -0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "left", 0.45f, 0.00f, -0.05f, 600, 10);
 
     // Right
-    runPWMSweep(&drivetrain, "right", 0.00f, 0.20f, 0.05f, 600, 10);
-    runPWMSweep(&drivetrain, "right", 0.20f, 0.45f, 0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "right", 0.45f, 1.00f, 0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "right", 0.00f, 0.45f, 0.05f, 600, 10);
+    runPWMSweep(&drivetrain, "right", 0.45f, 0.60f, 0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "right", 0.60f, 1.00f, 0.05f, 700, 10);
 
-    runPWMSweep(&drivetrain, "right", 1.00f, 0.45f, -0.05f, 700, 10);
-    runPWMSweep(&drivetrain, "right", 0.45f, 0.20f, -0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "right", 0.20f, 0.00f, -0.05f, 600, 10);
+    runPWMSweep(&drivetrain, "right", 1.00f, 0.60f, -0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "right", 0.60f, 0.45f, -0.02f, 900, 10);
+    runPWMSweep(&drivetrain, "right", 0.45f, 0.00f, -0.05f, 600, 10);
 
     // ----- TEST CONFIG -----
     // const int   CONTROL_MS = 20; // Control loop period (20ms)
