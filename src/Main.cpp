@@ -179,25 +179,24 @@ static void core1_Publisher()
     multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
 
     // Left
-    runPWMSweep(&drivetrain, "left", 0.00f, 0.45f, 0.05f, 600, 10);
-    runPWMSweep(&drivetrain, "left", 0.45f, 0.60f, 0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "left", 0.60f, 1.00f, 0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "left", 0.00f, 0.45f, 0.05f, 600, 15);
+    runPWMSweep(&drivetrain, "left", 0.45f, 0.60f, 0.02f, 900, 15);
+    runPWMSweep(&drivetrain, "left", 0.60f, 1.00f, 0.05f, 700, 15);
 
-    runPWMSweep(&drivetrain, "left", 1.00f, 0.60f, -0.05f, 700, 10);
-    runPWMSweep(&drivetrain, "left", 0.60f, 0.45f, -0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "left", 0.45f, 0.00f, -0.05f, 600, 10);
-
+    runPWMSweep(&drivetrain, "left", 1.00f, 0.60f, -0.05f, 700, 15);
+    runPWMSweep(&drivetrain, "left", 0.60f, 0.45f, -0.02f, 900, 15);
+    runPWMSweep(&drivetrain, "left", 0.45f, 0.00f, -0.05f, 600, 15);
     // Right
-    runPWMSweep(&drivetrain, "right", 0.00f, 0.45f, 0.05f, 600, 10);
-    runPWMSweep(&drivetrain, "right", 0.45f, 0.60f, 0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "right", 0.60f, 1.00f, 0.05f, 700, 10);
+    runPWMSweep(&drivetrain, "right", 0.00f, 0.45f, 0.05f, 600, 15);
+    runPWMSweep(&drivetrain, "right", 0.45f, 0.60f, 0.02f, 900, 15);
+    runPWMSweep(&drivetrain, "right", 0.60f, 1.00f, 0.05f, 700, 15);
 
-    runPWMSweep(&drivetrain, "right", 1.00f, 0.60f, -0.05f, 700, 10);
-    runPWMSweep(&drivetrain, "right", 0.60f, 0.45f, -0.02f, 900, 10);
-    runPWMSweep(&drivetrain, "right", 0.45f, 0.00f, -0.05f, 600, 10);
+    runPWMSweep(&drivetrain, "right", 1.00f, 0.60f, -0.05f, 700, 15);
+    runPWMSweep(&drivetrain, "right", 0.60f, 0.45f, -0.02f, 900, 15);
+    runPWMSweep(&drivetrain, "right", 0.45f, 0.00f, -0.05f, 600, 15);
 
     // ----- TEST CONFIG -----
-    // const int   CONTROL_MS = 20; // Control loop period (20ms)
+    // const int   CONTROL_MS = 15; // Control loop period (15ms)
     // const float dt         = CONTROL_MS / 1000.0f;
 
     // // Start a straight drive test at 250 mm/s holding the current heading

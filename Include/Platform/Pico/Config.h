@@ -6,8 +6,8 @@
 #define LOOP_INTERVAL_S   (1.0f / LOOP_FREQUENCY_HZ) // Seconds per update.
 
 // Encoder and wheel geometry.
-#define WHEEL_DIAMETER_MM     39.5f   // Wheel diameter.
-#define TICKS_PER_REVOLUTION  1400.0f // Encoder ticks per wheel turn.
+#define WHEEL_DIAMETER_MM     39.5f  // Wheel diameter.
+#define TICKS_PER_REVOLUTION  360.0f // Encoder ticks per wheel turn.
 #define MM_PER_TICK           ((WHEEL_DIAMETER_MM * 3.14159265f) / TICKS_PER_REVOLUTION) // Distance per tick.
 #define TO_CENTER_DISTANCE_MM ((167.5f - WHEEL_DIAMETER_MM) / 2.0f)
 
@@ -25,15 +25,15 @@
 #define DEFAULT_BATTERY_VOLTAGE 8.35f // Nominal charged battery voltage.
 
 // Feedforward constants.
-#define FORWARD_KVL 0.001503f // Left duty gain forward (duty per mm/s)
-#define FORWARD_KVR 0.001429f // Right duty gain forward (duty per mm/s)
-#define FORWARD_KSL 0.529f    // Left static friction duty forward (duty)
-#define FORWARD_KSR 0.551f    // Right static friction duty forward (duty)
+#define FORWARD_KVL 0.000410f // Left duty gain forward (duty per mm/s)
+#define FORWARD_KVR 0.000382f // Right duty gain forward (duty per mm/s)
+#define FORWARD_KSL 0.56f     // Left static friction duty forward (duty)
+#define FORWARD_KSR 0.555f    // Right static friction duty forward (duty)
 
-#define REVERSE_KVL 0.001503f // TEMP: set after reverse sweep fit
-#define REVERSE_KVR 0.001429f // TEMP: set after reverse sweep fit
-#define REVERSE_KSL 0.529f    // TEMP: set after reverse sweep fit
-#define REVERSE_KSR 0.551f    // TEMP: set after reverse sweep fit
+#define REVERSE_KVL 0.000410f // TEMP: set after reverse sweep fit
+#define REVERSE_KVR 0.000382f // TEMP: set after reverse sweep fit
+#define REVERSE_KSL 0.56f     // TEMP: set after reverse sweep fit
+#define REVERSE_KSR 0.555f    // TEMP: set after reverse sweep fit
 
 // PID constants.
 #define LEFT_WHEEL_KP  0.0075f

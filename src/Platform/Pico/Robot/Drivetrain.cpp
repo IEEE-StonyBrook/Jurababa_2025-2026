@@ -47,7 +47,7 @@ void Drivetrain::updateVelocities(float dt)
   
     leftVelocityMMps  = (deltaLeftTicks * MM_PER_TICK) / dt;
     rightVelocityMMps = (deltaRightTicks * MM_PER_TICK) / dt;
-    if (leftVelocityMMps > 700.0f || rightVelocityMMps > 700.0f)
+    if (leftVelocityMMps > 1500.0f || rightVelocityMMps > 1500.0f)
     {
         LOG_ERROR("High vel at deltaTicks L=" + std::to_string(deltaLeftTicks) +
                   " R=" + std::to_string(deltaRightTicks) + " dt=" +  std::to_string(dt));
