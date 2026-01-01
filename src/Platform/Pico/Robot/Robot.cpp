@@ -197,12 +197,12 @@ void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
     // 4. Run PID
     float vDiffMMps = yawPID.calculateOutput(profiledYawError, dt);
 
-    // NEW: Ensure the turn speed is high enough to actually move the wheels
+    // Ensure the turn speed is high enough to overcome static friction
     // but only if there is actually a meaningful error to correct.
-    float minTurnSpeed = 250.0f; // Adjust this until the robot actually turns
+    float minTurnSpeed = 50.0f; // Minimum differential speed for turning
     if (std::fabs(profiledYawError) > 0.5f)
     { // If error > 0.5 degrees
-        if (std::fabs(vDiffMMps) < minTurnSpeed)
+        if (std::fabs(vDiffMMps) < minTurnSpeed && std::fabs(vDiffMMps) > 1.0f)
         {
             // Apply minimum speed in the direction the PID wants to go
             vDiffMMps = (vDiffMMps > 0) ? minTurnSpeed : -minTurnSpeed;
@@ -354,32 +354,52 @@ void Robot::update(float dt)
 
             float remaining = driveTargetDistMM - traveled;
 
-            if (remaining <= 0.5f)
-            { // Small threshold
+            // Calculate actual velocity to check if we're nearly stopped
+            float vLeft  = drivetrain->getMotorVelocityMMps("left");
+            float vRight = drivetrain->getMotorVelocityMMps("right");
+            float vActual = (std::fabs(vLeft) + std::fabs(vRight)) / 2.0f;
+
+            // Improved stopping condition: close to target AND moving slowly
+            if (remaining <= 2.0f && vActual < 50.0f)
+            {
                 stop();
                 motionDone = true;
                 break;
             }
 
-            // Physics: v^2 = u^2 + 2as -> v = sqrt(2 * a * distance)
-            // This calculates the maximum speed you can be going and still stop in time
-            float vMaxPossible = std::sqrt(2.0f * maxBaseAccelMMps2 * remaining);
+            // Calculate stopping distance from minimum viable speed to zero
+            // v^2 = u^2 + 2as -> s = (v^2 - u^2) / (2a)
+            float stoppingDistFromMin = (minVelocityMMps * minVelocityMMps) / (2.0f * maxBaseAccelMMps2);
 
-            // Target is the lesser of our desired cruise speed or the physical limit
-            float vBase = std::min(targetForwardMMps, vMaxPossible);
-
-            // Ensure we don't drop below a minimum speed that would stall the motors
-            if (vBase < minVelocityMMps)
+            float vBase;
+            if (remaining > stoppingDistFromMin)
             {
-                vBase = minVelocityMMps;
+                // Far from target: use standard deceleration profile
+                // Physics: v = sqrt(2 * a * (remaining - stoppingDistFromMin)) + minVelocity
+                float vMaxPossible = std::sqrt(2.0f * maxBaseAccelMMps2 * (remaining - stoppingDistFromMin)) + minVelocityMMps;
+                vBase = std::min(targetForwardMMps, vMaxPossible);
             }
+            else
+            {
+                // Close to target: ramp down from minVelocity to near-zero
+                // v = sqrt(2 * a * remaining)
+                float vMaxPossible = std::sqrt(2.0f * maxBaseAccelMMps2 * remaining);
+                vBase = vMaxPossible;
+
+                // Allow going below minimum in final approach
+                if (vBase < 30.0f)
+                {
+                    vBase = 30.0f; // Very low speed for final positioning
+                }
+            }
+
             static int ctr = 0;
             if (ctr++ % 25 == 0)
             {
                 LOG_DEBUG("DriveDistance | Target: " + std::to_string(driveTargetDistMM) +
                           " mm | Traveled: " + std::to_string(traveled) +
                           " mm | Remaining: " + std::to_string(remaining) + " mm");
-                LOG_DEBUG("vBase set to " + std::to_string(vBase) + " mm/s");
+                LOG_DEBUG("vBase set to " + std::to_string(vBase) + " mm/s | vActual: " + std::to_string(vActual) + " mm/s");
             }
 
             commandBaseAndYaw(vBase, dt);

@@ -128,7 +128,7 @@ class Robot
     float maxWheelSpeedMMps = 800.0f;
     float maxYawDiffMMps    = 300.0f; // yawPID output limit in mm/s differential
     float maxAngularVelDegps = 360.0f; // Max turning speed (adjust for your mouse)
-    float minVelocityMMps    = 250.0f;  // Prevents stalling at the very end of a move
+    float minVelocityMMps    = 80.0f;  // Minimum cruise speed before final deceleration phase
 
     // Slew state
     float prevLeftDuty  = 0.0f;
