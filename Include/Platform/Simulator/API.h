@@ -98,6 +98,26 @@ class API_SIMULATOR : public IAPIInterface
     void turn(int degreesDivisibleBy45) override;
 
     /**
+     * Performs a smooth 90-degree arc turn to the left.
+     */
+    void arcTurnLeft90() override;
+
+    /**
+     * Performs a smooth 90-degree arc turn to the right.
+     */
+    void arcTurnRight90() override;
+
+    /**
+     * Performs a smooth 45-degree arc turn to the left.
+     */
+    void arcTurnLeft45() override;
+
+    /**
+     * Performs a smooth 45-degree arc turn to the right.
+     */
+    void arcTurnRight45() override;
+
+    /**
      * Sets a wall at the specified coordinates and direction.
      *
      * @param x The x-coordinate of the cell.

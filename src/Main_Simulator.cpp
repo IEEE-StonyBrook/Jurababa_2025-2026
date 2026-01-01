@@ -1,34 +1,51 @@
-#include <stdio.h>
+/**
+ * Main_Simulator.cpp - Micromouse Three-Phase Competition Simulator
+ *
+ * Simulates a competition run:
+ *   1. Exploration: Frontier-based search to map maze
+ *   2. Return: A* without diagonals back to start
+ *   3. Speed Run: A* with diagonals for optimal time
+ */
 
 #include <array>
-#include <cmath>
-#include <sstream>
-#include <string>
 #include <vector>
 
 #include "Common/LogSystem.h"
-#include "Navigation/AStarSolver.h"
+#include "Maze/InternalMouse.h"
+#include "Maze/MazeGraph.h"
 #include "Navigation/FrontierBasedSearchSolver.h"
-#include "Platform/Simulator/API.h"
 #include "Navigation/PathUtils.h"
+#include "Platform/Simulator/API.h"
 
 int main()
 {
-    const bool RUN_ON_SIMULATOR = true;
+    LOG_INFO("=== MICROMOUSE COMPETITION SIMULATOR ===\n");
 
-    // Universal objects
-    std::array<int, 2>              startCell = {0, 0};
-    std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
+    // Initialize 16x16 maze with center goal
+    std::array<int, 2>              start = {0, 0};
+    std::vector<std::array<int, 2>> goal  = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
 
-    // Mouse logic objects
     MazeGraph     maze(16, 16);
-    InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
-    API_SIMULATOR api(&mouse, RUN_ON_SIMULATOR);
-    api.setUp(startCell, goalCells);
-    api.printMaze();
+    InternalMouse mouse(start, "n", goal, &maze);
+    API_SIMULATOR api(&mouse, true);
+    api.setUp(start, goal);
 
-    traversePathIteratively(&api, &mouse, goalCells, true, false, false);
-    traversePathIteratively(&api, &mouse, {startCell}, true, false, false);
+    // Phase 1: EXPLORATION - Map entire maze using frontier-based search
+    LOG_INFO("Phase 1: Exploration (Frontier-Based)");
+    FrontierBased::explore(mouse, api, false);
+    LOG_INFO("✓ Maze fully explored\n");
 
+    // Phase 2: RETURN - Go back to start using discovered layout (no diagonals)
+    LOG_INFO("Phase 2: Return to Start (A* without diagonals)");
+    setAllExplored(&mouse);
+    traversePathIteratively(&api, &mouse, {start}, false, true, false);
+    LOG_INFO("✓ Returned to start\n");
+
+    // // Phase 3: SPEED RUN - Optimal path to goal with diagonals
+    // LOG_INFO("Phase 3: Speed Run (A* with diagonals)");
+    // traversePathIteratively(&api, &mouse, goal, true, true, false);
+    // LOG_INFO("✓ Speed run complete\n");
+
+    LOG_INFO("=== SIMULATION COMPLETE ===");
     return 0;
 }

@@ -4,16 +4,9 @@
 #include <sstream>
 
 API_SIMULATOR::API_SIMULATOR(InternalMouse* internalMouse, bool runOnSimulator)
-    : internalMouse(internalMouse), runOnSimulator(runOnSimulator)
+    : runOnSimulator(runOnSimulator), internalMouse(internalMouse)
 {
 }
-
-#ifdef USING_ROBOT
-API_SIMULATOR::API(Drivetrain* drivetrain, InternalMouse* internalMouse, bool runOnSimulator)
-    : drivetrain(drivetrain), internalMouse(internalMouse), runOnSimulator(runOnSimulator)
-{
-}
-#endif
 
 int API_SIMULATOR::mazeWidth()
 {
@@ -110,6 +103,34 @@ void API_SIMULATOR::turn(int degreesDivisibleBy45)
     }
 
     internalMouse->turnIM45DegreeStepsRight(turnsNeeded);
+}
+
+void API_SIMULATOR::arcTurnLeft90()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnLeft90");
+    internalMouse->turnIM45DegreeStepsRight(-2);
+}
+
+void API_SIMULATOR::arcTurnRight90()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnRight90");
+    internalMouse->turnIM45DegreeStepsRight(2);
+}
+
+void API_SIMULATOR::arcTurnLeft45()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnLeft45");
+    internalMouse->turnIM45DegreeStepsRight(-1);
+}
+
+void API_SIMULATOR::arcTurnRight45()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnRight45");
+    internalMouse->turnIM45DegreeStepsRight(1);
 }
 
 void API_SIMULATOR::executeSequence(const std::string& seq)
@@ -245,7 +266,6 @@ void API_SIMULATOR::setUp(std::array<int, 2> startCell, std::vector<std::array<i
     // Adds boundary mazes.
     for (int i = 0; i < internalMouse->getMazeWidth(); i++)
     {
-        printMaze();
         setWall(i, 0, "s");
         setWall(i, internalMouse->getMazeHeight() - 1, "n");
     }

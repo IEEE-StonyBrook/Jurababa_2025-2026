@@ -89,13 +89,13 @@ std::vector<MazeNode*> AStarSolver::getPathFromCurrPosToCell(MazeNode* endCell,
         for (MazeNode* neighbor :
              internalMouse->getNodeNeighbors(currentNode.node, diagMovementAllowed))
         {
-            // Continue if neighbor is already processed,
-            // is a goal cell (if enabled), or is unreachable.
-            bool c = internalMouse->isAGoalCell(neighbor);
-            bool d = !internalMouse->getCanMoveBetweenNodes(currentNode.node, neighbor,
-                                                            diagMovementAllowed);
+            // Skip if:
+            // - Already processed
+            // - Is a goal cell we shouldn't pass through (unless it's the destination)
+            // - Can't physically move there
+            bool isEndCell = (neighbor == endCell);
             if (neighbor->isProcessed ||
-                (!passThroughGoalCells && internalMouse->isAGoalCell(neighbor)) ||
+                (!passThroughGoalCells && internalMouse->isAGoalCell(neighbor) && !isEndCell) ||
                 !internalMouse->getCanMoveBetweenNodes(currentNode.node, neighbor,
                                                        diagMovementAllowed))
             {

@@ -83,6 +83,8 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
         setAllExplored(mouse);
     }
 
+    // Save original goal cells to restore after traversal
+    std::vector<std::array<int, 2>> originalGoalCells = mouse->getGoalCells();
     mouse->setGoalCells(goalCells);
 
     while (true)
@@ -112,6 +114,7 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
         if (lfrPath.empty())
         {
             LOG_ERROR("No path found!");
+            mouse->setGoalCells(originalGoalCells);
             return false;
         }
 
@@ -168,6 +171,7 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
         // break;  // Keep the FIXME break like the original Java version
     }
 
+    mouse->setGoalCells(originalGoalCells);
     return true;
 }
 

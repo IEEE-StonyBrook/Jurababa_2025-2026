@@ -2,7 +2,20 @@
 
 #include <cctype>
 
-MazeNode::MazeNode(int mazeXPos, int mazeYPos) : mazeXPos(mazeXPos), mazeYPos(mazeYPos)
+MazeNode::MazeNode(int mazeXPos, int mazeYPos)
+    : parentNode(nullptr),
+      isProcessed(false),
+      mazeXPos(mazeXPos),
+      mazeYPos(mazeYPos),
+      NCell(nullptr),
+      ECell(nullptr),
+      SCell(nullptr),
+      WCell(nullptr),
+      isThereNWall(false),
+      isThereEWall(false),
+      isThereSWall(false),
+      isThereWWall(false),
+      cellIsExplored(false)
 {
 }
 

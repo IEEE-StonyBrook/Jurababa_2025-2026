@@ -1,17 +1,30 @@
-#include <stdio.h>
+/**
+ * Main.cpp - Raspberry Pi Pico Micromouse Entry Point
+ *
+ * Architecture:
+ *   Core 0: High-level maze solving and path planning
+ *   Core 1: Real-time robot control and sensor management
+ *
+ * Communication:
+ *   - Core 0 → Core 1: Commands via CommandHub (non-blocking FIFO)
+ *   - Core 1 → Core 0: Sensor data via MulticoreSensorHub
+ */
 
+#include <stdio.h>
 #include <array>
-#include <cmath>
-#include <sstream>
 #include <string>
 #include <vector>
 
 #include "Common/LogSystem.h"
+#include "Maze/InternalMouse.h"
+#include "Maze/MazeGraph.h"
 #include "Navigation/AStarSolver.h"
+#include "Navigation/FrontierBasedSearchSolver.h"
+#include "Navigation/PathUtils.h"
 #include "Platform/Pico/API.h"
+#include "Platform/Pico/CommandHub.h"
 #include "Platform/Pico/Config.h"
 #include "Platform/Pico/MulticoreSensors.h"
-
 #include "Platform/Pico/Robot/Drivetrain.h"
 #include "Platform/Pico/Robot/Encoder.h"
 #include "Platform/Pico/Robot/IMU.h"
@@ -19,91 +32,34 @@
 #include "Platform/Pico/Robot/Robot.h"
 #include "Platform/Pico/Robot/Sensors.h"
 #include "Platform/Pico/Robot/ToF.h"
-
-#include "Navigation/PathUtils.h"
+#include "pico/multicore.h"
 #include "pico/stdlib.h"
 
-// -------------------------
-// Main helper functions
-// -------------------------
-struct FeedforwardSample
-{
-    float appliedPWM;
-    float measuredVelMMps;
-};
-std::vector<FeedforwardSample> runPWMSweep(Drivetrain* drivetrain, std::string side, float startPWM,
-                                           float endPWM, float stepPWM, int settleTimeMs,
-                                           int controlTickPeriodMs);
+// ============================================================================
+// CORE 1: Real-Time Robot Control
+// ============================================================================
 
-void interpretLFRPath(API* apiPtr, std::string lfrPath);
-
-// -------------------------
-// Small angle helpers (Local to main)
-// -------------------------
-static float wrapDeg(float deg)
-{
-    while (deg > 180.0f)
-        deg -= 360.0f;
-    while (deg < -180.0f)
-        deg += 360.0f;
-    return deg;
-}
-
-static float snapToNearest45Deg(float yawDeg)
-{
-    float snapped = 45.0f * std::round(yawDeg / 45.0f);
-    snapped       = wrapDeg(snapped);
-    if (snapped == -180.0f)
-        snapped = 180.0f;
-    return snapped;
-}
-
-// -------------------------
-// Sensor publishing (Core1 -> Core0)
-// -------------------------
-void publishSensors(Encoder* leftEncoder, Encoder* rightEncoder, ToF* leftToF, ToF* frontToF,
-                    ToF* rightToF, IMU* imu)
-{
-    MulticoreSensorData local{};
-    local.left_encoder_count  = leftEncoder->getTickCount();
-    local.right_encoder_count = rightEncoder->getTickCount();
-    local.tof_left_mm         = static_cast<int16_t>(leftToF->getToFDistanceFromWallMM());
-    local.tof_front_mm        = static_cast<int16_t>(frontToF->getToFDistanceFromWallMM());
-    local.tof_right_mm        = static_cast<int16_t>(rightToF->getToFDistanceFromWallMM());
-    local.imu_yaw             = imu->getIMUYawDegreesNeg180ToPos180();
-    local.timestamp_ms        = to_ms_since_boot(get_absolute_time());
-
-    MulticoreSensorHub::publish(local);
-}
-
-// -------------------------
-// Core1 command handling
-// - STOP interrupts immediately (mid-motion)
-// - Other commands only start when robot is done
-// - No blocking reads (prevents control-loop hiccups)
-// -------------------------
-void processCommands(Robot* robot, Sensors* sensors)
+/**
+ * Processes motion commands from Core 0.
+ * Handles STOP immediately, queues other commands when robot is ready.
+ */
+void processCommands(Robot* robot)
 {
     CommandPacket cmd;
-    bool          sawStop = false;
+    bool sawStop = false;
 
     // Drain all pending commands each tick
     while (CommandHub::receiveNonBlocking(cmd))
     {
-        LOG_DEBUG("Received command of type " + std::to_string(static_cast<uint8_t>(cmd.type)));
         if (cmd.type == CommandType::STOP)
         {
             sawStop = true;
-            LOG_DEBUG("Received STOP command.");
             continue; // Flush remaining commands behind STOP
         }
 
-        // Never start a new motion while one is still running
+        // Never start new motion while one is running
         if (!robot->isMotionDone())
-        {
-            LOG_DEBUG("Ignoring command; robot still in motion.")
             continue;
-        }
 
         switch (cmd.type)
         {
@@ -116,23 +72,16 @@ void processCommands(Robot* robot, Sensors* sensors)
                 break;
 
             case CommandType::CENTER_FROM_EDGE:
-                LOG_DEBUG("Robot is centering from edge");
                 robot->driveDistanceMM(TO_CENTER_DISTANCE_MM, 400.0f);
                 break;
 
             case CommandType::TURN_LEFT:
-            {
-                LOG_DEBUG("Robot is turning left");
                 robot->turn45Degrees("left", cmd.param);
-            }
-            break;
+                break;
 
             case CommandType::TURN_RIGHT:
-            {
-                LOG_DEBUG("Robot is turning right");
                 robot->turn45Degrees("right", cmd.param);
-            }
-            break;
+                break;
 
             case CommandType::TURN_ARBITRARY:
             {
@@ -141,30 +90,25 @@ void processCommands(Robot* robot, Sensors* sensors)
                     robot->turn45Degrees("right", static_cast<int>(stepsOf45));
                 else
                     robot->turn45Degrees("left", static_cast<int>(-stepsOf45));
+                break;
             }
-            break;
 
             case CommandType::ARC_TURN_LEFT_90:
-                LOG_DEBUG("Robot executing arc turn left 90°");
                 robot->arcTurn90Degrees("left");
                 break;
 
             case CommandType::ARC_TURN_RIGHT_90:
-                LOG_DEBUG("Robot executing arc turn right 90°");
                 robot->arcTurn90Degrees("right");
                 break;
 
             case CommandType::ARC_TURN_LEFT_45:
-                LOG_DEBUG("Robot executing arc turn left 45°");
                 robot->arcTurn45Degrees("left");
                 break;
 
             case CommandType::ARC_TURN_RIGHT_45:
-                LOG_DEBUG("Robot executing arc turn right 45°");
                 robot->arcTurn45Degrees("right");
                 break;
 
-            // Core0 may send this, but Core1 doesn't need to act on it
             case CommandType::SNAPSHOT:
             case CommandType::NONE:
             default:
@@ -173,91 +117,133 @@ void processCommands(Robot* robot, Sensors* sensors)
     }
 
     if (sawStop)
-    {
         robot->stop();
-    }
 }
 
-void runUntilDone(Robot& robot, Sensors& sensors, Drivetrain& drivetrain, int CONTROL_MS)
+/**
+ * Core 1 entry point: Runs real-time control loop at 100Hz.
+ * Manages sensors, motors, and executes motion commands from Core 0.
+ */
+void core1_RobotController()
 {
-    absolute_time_t next = make_timeout_time_ms(CONTROL_MS);
-    absolute_time_t last = get_absolute_time();
-
-    while (!robot.isMotionDone())
-    {
-        absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(last, now) * 1e-6f;
-        last                = now;
-
-        robot.update(dt);
-
-        sleep_until(next);
-        next = delayed_by_ms(next, CONTROL_MS);
-    }
-}
-
-// Publisher for Core1: All robot specific logic
-static void core1_Publisher()
-{
-    // Sensors
+    // Initialize hardware
     Encoder leftEncoder(pio0, 20, true);
     Encoder rightEncoder(pio0, 8, false);
     ToF     leftToF(11, 'L');
     ToF     frontToF(12, 'F');
     ToF     rightToF(13, 'R');
     IMU     imu(5);
+    Motor   leftMotor(18, 19, true);
+    Motor   rightMotor(6, 7, false);
 
-    // Motors
-    Motor leftMotor(18, 19, true);
-    Motor rightMotor(6, 7, false);
-
-    // Updated stack (Robot owns motion)
+    // Initialize control stack
     Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder);
     Sensors    sensors(&imu, &leftToF, &frontToF, &rightToF);
     Robot      robot(&drivetrain, &sensors);
 
-    LOG_DEBUG("Initialization complete.");
+    LOG_DEBUG("Core1: Hardware initialized");
     robot.reset();
 
-    multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
+    // Signal Core 0 that initialization is complete
+    multicore_fifo_push_blocking(1);
 
-    const int CONTROL_MS = 15;
-    for (int i = 0; i < 4; i++)
+    // Real-time control loop (100Hz = 10ms period)
+    const int CONTROL_PERIOD_MS = 10;
+    absolute_time_t nextTick = make_timeout_time_ms(CONTROL_PERIOD_MS);
+    absolute_time_t lastTick = get_absolute_time();
+
+    while (true)
     {
-        LOG_DEBUG("Turning left 90...");
-        robot.turn45Degrees("left", 2);
-        runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-        sleep_ms(100);
+        // Calculate delta time for control updates
+        absolute_time_t now = get_absolute_time();
+        float dt = absolute_time_diff_us(lastTick, now) * 1e-6f;
+        lastTick = now;
+
+        // Update robot control (PID, motion profiling, etc.)
+        robot.update(dt);
+
+        // Process any pending commands from Core 0
+        processCommands(&robot);
+
+        // Publish sensor data to Core 0
+        MulticoreSensorData sensorData{};
+        sensorData.left_encoder_count = leftEncoder.getTickCount();
+        sensorData.right_encoder_count = rightEncoder.getTickCount();
+        sensorData.tof_left_mm = static_cast<int16_t>(leftToF.getToFDistanceFromWallMM());
+        sensorData.tof_front_mm = static_cast<int16_t>(frontToF.getToFDistanceFromWallMM());
+        sensorData.tof_right_mm = static_cast<int16_t>(rightToF.getToFDistanceFromWallMM());
+        sensorData.imu_yaw = imu.getIMUYawDegreesNeg180ToPos180();
+        sensorData.timestamp_ms = to_ms_since_boot(now);
+        MulticoreSensorHub::publish(sensorData);
+
+        // Sleep until next control tick
+        sleep_until(nextTick);
+        nextTick = delayed_by_ms(nextTick, CONTROL_PERIOD_MS);
     }
 }
 
+// ============================================================================
+// CORE 0: High-Level Maze Solving
+// ============================================================================
+
+/**
+ * Main entry point: Runs maze solving algorithms on Core 0.
+ * Sends motion commands to Core 1 via CommandHub.
+ */
 int main()
 {
+    // Initialize USB serial for debugging
     stdio_init_all();
     sleep_ms(3000);
 
+    LOG_DEBUG("Core0: Initializing multicore communication");
     MulticoreSensorHub::init();
-    multicore_launch_core1(core1_Publisher);
+    multicore_launch_core1(core1_RobotController);
 
-    // Wait until Core1 signals it finished initializing its sensors
+    // Wait for Core 1 to complete hardware initialization
     multicore_fifo_pop_blocking();
+    LOG_DEBUG("Core0: Core1 ready, starting maze solver");
 
-    // Maze / planning objects
-    std::array<int, 2>              startCell = {0, 0};
+    // Initialize maze solving components
+    std::array<int, 2> startCell = {0, 0};
     std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
-    MazeGraph                       maze(16, 16);
-    InternalMouse                   mouse(startCell, std::string("n"), goalCells, &maze);
-    API                             api(&mouse);
+    MazeGraph maze(16, 16);
+    InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
+    API api(&mouse);
 
-    // api.goToCenterFromEdge();
-    // api.executeSequence("F#F#F#F#L#F#");
+    // ========================================================================
+    // Algorithm Execution - Modify this section for different solving modes
+    // ========================================================================
 
-    // Core0 loop: read sensor snapshots, update maze state / planning.
+    // EXPLORATION MODE: Use frontier-based search to map unknown maze
+    // Uncomment to enable:
+    // FrontierBasedSearchSolver frontierSolver(&mouse);
+    // bool explorationComplete = traversePathIteratively(&api, &mouse, goalCells, false, false, false);
+    // if (explorationComplete) {
+    //     LOG_INFO("Maze exploration complete!");
+    // }
+
+    // SPEED RUN MODE: Use A* with known maze layout
+    // Uncomment to enable:
+    // setAllExplored(&mouse);  // Mark entire maze as explored
+    // bool speedRunComplete = traversePathIteratively(&api, &mouse, goalCells, true, true, false);
+    // if (speedRunComplete) {
+    //     LOG_INFO("Speed run complete!");
+    // }
+
+    // TEST MODE: Execute a simple test sequence
+    LOG_INFO("Test mode: Executing square pattern");
+    api.executeSequence("F#R#F#R#F#R#F#R");
+
+    // ========================================================================
+    // Sensor monitoring loop - update maze state from real-time sensor data
+    // ========================================================================
     while (true)
     {
         MulticoreSensorData sensors;
         MulticoreSensorHub::snapshot(sensors);
 
+        // Update maze walls based on ToF sensor readings
         if (sensors.tof_left_exist)
             mouse.setWallExistsLFR('L');
         if (sensors.tof_front_exist)
@@ -270,190 +256,3 @@ int main()
 
     return 0;
 }
-
-void interpretLFRPath(API* apiPtr, std::string lfrPath)
-{
-    std::stringstream ss(lfrPath);
-    std::string       token;
-
-    std::vector<std::string> tokens;
-    while (std::getline(ss, token, '#'))
-    {
-        if (!token.empty())
-        {
-            tokens.push_back(token);
-        }
-    }
-
-    for (std::string t : tokens)
-    {
-        if (t == "R")
-        {
-            apiPtr->turnRight90();
-        }
-        else if (t == "L")
-        {
-            apiPtr->turnLeft90();
-        }
-        else if (t == "F")
-        {
-            apiPtr->moveForward();
-        }
-        else if (t == "R45")
-        {
-            apiPtr->turnRight45();
-        }
-        else if (t == "L45")
-        {
-            apiPtr->turnLeft45();
-        }
-        else if (t == "FH")
-        {
-            apiPtr->moveForwardHalf();
-        }
-        else
-        {
-            LOG_ERROR("Main.cpp: Unknown token: " + t);
-        }
-    }
-}
-
-/**
- * Runs a PWM sweep on the given motor, applying PWM values from startPWM to
- * endPWM.
- *
- * @param drivetrain Pointer to the drivetrain to test.
- * @param side "left" or "right" to indicate which motor to test.
- * @param startPWM Starting PWM value (e.g., 0.0f).
- * @param endPWM Ending PWM value (e.g., 1.0f or -1.0f).
- * @param stepPWM Step size for each PWM increment (e.g., 0.05f).
- * @param settleTimeMs Time in milliseconds to let the motor settle at each PWM
- * @param controlTickPeriodMs Control loop period in milliseconds for velocity updates.
- * @return Vector of FeedforwardSample containing applied PWM and measured
- * velocity.
- *
- * Use printed values and the following calculators:
- * https://www.desmos.com/calculator/qhiaubdod3 - kS and kV calculator
- * Do not include 0.0 velocity values!
- *
- */
-std::vector<FeedforwardSample> runPWMSweep(Drivetrain* drivetrain, std::string side, float startPWM,
-                                           float endPWM, float stepPWM, int settleTimeMs,
-                                           int controlTickPeriodMs)
-{
-    if (!drivetrain)
-    {
-        LOG_ERROR("Drivetrain is null in runPWMSweep");
-        return {};
-    }
-
-    if (side != "left" && side != "right")
-    {
-        LOG_ERROR("Invalid side inputted for PWM sweep: " + side);
-        return {};
-    }
-
-    if (controlTickPeriodMs <= 0 || settleTimeMs <= 0)
-    {
-        LOG_ERROR("Invalid timing parameters for PWM sweep");
-        return {};
-    }
-
-    // Fix step direction if caller gave an inconsistent sign.
-    if (startPWM > endPWM && stepPWM > 0)
-        stepPWM = -stepPWM;
-    if (startPWM < endPWM && stepPWM < 0)
-        stepPWM = -stepPWM;
-
-    std::vector<FeedforwardSample> sweepResults;
-
-    // Start from a known state.
-    drivetrain->stop();
-    drivetrain->reset();
-
-    const float dt = controlTickPeriodMs / 1000.0f;
-
-    // Compute how many samples we get per settle window.
-    int totalSamples = settleTimeMs / controlTickPeriodMs;
-    if (totalSamples < 1)
-        totalSamples = 1;
-
-    // Average only the last ~25% of samples (At least 3 samples).
-    int avgSamples = totalSamples / 4;
-    if (avgSamples < 3)
-        avgSamples = (totalSamples < 3 ? totalSamples : 3);
-
-    for (float pwm = startPWM; (stepPWM > 0 ? pwm <= endPWM : pwm >= endPWM); pwm += stepPWM)
-    {
-        // Apply duty to selected side only.
-        if (side == "left")
-            drivetrain->setDuty(pwm, 0.0f);
-        else
-            drivetrain->setDuty(0.0f, pwm);
-
-        float velSum   = 0.0f;
-        int   velCount = 0;
-
-        // Run settle ticks; only average the last avgSamples ticks.
-        for (int i = 0; i < totalSamples; i++)
-        {
-            sleep_ms(controlTickPeriodMs);
-            drivetrain->updateVelocities(dt);
-
-            float v = drivetrain->getMotorVelocityMMps(side);
-
-            if (i >= totalSamples - avgSamples)
-            {
-                velSum += v;
-                velCount++;
-            }
-        }
-
-        float avgVel = (velCount > 0) ? (velSum / (float)velCount) : 0.0f;
-
-        sweepResults.push_back({pwm, avgVel});
-        LOG_DEBUG("Side=" + side + " | PWM=" + std::to_string(pwm) +
-                  " | AvgVel=" + std::to_string(avgVel) + " mm/s (Last " +
-                  std::to_string(avgSamples) + " samples).");
-    }
-
-    // Log all results in one go for Desmos.
-    std::string pwmList, velList;
-    bool        first = true;
-
-    for (const auto& s : sweepResults)
-    {
-        if (s.measuredVelMMps == 0.0f)
-            continue;
-
-        if (!first)
-        {
-            pwmList += ", ";
-            velList += ", ";
-        }
-        first = false;
-
-        pwmList += std::to_string(s.appliedPWM);
-        velList += std::to_string(s.measuredVelMMps);
-    }
-
-    LOG_DEBUG("Velocity Values: x = [" + velList + "]");
-    LOG_DEBUG("PWM Values: p = [" + pwmList + "]");
-
-    drivetrain->stop();
-    return sweepResults;
-}
-/* Example Usage:
-LOG_DEBUG("Running right motor sweep...");
-// Sweep from 0.0 to 1.0 in steps of 0.05.
-runPWMSweep(&rightMotor, 0.0f, 1.0f, 0.05f, 10000, 25);
-sleep_ms(2000);
-LOG_DEBUG("Running right motor reverse sweep...");
-// Sweep from 0.0 to -1.0 in steps of -0.05.
-runPWMSweep(&rightMotor, 0.0f, -1.0f, -0.05f, 10000, 25);
-sleep_ms(2000);
-
-leftMotor.stopMotor();
-rightMotor.stopMotor();
-LOG_DEBUG("Motors stopped.");
-*/
