@@ -1,9 +1,9 @@
 #ifndef ROBOT_H
 #define ROBOT_H
 
+#include "../../../Common/PIDController.h"
 #include <cmath>
 #include <string>
-#include "../../../Common/PIDController.h"
 
 class Drivetrain;
 class Sensors;
@@ -103,7 +103,7 @@ class Robot
     PIDController leftWheelPID;
     PIDController rightWheelPID;
 
-    Mode mode = Mode::Idle;
+    Mode mode     = Mode::Idle;
     Mode prevMode = Mode::Idle;
 
     // Motion targets
@@ -120,13 +120,15 @@ class Robot
     float driveTargetDistMM     = 0.0f;
 
     // Completion criteria
-    float yawToleranceDeg = 1.0f;
+    float yawToleranceDeg = 0.5f;
 
     // Limits
     float maxDuty           = 1.0f;
     float maxDutySlewPerSec = 10.0f;
     float maxWheelSpeedMMps = 800.0f;
-    float maxYawDiffMMps    = 400.0f; // yawPID output limit in mm/s differential
+    float maxYawDiffMMps    = 300.0f; // yawPID output limit in mm/s differential
+    float maxAngularVelDegps = 360.0f; // Max turning speed (adjust for your mouse)
+    float minVelocityMMps    = 250.0f;  // Prevents stalling at the very end of a move
 
     // Slew state
     float prevLeftDuty  = 0.0f;
@@ -137,8 +139,9 @@ class Robot
     float minSlowdownScale = 0.2f;
 
     // Ramping state
-    float vBaseCmdMMps      = 0.0f;    // ramped command actually used
-    float maxBaseAccelMMps2 = 600.0f; // tune: 1500–5000
+    float vBaseCmdMMps       = 0.0f;   // ramped command actually used
+    float maxBaseAccelMMps2  = 1500.0f; // tune: 1500–5000
+    float currentYawSetpoint = 0.0f;   // The "moving" target for the turn
 
     bool motionDone = true;
 };

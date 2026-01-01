@@ -23,8 +23,14 @@ class Sensors
     // Range is [-180, 180]
     float getYaw();
 
+    // Returns current angular velocity in degrees per second
+    float getAngularVelocityDegps();
+
     // Resets current yaw to zero
     void resetYaw();
+
+    // Update sensor readings; call every control tick with dt in seconds
+    void update(float dt);
 
   private:
     // Inertial measurement unit (Heading)
@@ -34,6 +40,10 @@ class Sensors
     ToF* leftToF;
     ToF* frontToF;
     ToF* rightToF;
+
+    // For angular velocity calculations
+    float lastYaw           = 0.0f;
+    float currentAngularVel = 0.0f;
 };
 
 #endif

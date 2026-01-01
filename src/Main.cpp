@@ -203,76 +203,100 @@ static void core1_Publisher()
     multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
 
     // ----- TEST CONFIG -----
-    const int   CONTROL_MS = 15; // Control loop period (15ms)
-    robot.driveDistanceMM(TO_CENTER_DISTANCE_MM, 400.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    const int CONTROL_MS = 15; // Control loop period (15ms)
+    // robot.driveStraightMMps(500.0f, 0.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // 4 iterations makes a closed square and returns to the start
+    for (int i = 0; i < 4; i++)
+    {
+        // LOG_DEBUG("--- Leg " + std::to_string(i + 1) + " ---");
 
-    robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+        // // 1. Move Forward (Establish the line)
+        // LOG_DEBUG("Driving forward...");
+        // robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
+        // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Turning left 90 degrees");
-    robot.turn45Degrees("left", 2);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+        // // Brief pause to let the robot settle physically
+        // sleep_ms(100);
 
-    LOG_DEBUG("Driving forward");
-    robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+        // 2. Turn 90 Degrees Left
+        LOG_DEBUG("Turning left 90...");
+        robot.turn45Degrees("left", 2);
+        runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Turning left 90 degrees");
-    robot.turn45Degrees("left", 2);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+        // Brief pause to check alignment
+        sleep_ms(100);
+    }
 
-    LOG_DEBUG("Driving forward");
-    robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // robot.driveDistanceMM(TO_CENTER_DISTANCE_MM, 400.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Turning left 90 degrees");
-    robot.turn45Degrees("left", 2);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Driving forward");
-    robot.driveDistanceMM(CELL_DISTANCE_MM * 3, 500.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Turning left 90 degrees");
+    // robot.turn45Degrees("left", 2);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Turning left 90 degrees");
-    robot.turn45Degrees("left", 2);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Driving forward");
+    // robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Driving forward");
-    robot.driveDistanceMM(CELL_DISTANCE_MM * 3, 500.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Turning left 90 degrees");
+    // robot.turn45Degrees("left", 2);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Turning left 90 degrees");
-    robot.turn45Degrees("left", 2);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Driving forward");
+    // robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Driving forward");
-    robot.driveDistanceMM(CELL_DISTANCE_MM * 2, 500.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Turning left 90 degrees");
+    // robot.turn45Degrees("left", 2);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Turning left 90 degrees");
-    robot.turn45Degrees("left", 2);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Driving forward");
+    // robot.driveDistanceMM(CELL_DISTANCE_MM * 3, 500.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Driving forward");
-    robot.driveDistanceMM(CELL_DISTANCE_MM * 2, 500.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Turning left 90 degrees");
+    // robot.turn45Degrees("left", 2);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Turning left 90 degrees");
-    robot.turn45Degrees("left", 2);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Driving forward");
+    // robot.driveDistanceMM(CELL_DISTANCE_MM * 3, 500.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Driving forward");
-    robot.driveDistanceMM(CELL_DISTANCE_MM, 500.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Turning left 90 degrees");
+    // robot.turn45Degrees("left", 2);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Turning left 90 degrees");
-    robot.turn45Degrees("left", 2);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Driving forward");
+    // robot.driveDistanceMM(CELL_DISTANCE_MM * 2, 500.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 
-    LOG_DEBUG("Driving forward");
-    robot.driveDistanceMM(CELL_DISTANCE_MM, 500.0f);
-    runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+    // LOG_DEBUG("Turning left 90 degrees");
+    // robot.turn45Degrees("left", 2);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    // LOG_DEBUG("Driving forward");
+    // robot.driveDistanceMM(CELL_DISTANCE_MM * 2, 500.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    // LOG_DEBUG("Turning left 90 degrees");
+    // robot.turn45Degrees("left", 2);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    // LOG_DEBUG("Driving forward");
+    // robot.driveDistanceMM(CELL_DISTANCE_MM, 500.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    // LOG_DEBUG("Turning left 90 degrees");
+    // robot.turn45Degrees("left", 2);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
+
+    // LOG_DEBUG("Driving forward");
+    // robot.driveDistanceMM(CELL_DISTANCE_MM, 500.0f);
+    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 }
 
 int main()

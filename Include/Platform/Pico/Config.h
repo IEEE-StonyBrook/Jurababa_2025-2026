@@ -40,13 +40,13 @@
 // #define RIGHT_WHEEL_KP 0.0075f / 10.00f
 #define LEFT_WHEEL_KP  0.00015f
 #define RIGHT_WHEEL_KP 0.00015f
-#define LEFT_WHEEL_KI  0.00375f
-#define RIGHT_WHEEL_KI 0.00375f
+#define LEFT_WHEEL_KI  0.0375f
+#define RIGHT_WHEEL_KI 0.0375f
 #define LEFT_WHEEL_KD  0.00015f
 #define RIGHT_WHEEL_KD 0.00015f
-#define YAW_KP         4.5f
+#define YAW_KP         8.0f
 #define YAW_KI         0.0f
-#define YAW_KD         0.0f
+#define YAW_KD         1.0f
 
 // ================== Motion Constants ================== //
 // Distances.
