@@ -1,21 +1,25 @@
 #include "Platform/Pico/Robot/Drivetrain.h"
 #include "Platform/Pico/Config.h"
 
-Drivetrain::Drivetrain(Motor* lMotor, Motor* rMotor, Encoder* lEncoder, Encoder* rEncoder)
-    : leftMotor(lMotor), rightMotor(rMotor), leftEncoder(lEncoder), rightEncoder(rEncoder)
+Drivetrain::Drivetrain(Motor* left_motor, Motor* right_motor,
+                       Encoder* left_encoder, Encoder* right_encoder)
+    : left_motor_(left_motor),
+      right_motor_(right_motor),
+      left_encoder_(left_encoder),
+      right_encoder_(right_encoder)
 {
 }
 
 void Drivetrain::reset()
 {
-    leftEncoder->reset();
-    rightEncoder->reset();
+    left_encoder_->reset();
+    right_encoder_->reset();
 
-    prevLeftTicks  = leftEncoder->getTickCount();
-    prevRightTicks = rightEncoder->getTickCount();
+    previous_left_ticks_ = left_encoder_->getTickCount();
+    previous_right_ticks_ = right_encoder_->getTickCount();
 
-    leftVelocityMMps  = 0.0f;
-    rightVelocityMMps = 0.0f;
+    left_velocity_mm_per_second_ = 0.0f;
+    right_velocity_mm_per_second_ = 0.0f;
 }
 
 // ============================================================
@@ -24,36 +28,35 @@ void Drivetrain::reset()
 
 float Drivetrain::getMotorDistanceMM(WheelSide side)
 {
-    bool isLeft = (side == WheelSide::LEFT);
-    return (isLeft ? leftEncoder->getTickCount() : rightEncoder->getTickCount()) * MM_PER_TICK;
+    bool is_left = (side == WheelSide::LEFT);
+    int tick_count = is_left ? left_encoder_->getTickCount() : right_encoder_->getTickCount();
+    return tick_count * MM_PER_TICK;
 }
 
 float Drivetrain::getMotorVelocityMMps(WheelSide side)
 {
-    return (side == WheelSide::LEFT) ? leftVelocityMMps : rightVelocityMMps;
+    return (side == WheelSide::LEFT) ? left_velocity_mm_per_second_
+                                      : right_velocity_mm_per_second_;
 }
 
-float Drivetrain::getFeedforward(WheelSide side, float wheelSpeed)
+float Drivetrain::getFeedforward(WheelSide side, float wheel_speed_mm_per_second)
 {
-    // Apply deadzone to prevent motor buzzing at near-zero speeds
-    if (std::fabs(wheelSpeed) < DRIVETRAIN_FF_DEADZONE_MMPS)
+    if (std::fabs(wheel_speed_mm_per_second) < DRIVETRAIN_FF_DEADZONE_MMPS)
         return 0.0f;
 
-    bool isLeft = (side == WheelSide::LEFT);
+    bool is_left = (side == WheelSide::LEFT);
 
-    // Forward direction: positive duty
-    if (wheelSpeed > 0.0f)
+    if (wheel_speed_mm_per_second > 0.0f)
     {
-        float kv = isLeft ? FORWARD_KVL : FORWARD_KVR;
-        float ks = isLeft ? FORWARD_KSL : FORWARD_KSR;
-        return kv * wheelSpeed + ks;
+        float kv = is_left ? FORWARD_KVL : FORWARD_KVR;
+        float ks = is_left ? FORWARD_KSL : FORWARD_KSR;
+        return kv * wheel_speed_mm_per_second + ks;
     }
-    // Reverse direction: negative duty
     else
     {
-        float kv = isLeft ? REVERSE_KVL : REVERSE_KVR;
-        float ks = isLeft ? REVERSE_KSL : REVERSE_KSR;
-        return kv * wheelSpeed - ks;  // Note: wheelSpeed is negative, ks is positive
+        float kv = is_left ? REVERSE_KVL : REVERSE_KVR;
+        float ks = is_left ? REVERSE_KSL : REVERSE_KSR;
+        return kv * wheel_speed_mm_per_second - ks;
     }
 }
 
@@ -68,41 +71,8 @@ float Drivetrain::getMotorDistanceMM(std::string side)
     if (side == "right")
         return getMotorDistanceMM(WheelSide::RIGHT);
 
-    LOG_ERROR("Drivetrain::getMotorDistanceMM - Invalid side: " + side);
+    LOG_ERROR("Drivetrain::getMotorDistanceMM - Invalid side string: " + side);
     return 0.0f;
-}
-
-void Drivetrain::updateVelocities(float dt)
-{
-    // Ignore invalid time steps
-    if (dt < DRIVETRAIN_MIN_DT)
-        return;
-
-    // Read encoder counts
-    int32_t currLeftTicks  = leftEncoder->getTickCount();
-    int32_t currRightTicks = rightEncoder->getTickCount();
-
-    // Calculate deltas since last update
-    int32_t deltaLeftTicks  = currLeftTicks - prevLeftTicks;
-    int32_t deltaRightTicks = currRightTicks - prevRightTicks;
-
-    prevLeftTicks  = currLeftTicks;
-    prevRightTicks = currRightTicks;
-
-    // Convert ticks to velocity (mm/s)
-    leftVelocityMMps  = (deltaLeftTicks * MM_PER_TICK) / dt;
-    rightVelocityMMps = (deltaRightTicks * MM_PER_TICK) / dt;
-
-    // Sanity check for unreasonably high velocities (indicates encoder glitch or bad dt)
-    if (leftVelocityMMps > DRIVETRAIN_MAX_VELOCITY_MMPS ||
-        rightVelocityMMps > DRIVETRAIN_MAX_VELOCITY_MMPS)
-    {
-        LOG_ERROR("Drivetrain velocity spike detected | L=" +
-                  std::to_string(leftVelocityMMps) + " R=" +
-                  std::to_string(rightVelocityMMps) + " mm/s | deltaTicks L=" +
-                  std::to_string(deltaLeftTicks) + " R=" + std::to_string(deltaRightTicks) +
-                  " | dt=" + std::to_string(dt));
-    }
 }
 
 float Drivetrain::getMotorVelocityMMps(std::string side)
@@ -112,29 +82,57 @@ float Drivetrain::getMotorVelocityMMps(std::string side)
     if (side == "right")
         return getMotorVelocityMMps(WheelSide::RIGHT);
 
-    LOG_ERROR("Drivetrain::getMotorVelocityMMps - Invalid side: " + side);
+    LOG_ERROR("Drivetrain::getMotorVelocityMMps - Invalid side string: " + side);
     return 0.0f;
 }
 
-float Drivetrain::getFeedforward(std::string side, float wheelSpeed)
+float Drivetrain::getFeedforward(std::string side, float wheel_speed_mm_per_second)
 {
     if (side == "left")
-        return getFeedforward(WheelSide::LEFT, wheelSpeed);
+        return getFeedforward(WheelSide::LEFT, wheel_speed_mm_per_second);
     if (side == "right")
-        return getFeedforward(WheelSide::RIGHT, wheelSpeed);
+        return getFeedforward(WheelSide::RIGHT, wheel_speed_mm_per_second);
 
-    LOG_ERROR("Drivetrain::getFeedforward - Invalid side: " + side);
+    LOG_ERROR("Drivetrain::getFeedforward - Invalid side string: " + side);
     return 0.0f;
 }
 
-void Drivetrain::setDuty(float leftDuty, float rightDuty)
+// ============================================================
+// Common Operations
+// ============================================================
+
+void Drivetrain::updateVelocities(float time_delta)
 {
-    leftMotor->applyDuty(leftDuty);
-    rightMotor->applyDuty(rightDuty);
+    if (time_delta < DRIVETRAIN_MIN_DT) return;
+
+    int32_t current_left_ticks = left_encoder_->getTickCount();
+    int32_t current_right_ticks = right_encoder_->getTickCount();
+
+    int32_t delta_left = current_left_ticks - previous_left_ticks_;
+    int32_t delta_right = current_right_ticks - previous_right_ticks_;
+
+    previous_left_ticks_ = current_left_ticks;
+    previous_right_ticks_ = current_right_ticks;
+
+    left_velocity_mm_per_second_ = (delta_left * MM_PER_TICK) / time_delta;
+    right_velocity_mm_per_second_ = (delta_right * MM_PER_TICK) / time_delta;
+
+    if (left_velocity_mm_per_second_ > DRIVETRAIN_MAX_VELOCITY_MMPS ||
+        right_velocity_mm_per_second_ > DRIVETRAIN_MAX_VELOCITY_MMPS)
+    {
+        LOG_ERROR("Velocity spike: L=" + std::to_string(left_velocity_mm_per_second_) +
+                  " R=" + std::to_string(right_velocity_mm_per_second_) + " mm/s");
+    }
+}
+
+void Drivetrain::setDuty(float left_duty, float right_duty)
+{
+    left_motor_->applyDuty(left_duty);
+    right_motor_->applyDuty(right_duty);
 }
 
 void Drivetrain::stop()
 {
-    leftMotor->stopMotor();
-    rightMotor->stopMotor();
+    left_motor_->stopMotor();
+    right_motor_->stopMotor();
 }

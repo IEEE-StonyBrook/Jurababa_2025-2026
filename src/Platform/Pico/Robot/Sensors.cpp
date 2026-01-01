@@ -1,66 +1,65 @@
 #include "Platform/Pico/Robot/Sensors.h"
 #include "Platform/Pico/Config.h"
 
-Sensors::Sensors(IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF)
-    : imu(imu), leftToF(leftToF), frontToF(frontToF), rightToF(rightToF)
+Sensors::Sensors(IMU* imu, ToF* left_tof, ToF* front_tof, ToF* right_tof)
+    : imu_(imu),
+      left_tof_(left_tof),
+      front_tof_(front_tof),
+      right_tof_(right_tof)
 {
 }
 
 bool Sensors::isWallLeft()
 {
-    return leftToF->getToFDistanceFromWallMM() < TOF_LEFT_WALL_THRESHOLD_MM;
+    return left_tof_->getToFDistanceFromWallMM() < TOF_LEFT_WALL_THRESHOLD_MM;
 }
 
 bool Sensors::isWallFront()
 {
-    return frontToF->getToFDistanceFromWallMM() < TOF_FRONT_WALL_THRESHOLD_MM;
+    return front_tof_->getToFDistanceFromWallMM() < TOF_FRONT_WALL_THRESHOLD_MM;
 }
 
 bool Sensors::isWallRight()
 {
-    return rightToF->getToFDistanceFromWallMM() < TOF_RIGHT_WALL_THRESHOLD_MM;
+    return right_tof_->getToFDistanceFromWallMM() < TOF_RIGHT_WALL_THRESHOLD_MM;
 }
 
 float Sensors::getYaw()
 {
-    return imu->getIMUYawDegreesNeg180ToPos180();
+    return imu_->getIMUYawDegreesNeg180ToPos180();
 }
 
 float Sensors::getAngularVelocityDegps()
 {
-    return currentAngularVel;
+    return current_angular_velocity_deg_per_second_;
 }
 
 void Sensors::resetYaw()
 {
-    imu->resetIMUYawToZero();
+    imu_->resetIMUYawToZero();
 }
 
-void Sensors::update(float dt)
+void Sensors::update(float time_delta)
 {
-    if (dt < 0.0001f)
+    if (time_delta < 0.0001f)
         return;
 
-    float currentYaw = getYaw();
+    float current_yaw = getYaw();
+    float delta_yaw = current_yaw - previous_yaw_;
 
-    // 1. Calculate the change in yaw
-    float deltaYaw = currentYaw - lastYaw;
+    // Handle wrap-around: turning from +179° to -179° should be +2°, not -358°
+    if (delta_yaw > 180.0f)
+        delta_yaw -= 360.0f;
+    else if (delta_yaw < -180.0f)
+        delta_yaw += 360.0f;
 
-    // 2. IMPORTANT: Handle the -180 to 180 wrap-around
-    // If we turn from 179 to -179, deltaYaw is -358, but it should be 2.
-    if (deltaYaw > 180.0f)
-        deltaYaw -= 360.0f;
-    if (deltaYaw < -180.0f)
-        deltaYaw += 360.0f;
+    float raw_angular_velocity = delta_yaw / time_delta;
 
-    // 3. Calculate velocity (degrees per second)
-    float rawVel = deltaYaw / dt;
+    // Low-pass filter to reduce noise
+    float alpha = SENSORS_ANGULAR_VEL_FILTER_ALPHA;
+    current_angular_velocity_deg_per_second_ =
+        (alpha * raw_angular_velocity) +
+        (1.0f - alpha) * current_angular_velocity_deg_per_second_;
 
-    // 4. Apply low-pass filter to smooth angular velocity (reduces noise)
-    // alpha closer to 1.0 = less filtering (more responsive)
-    // alpha closer to 0.0 = more filtering (smoother but slower)
-    currentAngularVel = (SENSORS_ANGULAR_VEL_FILTER_ALPHA * rawVel) +
-                        (1.0f - SENSORS_ANGULAR_VEL_FILTER_ALPHA) * currentAngularVel;
-
-    lastYaw = currentYaw;
+    previous_yaw_ = current_yaw;
 }

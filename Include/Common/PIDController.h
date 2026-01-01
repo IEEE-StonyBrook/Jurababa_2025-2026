@@ -4,63 +4,116 @@
 #include <cfloat>
 #include <cmath>
 
+/**
+ * @brief PID Controller for closed-loop control systems
+ *
+ * Implements a discrete PID controller with integral windup protection,
+ * derivative filtering, deadband, and output limiting. Suitable for
+ * motor velocity control, position tracking, and other feedback loops.
+ *
+ * The controller calculates output = Kp*e + Ki*∫e + Kd*de/dt
+ * where e is the error signal (setpoint - measurement).
+ */
 class PIDController
 {
   public:
-    // Create a PID with gains only (most common usage)
-    PIDController(float K_P = 0.0f, float K_I = 0.0f, float K_D = 0.0f);
+    /**
+     * @brief Constructs PID controller with specified gains
+     * @param proportional_gain Proportional gain (Kp)
+     * @param integral_gain Integral gain (Ki)
+     * @param derivative_gain Derivative gain (Kd)
+     */
+    PIDController(float proportional_gain = 0.0f, float integral_gain = 0.0f, float derivative_gain = 0.0f);
 
-    // Main PID interface
-    // Error = target - measurement
-    // Dt    = timestep in seconds
-    float calculateOutput(float error, float dt);
+    /**
+     * @brief Calculates PID output from error signal
+     * @param error Control error (setpoint - measurement)
+     * @param time_delta Time step in seconds since last update
+     * @return Control output signal
+     */
+    float calculateOutput(float error, float time_delta);
 
-    // Convenience wrapper so callers don’t manually compute error
-    float calculateOutputFromSetpoint(float target, float measurement, float dt);
+    /**
+     * @brief Calculates PID output from setpoint and measurement
+     * @param setpoint Desired value
+     * @param measurement Current measured value
+     * @param time_delta Time step in seconds since last update
+     * @return Control output signal
+     */
+    float calculateOutputFromSetpoint(float setpoint, float measurement, float time_delta);
 
-    // Runtime tuning
-    void setGains(float K_P, float K_I, float K_D);
+    /**
+     * @brief Updates PID gains at runtime
+     * @param proportional_gain Proportional gain (Kp)
+     * @param integral_gain Integral gain (Ki)
+     * @param derivative_gain Derivative gain (Kd)
+     */
+    void setGains(float proportional_gain, float integral_gain, float derivative_gain);
 
-    // If |error| < deadband, output is forced to 0
-    void setDeadband(float deadbandToReturnZero);
+    /**
+     * @brief Sets error deadband threshold
+     * @param deadband_threshold If |error| < threshold, output forced to 0
+     */
+    void setDeadband(float deadband_threshold);
 
-    // Limits integral accumulation to prevent windup
-    void setIntegralLimit(float integralMaxAbs);
+    /**
+     * @brief Sets integral accumulator limit to prevent windup
+     * @param max_integral Maximum absolute value for integral term
+     */
+    void setIntegralLimit(float max_integral);
 
-    // Limits final output (e.g. motor duty clamp)
-    void setOutputLimit(float outputMaxAbs);
+    /**
+     * @brief Sets output saturation limit
+     * @param max_output Maximum absolute output value
+     */
+    void setOutputLimit(float max_output);
 
-    // Low-pass filter strength for derivative term (Noise control)
-    void setDerivativeFilterAlpha(float alpha);
+    /**
+     * @brief Sets derivative low-pass filter coefficient
+     * @param filter_alpha Filter strength (0-0.999, higher = more smoothing)
+     */
+    void setDerivativeFilterAlpha(float filter_alpha);
 
-    // Clears internal state (Call when switching modes)
+    /**
+     * @brief Resets controller internal state
+     *
+     * Clears integral accumulator, error history, and derivative filter.
+     * Call when switching control modes or reinitializing system.
+     */
     void reset();
 
   private:
     // PID gains
-    float K_P, K_I, K_D;
+    float proportional_gain_;
+    float integral_gain_;
+    float derivative_gain_;
 
     // Integral accumulator and its clamp
-    float integralAccum = 0.0f;
-    float integralMax   = 1e6f;
+    float integral_accumulator_ = 0.0f;
+    float integral_limit_ = 1e6f;
 
     // Previous error for derivative computation
-    float lastError    = 0.0f;
-    bool  hasLastError = false; // Prevents first-step derivative spike
+    float previous_error_ = 0.0f;
+    bool has_previous_error_ = false; // Prevents first-step derivative spike
 
-    // Error deadband
-    float deadband = 0.0f;
+    // Error deadband threshold
+    float deadband_threshold_ = 0.0f;
 
     // Filtered derivative state
-    float dFiltered = 0.0f;
-    float dAlpha    = 0.9f; // Closer to 1 = more smoothing
-    float derivMax  = 1e6f; // Hard clamp for noise spikes
+    float filtered_derivative_ = 0.0f;
+    float derivative_filter_alpha_ = 0.9f; // Closer to 1 = more smoothing
+    float derivative_limit_ = 1e6f; // Hard clamp for noise spikes
 
-    // Clamp for final output (FLT_MAX = no clamp)
-    float outputMax = FLT_MAX;
+    // Output saturation limit (FLT_MAX = no limit)
+    float output_limit_ = FLT_MAX;
 
-    // Utility: Clamp value to ±maxAbs
-    static float clampAbs(float value, float maxAbs);
+    /**
+     * @brief Clamps value to symmetric range [-max_abs, +max_abs]
+     * @param value Input value
+     * @param max_abs Maximum absolute value
+     * @return Clamped value
+     */
+    static float clampAbs(float value, float max_abs);
 };
 
 #endif

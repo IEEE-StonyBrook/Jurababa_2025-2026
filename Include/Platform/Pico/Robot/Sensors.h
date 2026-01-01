@@ -4,46 +4,76 @@
 #include "Platform/Pico/Robot/IMU.h"
 #include "Platform/Pico/Robot/ToF.h"
 
+/**
+ * @brief Sensor aggregation and processing layer
+ *
+ * Provides high-level interface to robot sensors (IMU and ToF distance sensors).
+ * Handles wall detection thresholding and angular velocity estimation from
+ * IMU yaw readings.
+ */
 class Sensors
 {
   public:
-    // Construct sensors wrapper with IMU and ToF sensors
-    Sensors(IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF);
+    /**
+     * @brief Constructs sensor interface with hardware components
+     * @param imu Pointer to IMU interface
+     * @param left_tof Pointer to left ToF sensor
+     * @param front_tof Pointer to front ToF sensor
+     * @param right_tof Pointer to right ToF sensor
+     */
+    Sensors(IMU* imu, ToF* left_tof, ToF* front_tof, ToF* right_tof);
 
-    // Returns true if a wall is detected on the left
+    /**
+     * @brief Checks if wall detected on left side
+     * @return True if distance below threshold
+     */
     bool isWallLeft();
 
-    // Returns true if a wall is detected in front
+    /**
+     * @brief Checks if wall detected in front
+     * @return True if distance below threshold
+     */
     bool isWallFront();
 
-    // Returns true if a wall is detected on the right
+    /**
+     * @brief Checks if wall detected on right side
+     * @return True if distance below threshold
+     */
     bool isWallRight();
 
-    // Returns current yaw angle in degrees
-    // Range is [-180, 180]
+    /**
+     * @brief Returns current robot heading
+     * @return Yaw angle in degrees, range [-180, 180]
+     */
     float getYaw();
 
-    // Returns current angular velocity in degrees per second
+    /**
+     * @brief Returns estimated angular velocity
+     * @return Angular velocity in degrees per second (filtered)
+     */
     float getAngularVelocityDegps();
 
-    // Resets current yaw to zero
+    /**
+     * @brief Resets IMU yaw to zero at current heading
+     */
     void resetYaw();
 
-    // Update sensor readings; call every control tick with dt in seconds
-    void update(float dt);
+    /**
+     * @brief Updates angular velocity estimate
+     * @param time_delta Time step in seconds since last update
+     */
+    void update(float time_delta);
 
   private:
-    // Inertial measurement unit (Heading)
-    IMU* imu;
+    // Sensor hardware interfaces
+    IMU* imu_;
+    ToF* left_tof_;
+    ToF* front_tof_;
+    ToF* right_tof_;
 
-    // Time-of-flight distance sensors
-    ToF* leftToF;
-    ToF* frontToF;
-    ToF* rightToF;
-
-    // For angular velocity calculations
-    float lastYaw           = 0.0f;
-    float currentAngularVel = 0.0f;
+    // Angular velocity estimation state
+    float previous_yaw_ = 0.0f;
+    float current_angular_velocity_deg_per_second_ = 0.0f;
 };
 
 #endif

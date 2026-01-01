@@ -49,16 +49,6 @@ std::string InternalMouse::getNewDirectionAfterAddingHalfStepsRight(int halfStep
     return possibleDirections[newDirectionIndex];
 }
 
-// bool InternalMouse::getDirNeededForNextNode(MazeNode* nextNode) {
-//   MazeNode* currNode = getCurrentRobotNode();
-//   std::array<int, 2> headingNeeded = {
-//       nextNode->getCellXPos() - currNode->getCellYPos(),
-//       nextNode->getCellYPos() - currNode->getCellYPos()};
-
-//   if (abs(headingNeeded[0]) > 1 || abs(headingNeeded[1]) > 1) {
-//   }
-// }
-
 void InternalMouse::setWallExistsLFR(char LFRdirection)
 {
     int halfStepsToAdd = 0;

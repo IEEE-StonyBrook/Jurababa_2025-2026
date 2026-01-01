@@ -1,102 +1,97 @@
 #include "Common/PIDController.h"
 
-PIDController::PIDController(float K_P, float K_I, float K_D) : K_P(K_P), K_I(K_I), K_D(K_D)
+PIDController::PIDController(float proportional_gain, float integral_gain, float derivative_gain)
+    : proportional_gain_(proportional_gain),
+      integral_gain_(integral_gain),
+      derivative_gain_(derivative_gain)
 {
 }
 
-float PIDController::calculateOutputFromSetpoint(float target, float measurement, float dt)
+float PIDController::calculateOutputFromSetpoint(float setpoint, float measurement, float time_delta)
 {
-    // Convert to error-based API
-    return calculateOutput(target - measurement, dt);
+    return calculateOutput(setpoint - measurement, time_delta);
 }
 
-float PIDController::calculateOutput(float error, float dt)
+float PIDController::calculateOutput(float error, float time_delta)
 {
-    // Protect against divide-by-zero or extremely small dt
-    if (dt <= 1e-6f)
-        dt = 1e-6f;
+    if (time_delta <= 1e-6f)
+        time_delta = 1e-6f;
 
-    // First-call handling so derivative starts at zero
-    if (!hasLastError)
+    if (!has_previous_error_)
     {
-        lastError    = error;
-        hasLastError = true;
+        previous_error_ = error;
+        has_previous_error_ = true;
     }
 
-    // Deadband: Treat small errors as zero (Prevents jitter)
-    if (fabs(error) < deadband)
+    if (fabs(error) < deadband_threshold_)
     {
-        lastError = error;
+        previous_error_ = error;
         return 0.0f;
     }
 
-    // Proportional term
-    float pOutput = K_P * error;
+    float proportional_output = proportional_gain_ * error;
 
-    // Integral term with windup protection
-    integralAccum += error * dt;
-    integralAccum = clampAbs(integralAccum, integralMax);
-    float iOutput = K_I * integralAccum;
+    integral_accumulator_ += error * time_delta;
+    integral_accumulator_ = clampAbs(integral_accumulator_, integral_limit_);
+    float integral_output = integral_gain_ * integral_accumulator_;
 
-    // Derivative term (Rate of change of error)
-    float deriv = (error - lastError) / dt;
-    lastError   = error;
+    float derivative = (error - previous_error_) / time_delta;
+    previous_error_ = error;
 
-    // Clamp + low-pass filter derivative to reduce noise
-    deriv         = clampAbs(deriv, derivMax);
-    dFiltered     = dAlpha * dFiltered + (1.0f - dAlpha) * deriv;
-    float dOutput = K_D * dFiltered;
+    // Low-pass filter derivative to reduce noise
+    derivative = clampAbs(derivative, derivative_limit_);
+    filtered_derivative_ = derivative_filter_alpha_ * filtered_derivative_ +
+                          (1.0f - derivative_filter_alpha_) * derivative;
+    float derivative_output = derivative_gain_ * filtered_derivative_;
 
-    // Sum PID terms and clamp final output
-    return clampAbs(pOutput + iOutput + dOutput, outputMax);
+    return clampAbs(proportional_output + integral_output + derivative_output, output_limit_);
 }
 
-void PIDController::setGains(float kp, float ki, float kd)
+void PIDController::setGains(float proportional_gain, float integral_gain, float derivative_gain)
 {
-    K_P = kp;
-    K_I = ki;
-    K_D = kd;
+    proportional_gain_ = proportional_gain;
+    integral_gain_ = integral_gain;
+    derivative_gain_ = derivative_gain;
 }
 
-void PIDController::setDeadband(float deadbandToReturnZero)
+void PIDController::setDeadband(float deadband_threshold)
 {
-    deadband = (deadbandToReturnZero < 0.0f) ? 0.0f : deadbandToReturnZero;
+    deadband_threshold_ = (deadband_threshold < 0.0f) ? 0.0f : deadband_threshold;
 }
 
-void PIDController::setIntegralLimit(float integralMaxAbs)
+void PIDController::setIntegralLimit(float max_integral)
 {
-    integralMax   = (integralMaxAbs < 0.0f) ? 0.0f : integralMaxAbs;
-    integralAccum = clampAbs(integralAccum, integralMax);
+    integral_limit_ = (max_integral < 0.0f) ? 0.0f : max_integral;
+    integral_accumulator_ = clampAbs(integral_accumulator_, integral_limit_);
 }
 
-void PIDController::setOutputLimit(float outputMaxAbs)
+void PIDController::setOutputLimit(float max_output)
 {
-    outputMax = (outputMaxAbs < 0.0f) ? 0.0f : outputMaxAbs;
+    output_limit_ = (max_output < 0.0f) ? 0.0f : max_output;
 }
 
-void PIDController::setDerivativeFilterAlpha(float alpha)
+void PIDController::setDerivativeFilterAlpha(float filter_alpha)
 {
-    if (alpha < 0.0f)
-        alpha = 0.0f;
-    if (alpha > 0.999f)
-        alpha = 0.999f;
-    dAlpha = alpha;
+    if (filter_alpha < 0.0f)
+        filter_alpha = 0.0f;
+    if (filter_alpha > 0.999f)
+        filter_alpha = 0.999f;
+    derivative_filter_alpha_ = filter_alpha;
 }
 
 void PIDController::reset()
 {
-    // Reset all state that depends on history
-    integralAccum = 0.0f;
-    lastError     = 0.0f;
-    hasLastError  = false;
-    dFiltered     = 0.0f;
+    integral_accumulator_ = 0.0f;
+    previous_error_ = 0.0f;
+    has_previous_error_ = false;
+    filtered_derivative_ = 0.0f;
 }
 
-float PIDController::clampAbs(float value, float maxAbs)
+float PIDController::clampAbs(float value, float max_abs)
 {
-    if (value > maxAbs)
-        return maxAbs;
-    if (value < -maxAbs)
-        return -maxAbs;
+    if (value > max_abs)
+        return max_abs;
+    if (value < -max_abs)
+        return -max_abs;
     return value;
 }

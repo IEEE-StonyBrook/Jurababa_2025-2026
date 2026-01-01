@@ -29,15 +29,6 @@ int main()
 
     traversePathIteratively(&api, &mouse, goalCells, true, false, false);
     traversePathIteratively(&api, &mouse, {startCell}, true, false, false);
-    // FrontierBased frontierSolver;
-    // frontierSolver.explore(mouse, api, true);
-
-    // AStarSolver aStar(&mouse);
-    // std::string lfrPath = aStar.go({startCell}, true, true);
-    // interpretLFRPath(&api, lfrPath);
-
-    // std::string lfrPath2 = aStar.go(goalCells, true, true);
-    // interpretLFRPath(&api, lfrPath2);
 
     return 0;
 }

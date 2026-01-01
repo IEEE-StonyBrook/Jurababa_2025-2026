@@ -174,12 +174,6 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
 void detectWalls(IAPIInterface& api, InternalMouse& internalMouse)
 {
     MazeNode* currCell = internalMouse.getCurrentRobotNode();
-    // LOG_DEBUG("Detecting walls at (" +
-    //           std::to_string(currCell->getCellXPos()) + "," +
-    //           std::to_string(currCell->getCellYPos()) + ")");
-    // LOG_DEBUG("WALLs: L=" + std::to_string(api.wallLeft()) +
-    //           " F=" + std::to_string(api.wallFront()) +
-    //           " R=" + std::to_string(api.wallRight()));
     if (api.wallFront())
     {
         api.setWall(currCell->getCellXPos(), currCell->getCellYPos(),

@@ -3,38 +3,36 @@
 #include "Platform/Pico/MulticoreSensors.h"
 #endif
 
-// Constructor initializes the encoder using PIO and GPIO pin.
-// Assumes channel B is the next sequential pin.
-Encoder::Encoder(PIO pioInstance, int gpioPin, bool invertDirection)
-    : pioInstance(pioInstance), gpioPin(gpioPin), offsetTicks(0), invertDirection(invertDirection)
+Encoder::Encoder(PIO pio_instance, int gpio_pin, bool invert_direction)
+    : pio_instance_(pio_instance),
+      gpio_pin_(gpio_pin),
+      offset_ticks_(0),
+      invert_direction_(invert_direction)
 {
-    stateMachine = pio_claim_unused_sm(pioInstance, true);
-    loadPIOProgram(pioInstance);
-    quadrature_encoder_program_init(pioInstance, stateMachine, gpioPin, 0);
+    state_machine_ = pio_claim_unused_sm(pio_instance_, true);
+    loadPIOProgram(pio_instance_);
+    quadrature_encoder_program_init(pio_instance_, state_machine_, gpio_pin_, 0);
 }
 
-// Ensure the quadrature decoder PIO program is only loaded once.
-void Encoder::loadPIOProgram(PIO pioInstance)
+void Encoder::loadPIOProgram(PIO pio_instance)
 {
-    static bool programLoaded = false;
-    if (!programLoaded)
+    static bool program_loaded = false;
+    if (!program_loaded)
     {
-        pio_add_program(pioInstance, &quadrature_encoder_program);
-        programLoaded = true;
+        pio_add_program(pio_instance, &quadrature_encoder_program);
+        program_loaded = true;
     }
 }
 
-// Return tick count adjusted for software reset.
 int Encoder::getTickCount() const
 {
-    int rawTicks =
-        quadrature_encoder_get_count(pioInstance, stateMachine) * (invertDirection ? -1 : 1);
-    return rawTicks - offsetTicks;
+    int raw_ticks = quadrature_encoder_get_count(pio_instance_, state_machine_);
+    int direction_corrected = raw_ticks * (invert_direction_ ? -1 : 1);
+    return direction_corrected - offset_ticks_;
 }
 
-// Reset encoder by storing current count as offset.
 void Encoder::reset()
 {
-    LOG_DEBUG("Resetting encoder...");
-    offsetTicks = quadrature_encoder_get_count(pioInstance, stateMachine);
+    LOG_DEBUG("Resetting encoder tick count to zero");
+    offset_ticks_ = quadrature_encoder_get_count(pio_instance_, state_machine_);
 }

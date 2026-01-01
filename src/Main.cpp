@@ -88,7 +88,6 @@ void processCommands(Robot* robot, Sensors* sensors)
     bool          sawStop = false;
 
     // Drain all pending commands each tick
-    // LOG_DEBUG("Checking for commands..." + std::to_string(CommandHub::hasPendingCommands()));
     while (CommandHub::receiveNonBlocking(cmd))
     {
         LOG_DEBUG("Received command of type " + std::to_string(static_cast<uint8_t>(cmd.type)));
@@ -202,101 +201,14 @@ static void core1_Publisher()
 
     multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
 
-    // ----- TEST CONFIG -----
-    const int CONTROL_MS = 15; // Control loop period (15ms)
-    // robot.driveStraightMMps(500.0f, 0.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-    // 4 iterations makes a closed square and returns to the start
+    const int CONTROL_MS = 15;
     for (int i = 0; i < 4; i++)
     {
-        // LOG_DEBUG("--- Leg " + std::to_string(i + 1) + " ---");
-
-        // // 1. Move Forward (Establish the line)
-        // LOG_DEBUG("Driving forward...");
-        // robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
-        // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-        // // Brief pause to let the robot settle physically
-        // sleep_ms(100);
-
-        // 2. Turn 90 Degrees Left
         LOG_DEBUG("Turning left 90...");
         robot.turn45Degrees("left", 2);
         runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-        // Brief pause to check alignment
         sleep_ms(100);
     }
-
-    // robot.driveDistanceMM(TO_CENTER_DISTANCE_MM, 400.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Turning left 90 degrees");
-    // robot.turn45Degrees("left", 2);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Driving forward");
-    // robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Turning left 90 degrees");
-    // robot.turn45Degrees("left", 2);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Driving forward");
-    // robot.driveDistanceMM(CELL_DISTANCE_MM * 4, 500.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Turning left 90 degrees");
-    // robot.turn45Degrees("left", 2);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Driving forward");
-    // robot.driveDistanceMM(CELL_DISTANCE_MM * 3, 500.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Turning left 90 degrees");
-    // robot.turn45Degrees("left", 2);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Driving forward");
-    // robot.driveDistanceMM(CELL_DISTANCE_MM * 3, 500.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Turning left 90 degrees");
-    // robot.turn45Degrees("left", 2);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Driving forward");
-    // robot.driveDistanceMM(CELL_DISTANCE_MM * 2, 500.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Turning left 90 degrees");
-    // robot.turn45Degrees("left", 2);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Driving forward");
-    // robot.driveDistanceMM(CELL_DISTANCE_MM * 2, 500.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Turning left 90 degrees");
-    // robot.turn45Degrees("left", 2);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Driving forward");
-    // robot.driveDistanceMM(CELL_DISTANCE_MM, 500.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Turning left 90 degrees");
-    // robot.turn45Degrees("left", 2);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
-
-    // LOG_DEBUG("Driving forward");
-    // robot.driveDistanceMM(CELL_DISTANCE_MM, 500.0f);
-    // runUntilDone(robot, sensors, drivetrain, CONTROL_MS);
 }
 
 int main()
@@ -525,47 +437,3 @@ leftMotor.stopMotor();
 rightMotor.stopMotor();
 LOG_DEBUG("Motors stopped.");
 */
-
-// /**
-//  * Run step-based velocity test on both motors at given loop frequency.
-//  * Useful for checking feedforward predictions against actual velocity
-//  response.
-//  * @param leftMotor Reference to left motor.
-//  * @param rightMotor Reference to right motor.
-//  * @param testVelocitiesMMps Vector of target velocities in mm/s to test.
-//  * @param holdDurationSec Duration in seconds to hold each target velocity.
-//  * @param loopPeriodMS Period in milliseconds to run control ticks and log
-//  data.
-//  *
-//  * Note: Motor::controlTick() must call applyDuty() to actually drive motors.
-//  */
-// void runVelocityStepTest(Motor& leftMotor, Motor& rightMotor,
-//                          const std::vector<float>& testVelocitiesMMps,
-//                          float holdDurationSec, float loopPeriodMS) {
-//   // Iterate through each test velocity.
-//   for (float targetVel : testVelocitiesMMps) {
-//     // Apply target velocity to both motors.
-//     leftMotor.setDesiredVelocityMMPerSec(targetVel);
-//     rightMotor.setDesiredVelocityMMPerSec(targetVel);
-
-//     absolute_time_t startTime = get_absolute_time();
-//     while (absolute_time_diff_us(startTime, get_absolute_time()) <
-//            static_cast<int64_t>(holdDurationSec * 1e6f)) {
-//       // Run control loop tick for both motors.
-//       leftMotor.controlTick();
-//       rightMotor.controlTick();
-
-//       // Log current results.
-//       LOG_DEBUG("TargetVel=" + std::to_string(targetVel) + " | LeftVel=" +
-//                 std::to_string(leftMotor.getWheelVelocityMMPerSec()) +
-//                 " | RightVel=" +
-//                 std::to_string(rightMotor.getWheelVelocityMMPerSec()));
-
-//       // Wait until next control cycle.
-//       sleep_ms(loopPeriodMS);
-//     }
-//   }
-
-//   // Stop motors at the end of the test.
-//   leftMotor.stopMotor();
-//   rightMotor.stopMotor();
