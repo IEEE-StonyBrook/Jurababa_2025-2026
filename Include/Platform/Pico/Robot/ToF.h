@@ -1,8 +1,8 @@
 #ifndef TOF_H
 #define TOF_H
 
-#include "../../../External/vl53l0x_api_rp2040/core/inc/vl53l0x_api.h"
-#include "../../../External/vl53l0x_api_rp2040/platform/inc/vl53l0x_rp2040.h"
+#include "vl53l0x_api_rp2040/core/inc/vl53l0x_api.h"
+#include "vl53l0x_api_rp2040/platform/inc/vl53l0x_rp2040.h"
 
 class ToF
 {

@@ -1,4 +1,4 @@
-#include "../../../Include/Platform/Pico/Robot/Sensors.h"
+#include "Platform/Pico/Robot/Sensors.h"
 
 Sensors::Sensors(IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF)
     : imu(imu), leftToF(leftToF), frontToF(frontToF), rightToF(rightToF)

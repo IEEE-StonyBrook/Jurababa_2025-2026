@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "../Common/LogSystem.h"
-#include "MazeGraph.h"
+#include "Common/LogSystem.h"
+#include "Maze/MazeGraph.h"
 
 class InternalMouse
 {

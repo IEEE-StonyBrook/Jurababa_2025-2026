@@ -1,11 +1,11 @@
-#include "PathUtils.h"
+#include "Navigation/PathUtils.h"
 
 #include <sstream>
 #include <string>
 #include <vector>
 
-#include "../Include/Common/LogSystem.h"
-#include "../Include/Navigation/Diagonalizer.h"
+#include "Common/LogSystem.h"
+#include "Navigation/Diagonalizer.h"
 
 void interpretLFRPath(IAPIInterface* apiPtr, std::string lfrPath)
 {

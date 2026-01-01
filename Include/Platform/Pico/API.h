@@ -8,11 +8,11 @@
 #include <string>
 #include <vector>
 
-#include "../IAPIInterface.h"
-#include "../../../Include/Platform/Pico/Config.h"
-#include "../../Maze/InternalMouse.h"
-#include "CommandHub.h"
-#include "Robot/Drivetrain.h"
+#include "Platform/IAPIInterface.h"
+#include "Platform/Pico/Config.h"
+#include "Maze/InternalMouse.h"
+#include "Platform/Pico/CommandHub.h"
+#include "Platform/Pico/Robot/Drivetrain.h"
 
 class API : public IAPIInterface
 {

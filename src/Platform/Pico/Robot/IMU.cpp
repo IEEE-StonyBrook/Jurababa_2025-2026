@@ -1,10 +1,10 @@
-#include "../../../Include/Platform/Pico/Robot/IMU.h"
+#include "Platform/Pico/Robot/IMU.h"
 
 #ifdef USE_MULTICORE_SENSORS
-#include "../../../Include/Platform/Pico/MulticoreSensors.h"
+#include "Platform/Pico/MulticoreSensors.h"
 #endif
 
-#include "../../../Include/Common/LogSystem.h"
+#include "Common/LogSystem.h"
 
 IMU* IMU::imuInstance = nullptr;
 

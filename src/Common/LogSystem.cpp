@@ -1,4 +1,4 @@
-#include "../../Include/Common/LogSystem.h"
+#include "Common/LogSystem.h"
 
 LogPriority LogSystem::printPriorityLevel = LogPriority::DEBUG;
 

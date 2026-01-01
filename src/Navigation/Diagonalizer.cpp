@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 #include <iostream>
-#include "../../Include/Navigation/Diagonalizer.h"
+#include "Navigation/Diagonalizer.h"
 
 // ------------------------------------------------------------
 // Utility: split a path string ("F#R#F") into tokens

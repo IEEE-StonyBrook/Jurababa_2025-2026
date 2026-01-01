@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "../../../Include/Platform/Pico/Config.h"
+#include "Platform/Pico/Config.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
 

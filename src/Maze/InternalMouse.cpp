@@ -1,4 +1,4 @@
-#include "../../Include/Maze/InternalMouse.h"
+#include "Maze/InternalMouse.h"
 
 InternalMouse::InternalMouse(std::array<int, 2>              startingRobotPosition,
                              std::string                     startingRobotDirection,

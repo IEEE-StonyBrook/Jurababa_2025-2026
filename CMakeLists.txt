@@ -84,6 +84,8 @@ target_link_libraries(Jurababa
 # Add the standard include files to the build
 target_include_directories(Jurababa PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/Include
+        ${CMAKE_CURRENT_LIST_DIR}/External
 )
 
 pico_add_extra_outputs(Jurababa)

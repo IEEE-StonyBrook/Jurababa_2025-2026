@@ -3,9 +3,9 @@
 
 #include <cstdint>
 
-#include "../../../External/QuadratureEncoder.h"
-#include "../../../Include/Common/LogSystem.h"
-#include "../Config.h"
+#include "QuadratureEncoder.h"
+#include "Common/LogSystem.h"
+#include "Platform/Pico/Config.h"
 #include "hardware/pio.h"
 #include "pico/stdlib.h"
 

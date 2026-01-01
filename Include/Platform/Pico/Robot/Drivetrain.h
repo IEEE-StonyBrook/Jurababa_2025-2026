@@ -4,9 +4,9 @@
 #include <cstdint>
 #include <string>
 
-#include "../../../Include/Common/LogSystem.h"
-#include "../../../Include/Platform/Pico/Robot/Encoder.h"
-#include "../../../Include/Platform/Pico/Robot/Motor.h"
+#include "Common/LogSystem.h"
+#include "Platform/Pico/Robot/Encoder.h"
+#include "Platform/Pico/Robot/Motor.h"
 
 class Drivetrain
 {

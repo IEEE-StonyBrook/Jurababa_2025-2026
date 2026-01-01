@@ -1,4 +1,4 @@
-#include "../../Include/Navigation/AStarSolver.h"
+#include "Navigation/AStarSolver.h"
 
 AStarSolver::AStarSolver(InternalMouse* internalMouse) : internalMouse(internalMouse)
 {

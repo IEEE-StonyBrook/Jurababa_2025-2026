@@ -6,11 +6,11 @@
 #include <string>
 #include <vector>
 
-#include "../Include/Common/LogSystem.h"
-#include "../Include/Navigation/AStarSolver.h"
-#include "../Include/Navigation/FrontierBasedSearchSolver.h"
-#include "../Include/Platform/Simulator/API.h"
-#include "PathUtils.h"
+#include "Common/LogSystem.h"
+#include "Navigation/AStarSolver.h"
+#include "Navigation/FrontierBasedSearchSolver.h"
+#include "Platform/Simulator/API.h"
+#include "Navigation/PathUtils.h"
 
 int main()
 {

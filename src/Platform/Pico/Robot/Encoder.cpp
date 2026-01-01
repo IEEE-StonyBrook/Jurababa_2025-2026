@@ -1,6 +1,6 @@
-#include "../../../Include/Platform/Pico/Robot/Encoder.h"
+#include "Platform/Pico/Robot/Encoder.h"
 #ifdef USE_MULTICORE_SENSORS
-#include "../../../Include/Platform/Pico/MulticoreSensors.h"
+#include "Platform/Pico/MulticoreSensors.h"
 #endif
 
 // Constructor initializes the encoder using PIO and GPIO pin.

@@ -1,11 +1,11 @@
-#include "../../../Include/Platform/Pico/Robot/ToF.h"
+#include "Platform/Pico/Robot/ToF.h"
 
 #include <cctype>
 
 #include "hardware/gpio.h"
 #include "pico/stdlib.h"
 #ifdef USE_MULTICORE_SENSORS
-#include "../../../Include/Platform/Pico/MulticoreSensors.h"
+#include "Platform/Pico/MulticoreSensors.h"
 #endif
 
 // Left (l), Front (F), Right (R)

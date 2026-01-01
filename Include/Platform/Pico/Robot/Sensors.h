@@ -1,8 +1,8 @@
 #ifndef SENSORS_H
 #define SENSORS_H
 
-#include "../../../Include/Platform/Pico/Robot/IMU.h"
-#include "../../../Include/Platform/Pico/Robot/ToF.h"
+#include "Platform/Pico/Robot/IMU.h"
+#include "Platform/Pico/Robot/ToF.h"
 
 class Sensors
 {

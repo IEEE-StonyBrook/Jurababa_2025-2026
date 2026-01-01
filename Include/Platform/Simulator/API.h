@@ -3,8 +3,8 @@
 
 #include <string>
 
-#include "../IAPIInterface.h"
-#include "../../Maze/InternalMouse.h"
+#include "Platform/IAPIInterface.h"
+#include "Maze/InternalMouse.h"
 
 class API_SIMULATOR : public IAPIInterface
 {

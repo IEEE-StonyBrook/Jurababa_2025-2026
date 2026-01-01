@@ -1,8 +1,8 @@
-#include "../../../Include/Platform/Pico/Robot/Robot.h"
-#include "../../../Include/Common/PIDController.h"
-#include "../../../Include/Platform/Pico/Config.h"
-#include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
-#include "../../../Include/Platform/Pico/Robot/Sensors.h"
+#include "Platform/Pico/Robot/Robot.h"
+#include "Common/PIDController.h"
+#include "Platform/Pico/Config.h"
+#include "Platform/Pico/Robot/Drivetrain.h"
+#include "Platform/Pico/Robot/Sensors.h"
 
 Robot::Robot(Drivetrain* drivetrain, Sensors* sensors)
     : drivetrain(drivetrain), sensors(sensors), yawPID(), leftWheelPID(), rightWheelPID()

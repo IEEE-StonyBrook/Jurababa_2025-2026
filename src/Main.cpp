@@ -6,21 +6,21 @@
 #include <string>
 #include <vector>
 
-#include "../Include/Common/LogSystem.h"
-#include "../Include/Navigation/AStarSolver.h"
-#include "../Include/Platform/Pico/API.h"
-#include "../Include/Platform/Pico/Config.h"
-#include "../Include/Platform/Pico/MulticoreSensors.h"
+#include "Common/LogSystem.h"
+#include "Navigation/AStarSolver.h"
+#include "Platform/Pico/API.h"
+#include "Platform/Pico/Config.h"
+#include "Platform/Pico/MulticoreSensors.h"
 
-#include "../Include/Platform/Pico/Robot/Drivetrain.h"
-#include "../Include/Platform/Pico/Robot/Encoder.h"
-#include "../Include/Platform/Pico/Robot/IMU.h"
-#include "../Include/Platform/Pico/Robot/Motor.h"
-#include "../Include/Platform/Pico/Robot/Robot.h"
-#include "../Include/Platform/Pico/Robot/Sensors.h"
-#include "../Include/Platform/Pico/Robot/ToF.h"
+#include "Platform/Pico/Robot/Drivetrain.h"
+#include "Platform/Pico/Robot/Encoder.h"
+#include "Platform/Pico/Robot/IMU.h"
+#include "Platform/Pico/Robot/Motor.h"
+#include "Platform/Pico/Robot/Robot.h"
+#include "Platform/Pico/Robot/Sensors.h"
+#include "Platform/Pico/Robot/ToF.h"
 
-#include "PathUtils.h"
+#include "Navigation/PathUtils.h"
 #include "pico/stdlib.h"
 
 // -------------------------

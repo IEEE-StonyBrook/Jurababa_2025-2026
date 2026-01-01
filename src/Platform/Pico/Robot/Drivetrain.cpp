@@ -1,4 +1,4 @@
-#include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
+#include "Platform/Pico/Robot/Drivetrain.h"
 
 Drivetrain::Drivetrain(Motor* lMotor, Motor* rMotor, Encoder* lEncoder, Encoder* rEncoder)
     : leftMotor(lMotor), rightMotor(rMotor), leftEncoder(lEncoder), rightEncoder(rEncoder)

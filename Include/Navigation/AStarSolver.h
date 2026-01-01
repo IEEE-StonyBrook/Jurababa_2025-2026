@@ -6,9 +6,9 @@
 #include <limits>
 #include <queue>
 
-#include "../Common/LogSystem.h"
-#include "../Navigation/PathConverter.h"
-#include "../Navigation/Diagonalizer.h"
+#include "Common/LogSystem.h"
+#include "Navigation/PathConverter.h"
+#include "Navigation/Diagonalizer.h"
 
 class AStarSolver
 {

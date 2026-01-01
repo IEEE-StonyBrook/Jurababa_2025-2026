@@ -7,10 +7,10 @@
 #include <unordered_set>
 #include <vector>
 
-#include "../Common/LogSystem.h"
-#include "../Maze/InternalMouse.h"
-#include "../Maze/MazeGraph.h"
-#include "../Platform/IAPIInterface.h"
+#include "Common/LogSystem.h"
+#include "Maze/InternalMouse.h"
+#include "Maze/MazeGraph.h"
+#include "Platform/IAPIInterface.h"
 
 /**
  * @class FrontierBased

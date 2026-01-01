@@ -4,8 +4,8 @@
 #include <cmath>
 #include <cstdint>
 
-#include "../../Include/Common/LogSystem.h"
-#include "../Config.h"
+#include "Common/LogSystem.h"
+#include "Platform/Pico/Config.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/uart.h"

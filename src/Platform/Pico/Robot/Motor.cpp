@@ -1,4 +1,4 @@
-#include "../../../Include/Platform/Pico/Robot/Motor.h"
+#include "Platform/Pico/Robot/Motor.h"
 
 Motor::Motor(int gpioMotorPinOne, int gpioMotorPinTwo, bool invertDirection)
     : gpioMotorPinOne(gpioMotorPinOne), gpioMotorPinTwo(gpioMotorPinTwo),

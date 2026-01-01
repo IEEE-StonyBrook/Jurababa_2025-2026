@@ -1,4 +1,4 @@
-#include "../../../Include/Platform/Pico/API.h"
+#include "Platform/Pico/API.h"
 
 API::API(InternalMouse* internalMouse) : internalMouse(internalMouse), runOnSimulator(false)
 {

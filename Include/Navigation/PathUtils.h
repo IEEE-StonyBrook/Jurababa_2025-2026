@@ -1,9 +1,9 @@
 #ifndef PATHUTILS_H
 #define PATHUTILS_H
 
-#include "../Include/Maze/InternalMouse.h"
-#include "../Include/Navigation/AStarSolver.h"
-#include "../Include/Platform/IAPIInterface.h"
+#include "Maze/InternalMouse.h"
+#include "Navigation/AStarSolver.h"
+#include "Platform/IAPIInterface.h"
 
 void interpretLFRPath(IAPIInterface* apiPtr, std::string lfrPath);
 bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,

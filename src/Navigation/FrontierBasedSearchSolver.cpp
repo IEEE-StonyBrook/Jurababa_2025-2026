@@ -1,6 +1,6 @@
-#include "../../Include/Navigation/FrontierBasedSearchSolver.h"
+#include "Navigation/FrontierBasedSearchSolver.h"
 
-#include "../PathUtils.h"
+#include "Navigation/PathUtils.h"
 
 /**
  * @brief Explores the maze using the Frontier-Based algorithm.
