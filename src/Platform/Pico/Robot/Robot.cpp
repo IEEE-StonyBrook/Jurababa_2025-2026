@@ -6,28 +6,14 @@
 #include "Platform/Pico/Robot/Sensors.h"
 
 Robot::Robot(Drivetrain* drivetrain, Sensors* sensors)
-    : drivetrain(drivetrain),
-      sensors(sensors),
-      yawPID(),
-      leftWheelPID(),
-      rightWheelPID(),
-      // Load configuration from Config.h
-      yawToleranceDeg(ROBOT_YAW_TOLERANCE_DEG),
-      maxDuty(ROBOT_MAX_DUTY),
-      maxDutySlewPerSec(ROBOT_MAX_DUTY_SLEW_PER_SEC),
-      maxWheelSpeedMMps(ROBOT_MAX_WHEEL_SPEED_MMPS),
-      maxYawDiffMMps(ROBOT_MAX_YAW_DIFF_MMPS),
-      maxAngularVelDegps(ROBOT_MAX_ANGULAR_VEL_DEGPS),
-      minCruiseVelocityMMps(ROBOT_MIN_CRUISE_VELOCITY_MMPS),
-      finalApproachSpeedMMps(ROBOT_FINAL_APPROACH_SPEED_MMPS),
-      maxBaseAccelMMps2(ROBOT_BASE_ACCEL_MMPS2)
+    : drivetrain(drivetrain), sensors(sensors), yawPID(), leftWheelPID(), rightWheelPID()
 {
     // Configure yaw PID (output is wheel speed differential in mm/s)
     yawPID.setGains(YAW_KP, YAW_KI, YAW_KD);
-    yawPID.setOutputLimit(maxYawDiffMMps);
+    yawPID.setOutputLimit(ROBOT_MAX_YAW_DIFF_MMPS);
     yawPID.setDeadband(0.1f);
     yawPID.setDerivativeFilterAlpha(0.9f);
-    yawPID.setIntegralLimit(maxYawDiffMMps * 0.2f);
+    yawPID.setIntegralLimit(ROBOT_MAX_YAW_DIFF_MMPS * 0.2f);
 
     // Configure wheel velocity PIDs (output is duty cycle correction)
     leftWheelPID.setGains(LEFT_WHEEL_KP, LEFT_WHEEL_KI, LEFT_WHEEL_KD);
@@ -166,7 +152,7 @@ bool Robot::isMotionDone() const
 
 float Robot::applySlew(float cmd, float& prevCmd, float dt)
 {
-    float maxDelta = maxDutySlewPerSec * dt;
+    float maxDelta = ROBOT_MAX_DUTY_SLEW_PER_SEC * dt;
 
     float delta = cmd - prevCmd;
     if (delta > maxDelta)
@@ -180,8 +166,8 @@ float Robot::applySlew(float cmd, float& prevCmd, float dt)
 
 void Robot::setWheelVelocityTargetsMMps(float vLeftMMps, float vRightMMps)
 {
-    targetLeftMMps  = RobotUtils::clampAbs(vLeftMMps, maxWheelSpeedMMps);
-    targetRightMMps = RobotUtils::clampAbs(vRightMMps, maxWheelSpeedMMps);
+    targetLeftMMps  = RobotUtils::clampAbs(vLeftMMps, ROBOT_MAX_WHEEL_SPEED_MMPS);
+    targetRightMMps = RobotUtils::clampAbs(vRightMMps, ROBOT_MAX_WHEEL_SPEED_MMPS);
 }
 
 float Robot::rampToward(float desired, float current, float maxDelta)
@@ -198,7 +184,7 @@ float Robot::applyYawProfiling(float dt)
 {
     // Profile yaw setpoint toward final target (prevents sudden turns)
     float yawToGoal  = RobotUtils::wrapAngle180(targetYawDeg - currentYawSetpoint);
-    float maxStepYaw = maxAngularVelDegps * dt;
+    float maxStepYaw = ROBOT_MAX_ANGULAR_VEL_DEGPS * dt;
 
     currentYawSetpoint += RobotUtils::clampAbs(yawToGoal, maxStepYaw);
     currentYawSetpoint = RobotUtils::wrapAngle180(currentYawSetpoint);
@@ -227,13 +213,13 @@ float Robot::calculateYawCorrection(float yawError, float dt)
     }
 
     // Clamp differential to safe limits
-    return RobotUtils::clampAbs(vDiffMMps, maxYawDiffMMps);
+    return RobotUtils::clampAbs(vDiffMMps, ROBOT_MAX_YAW_DIFF_MMPS);
 }
 
 void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
 {
     // Step 1: Ramp base velocity smoothly toward target
-    vBaseCmdMMps = rampToward(vBaseMMps, vBaseCmdMMps, maxBaseAccelMMps2 * dt);
+    vBaseCmdMMps = rampToward(vBaseMMps, vBaseCmdMMps, ROBOT_BASE_ACCEL_MMPS2 * dt);
 
     // Step 2: Profile yaw and calculate error
     float yawError = applyYawProfiling(dt);
@@ -269,8 +255,8 @@ void Robot::runWheelVelocityControl(float dt)
     float rightDuty = ffRight + fbRight;
 
     // Clamp to safe duty cycle limits
-    leftDuty  = RobotUtils::clampAbs(leftDuty, maxDuty);
-    rightDuty = RobotUtils::clampAbs(rightDuty, maxDuty);
+    leftDuty  = RobotUtils::clampAbs(leftDuty, ROBOT_MAX_DUTY);
+    rightDuty = RobotUtils::clampAbs(rightDuty, ROBOT_MAX_DUTY);
 
     // Apply slew rate limiting to prevent sudden changes
     leftDuty  = applySlew(leftDuty, prevLeftDuty, dt);
@@ -349,7 +335,7 @@ float Robot::calculateTargetVelocityForDistance(float remaining, float vActual)
 {
     // Calculate stopping distance from minimum cruise speed to zero
     float stoppingDistFromMin = RobotUtils::calculateStoppingDistance(
-        minCruiseVelocityMMps, 0.0f, maxBaseAccelMMps2
+        ROBOT_MIN_CRUISE_VELOCITY_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2
     );
 
     float vBase;
@@ -359,7 +345,7 @@ float Robot::calculateTargetVelocityForDistance(float remaining, float vActual)
         // Phase 1: Far from target - decelerate to minimum cruise speed
         // Physics: Can travel at speed that allows stopping at the transition point
         vBase = RobotUtils::calculateMaxVelocityForDistance(
-            remaining - stoppingDistFromMin, maxBaseAccelMMps2, minCruiseVelocityMMps
+            remaining - stoppingDistFromMin, ROBOT_BASE_ACCEL_MMPS2, ROBOT_MIN_CRUISE_VELOCITY_MMPS
         );
         vBase = std::min(targetForwardMMps, vBase);
     }
@@ -367,13 +353,13 @@ float Robot::calculateTargetVelocityForDistance(float remaining, float vActual)
     {
         // Phase 2: Close to target - decelerate from minimum cruise to final approach speed
         vBase = RobotUtils::calculateMaxVelocityForDistance(
-            remaining, maxBaseAccelMMps2, 0.0f
+            remaining, ROBOT_BASE_ACCEL_MMPS2, 0.0f
         );
 
         // Enforce minimum final approach speed to prevent stalling
-        if (vBase < finalApproachSpeedMMps)
+        if (vBase < ROBOT_FINAL_APPROACH_SPEED_MMPS)
         {
-            vBase = finalApproachSpeedMMps;
+            vBase = ROBOT_FINAL_APPROACH_SPEED_MMPS;
         }
     }
 
@@ -411,7 +397,7 @@ void Robot::handleTurnInPlaceMode(float dt)
     }
 
     // Motion is done when both position and angular velocity criteria are met
-    bool positionReached = std::fabs(yawError) <= yawToleranceDeg;
+    bool positionReached = std::fabs(yawError) <= ROBOT_YAW_TOLERANCE_DEG;
     bool isStable = std::fabs(angularVel) <= ROBOT_TURN_STABILITY_DEGPS;
 
     if (positionReached && isStable)
@@ -485,44 +471,45 @@ void Robot::setWheelGains(float kp, float ki, float kd)
 
 void Robot::setMaxDuty(float maxDuty)
 {
-    this->maxDuty = (maxDuty < 0.0f) ? 0.0f : ((maxDuty > 1.0f) ? 1.0f : maxDuty);
-    leftWheelPID.setOutputLimit(this->maxDuty);
-    rightWheelPID.setOutputLimit(this->maxDuty);
+    // Clamp and apply to PID controllers
+    maxDuty = (maxDuty < 0.0f) ? 0.0f : ((maxDuty > 1.0f) ? 1.0f : maxDuty);
+    leftWheelPID.setOutputLimit(maxDuty);
+    rightWheelPID.setOutputLimit(maxDuty);
 }
 
 void Robot::setMaxDutySlewPerSec(float maxDutyChangePerSec)
 {
-    maxDutySlewPerSec = (maxDutyChangePerSec < 0.0f) ? 0.0f : maxDutyChangePerSec;
+    // This setter is deprecated - modify ROBOT_MAX_DUTY_SLEW_PER_SEC in Config.h instead
+    (void)maxDutyChangePerSec;
 }
 
 void Robot::setMaxWheelSpeedMMps(float maxWheelSpeedMMps)
 {
-    this->maxWheelSpeedMMps = (maxWheelSpeedMMps < 0.0f) ? 0.0f : maxWheelSpeedMMps;
+    // This setter is deprecated - modify ROBOT_MAX_WHEEL_SPEED_MMPS in Config.h instead
+    (void)maxWheelSpeedMMps;
 }
 
 void Robot::setMaxYawDiffMMps(float maxYawDiffMMps)
 {
-    this->maxYawDiffMMps = (maxYawDiffMMps < 0.0f) ? 0.0f : maxYawDiffMMps;
-    yawPID.setOutputLimit(this->maxYawDiffMMps);
+    // Clamp and apply to yaw PID
+    maxYawDiffMMps = (maxYawDiffMMps < 0.0f) ? 0.0f : maxYawDiffMMps;
+    yawPID.setOutputLimit(maxYawDiffMMps);
 }
 
 void Robot::setYawToleranceDeg(float tolDeg)
 {
-    yawToleranceDeg = (tolDeg < 0.0f) ? 0.0f : tolDeg;
+    // This setter is deprecated - modify ROBOT_YAW_TOLERANCE_DEG in Config.h instead
+    (void)tolDeg;
 }
 
 void Robot::setSlowdownDistMM(float slowdownDistMM)
 {
-    this->slowdownDistMM = (slowdownDistMM < 1.0f) ? 1.0f : slowdownDistMM;
+    // This setter is deprecated - legacy parameter no longer used
+    (void)slowdownDistMM;
 }
 
 void Robot::setMinSlowdownScale(float minScale)
 {
-    if (minScale < 0.0f)
-        minScale = 0.0f;
-    if (minScale > 1.0f)
-        minScale = 1.0f;
-    minSlowdownScale = minScale;
+    // This setter is deprecated - legacy parameter no longer used
+    (void)minScale;
 }
-
-// Note: wrapAngle180(), snapTo45Degrees(), and clampAbs() are now in RobotUtils.h

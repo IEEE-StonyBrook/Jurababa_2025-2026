@@ -164,23 +164,9 @@ class Robot
     float driveStartRightDistMM = 0.0f;
     float driveTargetDistMM     = 0.0f;
 
-    // ============= Configuration (loaded from Config.h) ============= //
-    float yawToleranceDeg;
-    float maxDuty;
-    float maxDutySlewPerSec;
-    float maxWheelSpeedMMps;
-    float maxYawDiffMMps;
-    float maxAngularVelDegps;
-    float minCruiseVelocityMMps;
-    float finalApproachSpeedMMps;
-    float maxBaseAccelMMps2;
-
     // ============= Runtime State ============= //
     float prevLeftDuty  = 0.0f;
     float prevRightDuty = 0.0f;
-
-    float slowdownDistMM   = 80.0f;  // Legacy parameter (unused in new velocity calculation)
-    float minSlowdownScale = 0.2f;   // Legacy parameter (unused in new velocity calculation)
 
     float vBaseCmdMMps       = 0.0f;  // Ramped base velocity command
     float currentYawSetpoint = 0.0f;  // Profiled yaw target (moves smoothly toward targetYawDeg)
