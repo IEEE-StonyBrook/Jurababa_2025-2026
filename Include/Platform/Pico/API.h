@@ -8,54 +8,57 @@
 #include <string>
 #include <vector>
 
+#include "../IAPIInterface.h"
 #include "../../../Include/Platform/Pico/Config.h"
 #include "../../Maze/InternalMouse.h"
 #include "CommandHub.h"
 #include "Robot/Drivetrain.h"
 
-class API
+class API : public IAPIInterface
 {
   public:
     API(InternalMouse* internalMouse);
 
-    // Maze dimensions.
-    int mazeWidth();
-    int mazeHeight();
+    // Maze dimensions (override from IAPIInterface).
+    int mazeWidth() override;
+    int mazeHeight() override;
 
-    // Wall queries.
-    bool wallLeft();
-    bool wallFront();
-    bool wallRight();
+    // Wall queries (override from IAPIInterface).
+    bool wallLeft() override;
+    bool wallFront() override;
+    bool wallRight() override;
 
-    // Movement.
-    void moveForwardHalf();
-    void moveForward();
-    void moveForward(int steps);
-    void turnLeft45();
-    void turnLeft90();
-    void turnRight45();
-    void turnRight90();
-    void goToCenterFromEdge();
-    void turn(int degrees);
+    // Movement (override from IAPIInterface).
+    void moveForwardHalf() override;
+    void moveForward() override;
+    void moveForward(int steps) override;
+    void turnLeft45() override;
+    void turnLeft90() override;
+    void turnRight45() override;
+    void turnRight90() override;
+    void turn(int degrees) override;
 
-    // Execute command sequence like "L90#F5#R45".
-    void executeSequence(const std::string& sequence);
+    // Execute command sequence like "L90#F5#R45" (override from IAPIInterface).
+    void executeSequence(const std::string& sequence) override;
 
-    // Maze walls.
-    void setWall(int x, int y, const std::string& dir);
-    void clearWall(int x, int y, const std::string& dir);
+    // Maze walls (override from IAPIInterface).
+    void setWall(int x, int y, const std::string& dir) override;
+    void clearWall(int x, int y, const std::string& dir) override;
 
-    // Cell coloring and labels.
-    void setColor(int x, int y, char color);
-    void clearColor(int x, int y);
-    void clearAllColor();
-    void setText(int x, int y, const std::string& text);
-    void clearText(int x, int y);
-    void clearAllText();
+    // Cell coloring and labels (override from IAPIInterface).
+    void setColor(int x, int y, char color) override;
+    void clearColor(int x, int y) override;
+    void clearAllColor() override;
+    void setText(int x, int y, const std::string& text) override;
+    void clearText(int x, int y) override;
+    void clearAllText() override;
 
-    // Setup and print.
-    void        setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells);
-    void        printMaze();
+    // Setup and print (override from IAPIInterface).
+    void setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells) override;
+    void printMaze() override;
+
+    // Pico-specific methods (not in interface).
+    void        goToCenterFromEdge();
     std::string printMazeRow(int row);
 
     // Simulator IO.

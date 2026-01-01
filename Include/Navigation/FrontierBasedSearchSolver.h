@@ -10,7 +10,7 @@
 #include "../Common/LogSystem.h"
 #include "../Maze/InternalMouse.h"
 #include "../Maze/MazeGraph.h"
-#include "../Platform/Simulator/API.h"
+#include "../Platform/IAPIInterface.h"
 
 /**
  * @class FrontierBased
@@ -28,11 +28,11 @@ class FrontierBased {
    *
    * @param mouse Reference to the InternalMouse instance representing the
    * mouse's state.
-   * @param api Reference to the API instance for interacting with the maze
-   * display.
+   * @param api Reference to the IAPIInterface instance for interacting with the maze
+   * display (platform-agnostic).
    * @param diagonalsAllowed Whether diagonal movements are permitted.
    */
-  static void explore(InternalMouse& mouse, API_SIMULATOR& api, bool diagonalsAllowed);
+  static void explore(InternalMouse& mouse, IAPIInterface& api, bool diagonalsAllowed);
 
  private:
   /**

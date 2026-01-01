@@ -3,9 +3,10 @@
 
 #include <string>
 
+#include "../IAPIInterface.h"
 #include "../../Maze/InternalMouse.h"
 
-class API_SIMULATOR
+class API_SIMULATOR : public IAPIInterface
 {
   public:
     /**
@@ -22,79 +23,79 @@ class API_SIMULATOR
      *
      * @return The width of the maze as an integer.
      */
-    int mazeWidth();
+    int mazeWidth() override;
 
     /**
      * Gets the height of the maze.
      *
      * @return The height of the maze as an integer.
      */
-    int mazeHeight();
+    int mazeHeight() override;
 
     /**
      * Checks if there is a wall to the left of the mouse.
      *
      * @return True if there is a wall to the left, false otherwise.
      */
-    bool wallLeft();
+    bool wallLeft() override;
 
     /**
      * Checks if there is a wall in front of the mouse.
      *
      * @return True if there is a wall in front, false otherwise.
      */
-    bool wallFront();
+    bool wallFront() override;
 
     /**
      * Checks if there is a wall to the right of the mouse.
      *
      * @return True if there is a wall to the right, false otherwise.
      */
-    bool wallRight();
+    bool wallRight() override;
 
     /**
      * Moves the mouse forward by half a cell.
      */
-    void moveForwardHalf();
+    void moveForwardHalf() override;
 
     /**
      * Moves the mouse forward by one cell.
      */
-    void moveForward();
+    void moveForward() override;
 
     /**
      * Moves the mouse forward by a specified number of steps.
      *
      * @param steps The number of steps to move forward.
      */
-    void moveForward(int steps);
+    void moveForward(int steps) override;
 
     /**
      * Turns the mouse left by 45 degrees.
      */
-    void turnLeft45();
+    void turnLeft45() override;
 
     /**
      * Turns the mouse left by 90 degrees.
      */
-    void turnLeft90();
+    void turnLeft90() override;
 
     /**
      * Turns the mouse right by 45 degrees.
      */
-    void turnRight45();
+    void turnRight45() override;
 
     /**
      * Turns the mouse right by 90 degrees.
      */
-    void turnRight90();
+    void turnRight90() override;
 
     /**
      * Turns the mouse by a specified angle divisible by 45 degrees.
      *
      * @param degreesDivisibleBy45 The angle to turn, must be divisible by 45.
      */
-    void turn(int degreesDivisibleBy45);
+    void turn(int degreesDivisibleBy45) override;
 
     /**
      * Sets a wall at the specified coordinates and direction.
@@ -103,7 +104,7 @@ class API_SIMULATOR
      * @param y The y-coordinate of the cell.
      * @param direction The direction of the wall (e.g., "N", "E", "S", "W").
      */
-    void setWall(int x, int y, const std::string& direction);
+    void setWall(int x, int y, const std::string& direction) override;
 
     /**
      * Clears a wall at the specified coordinates and direction.
@@ -112,7 +113,7 @@ class API_SIMULATOR
      * @param y The y-coordinate of the cell.
      * @param direction The direction of the wall (e.g., "N", "E", "S", "W").
      */
-    void clearWall(int x, int y, const std::string& direction);
+    void clearWall(int x, int y, const std::string& direction) override;
 
     /**
      * Sets the color of a cell at the specified coordinates.
@@ -121,7 +122,7 @@ class API_SIMULATOR
      * @param y The y-coordinate of the cell.
      * @param color The color to set (e.g., 'R', 'G', 'B').
      */
-    void setColor(int x, int y, char color);
+    void setColor(int x, int y, char color) override;
 
     /**
      * Clears the color of a cell at the specified coordinates.
@@ -129,12 +130,12 @@ class API_SIMULATOR
      * @param x The x-coordinate of the cell.
      * @param y The y-coordinate of the cell.
      */
-    void clearColor(int x, int y);
+    void clearColor(int x, int y) override;
 
     /**
      * Clears the color of all cells in the maze.
      */
-    void clearAllColor();
+    void clearAllColor() override;
 
     /**
      * Sets the text of a cell at the specified coordinates.
@@ -143,7 +144,7 @@ class API_SIMULATOR
      * @param y The y-coordinate of the cell.
      * @param text The text to set.
      */
-    void setText(int x, int y, const std::string& text);
+    void setText(int x, int y, const std::string& text) override;
 
     /**
      * Clears the text of a cell at the specified coordinates.
@@ -151,19 +152,20 @@ class API_SIMULATOR
      * @param x The x-coordinate of the cell.
      * @param y The y-coordinate of the cell.
      */
-    void clearText(int x, int y);
+    void clearText(int x, int y) override;
 
     /**
      * Clears the text of all cells in the maze.
      */
-    void clearAllText();
+    void clearAllText() override;
 
-    void setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells);
-    void printMaze();
+    void setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells) override;
+    void printMaze() override;
+    void executeSequence(const std::string& seq) override;
+
     bool runOnSimulator;
 
-  void executeSequence(const std::string& seq);
- private:
+  private:
   InternalMouse* internalMouse;
 
     std::string getSimulatorResponse(std::string commandUsed);

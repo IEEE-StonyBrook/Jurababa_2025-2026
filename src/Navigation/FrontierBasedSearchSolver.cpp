@@ -7,11 +7,11 @@
  *
  * @param mouse Reference to the InternalMouse instance representing the mouse's
  * state.
- * @param api Reference to the API instance for interacting with the maze
- * display.
+ * @param api Reference to the IAPIInterface instance for interacting with the maze
+ * display (platform-agnostic).
  * @param diagonalsAllowed Whether diagonal movements are permitted.
  */
-void FrontierBased::explore(InternalMouse& mouse, API_SIMULATOR& api,
+void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api,
                             bool diagonalsAllowed) {
   std::unordered_set<MazeNode*> frontiers;
   MazeNode* start = mouse.getCurrentRobotNode();

@@ -3,13 +3,13 @@
 
 #include "../Include/Maze/InternalMouse.h"
 #include "../Include/Navigation/AStarSolver.h"
-#include "../Include/Platform/Simulator/API.h"
+#include "../Include/Platform/IAPIInterface.h"
 
-void interpretLFRPath(API_SIMULATOR* apiPtr, std::string lfrPath);
-bool traversePathIteratively(API_SIMULATOR* apiPtr, InternalMouse* mouse,
+void interpretLFRPath(IAPIInterface* apiPtr, std::string lfrPath);
+bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
                              std::vector<std::array<int, 2>> goalCells, bool diagonalsAllowed,
                              bool allExplored, bool avoidGoalCells);
 void setAllExplored(InternalMouse* mouse);
-void detectWalls(API_SIMULATOR& api, InternalMouse& internalMouse);
+void detectWalls(IAPIInterface& api, InternalMouse& internalMouse);
 
 #endif

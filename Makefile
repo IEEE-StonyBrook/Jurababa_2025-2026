@@ -8,10 +8,10 @@ OUT = $(OUTDIR)/Micromouse.out
 $(shell mkdir -p $(OUTDIR))
 
 # Source file groups
-VIRTUAL_SRCS = Src/Maze/InternalMouse.cpp Src/Maze/MazeGraph.cpp Src/Maze/MazeNode.cpp
-UTILS_SRC = Src/Common/LogSystem.cpp
-SOLVER_SRCS = Src/Navigation/AStarSolver.cpp Src/Navigation/PathConverter.cpp Src/Navigation/Diagonalizer.cpp Src/Navigation/FrontierBasedSearchSolver.cpp
-MAIN_SRCS = Src/Platform/Simulator/API.cpp Src/Main_Simulator.cpp Src/PathUtils.cpp
+VIRTUAL_SRCS = src/Maze/InternalMouse.cpp src/Maze/MazeGraph.cpp src/Maze/MazeNode.cpp
+UTILS_SRC = src/Common/LogSystem.cpp
+SOLVER_SRCS = src/Navigation/AStarSolver.cpp src/Navigation/PathConverter.cpp src/Navigation/Diagonalizer.cpp src/Navigation/FrontierBasedSearchSolver.cpp
+MAIN_SRCS = src/Platform/Simulator/API.cpp src/Main_Simulator.cpp src/PathUtils.cpp
 
 # Combine all sources
 SRCS = $(VIRTUAL_SRCS) $(UTILS_SRC) $(SOLVER_SRCS) $(MAIN_SRCS)
