@@ -7,6 +7,7 @@
 #include "Common/LogSystem.h"
 #include "Platform/Pico/Robot/Encoder.h"
 #include "Platform/Pico/Robot/Motor.h"
+#include "Platform/Pico/Robot/RobotUtils.h"
 
 class Drivetrain
 {
@@ -17,20 +18,42 @@ class Drivetrain
     // Reset encoder counts and internal state
     void reset();
 
-    // Returns total distance traveled by a motor in millimeters
-    // Side must be "left" or "right"
+    // ============= Type-Safe API (Preferred) ============= //
+
+    /**
+     * @brief Returns total distance traveled by a motor (type-safe)
+     * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
+     * @return Distance in millimeters
+     */
+    float getMotorDistanceMM(WheelSide side);
+
+    /**
+     * @brief Returns motor velocity (type-safe)
+     * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
+     * @return Velocity in millimeters per second
+     */
+    float getMotorVelocityMMps(WheelSide side);
+
+    /**
+     * @brief Calculates feedforward duty for target velocity (type-safe)
+     * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
+     * @param wheelSpeed Target velocity in mm/s
+     * @return Feedforward duty cycle [-1.0, 1.0]
+     */
+    float getFeedforward(WheelSide side, float wheelSpeed);
+
+    // ============= Legacy String API (Deprecated) ============= //
+    // These overloads maintain backward compatibility
+    // TODO: Remove once all calling code is updated
+
     float getMotorDistanceMM(std::string side);
+    float getMotorVelocityMMps(std::string side);
+    float getFeedforward(std::string side, float wheelSpeed);
+
+    // ============= Common Operations ============= //
 
     // Updates wheel velocities; call every control tick with dt in seconds
     void updateVelocities(float dt);
-
-    // Returns motor velocity in millimeters per second
-    // Side must be "left" or "right"
-    float getMotorVelocityMMps(std::string side);
-
-    // Feedforward term for motor control
-    // Converts desired wheel speed into base motor command
-    float getFeedforward(std::string side, float wheelSpeed);
 
     // Sets duty cycles for both motors in range [-1.0, 1.0]
     void setDuty(float leftDuty, float rightDuty);

@@ -1,20 +1,35 @@
 #include "Platform/Pico/Robot/Robot.h"
+#include "Common/LogSystem.h"
 #include "Common/PIDController.h"
 #include "Platform/Pico/Config.h"
 #include "Platform/Pico/Robot/Drivetrain.h"
 #include "Platform/Pico/Robot/Sensors.h"
 
 Robot::Robot(Drivetrain* drivetrain, Sensors* sensors)
-    : drivetrain(drivetrain), sensors(sensors), yawPID(), leftWheelPID(), rightWheelPID()
+    : drivetrain(drivetrain),
+      sensors(sensors),
+      yawPID(),
+      leftWheelPID(),
+      rightWheelPID(),
+      // Load configuration from Config.h
+      yawToleranceDeg(ROBOT_YAW_TOLERANCE_DEG),
+      maxDuty(ROBOT_MAX_DUTY),
+      maxDutySlewPerSec(ROBOT_MAX_DUTY_SLEW_PER_SEC),
+      maxWheelSpeedMMps(ROBOT_MAX_WHEEL_SPEED_MMPS),
+      maxYawDiffMMps(ROBOT_MAX_YAW_DIFF_MMPS),
+      maxAngularVelDegps(ROBOT_MAX_ANGULAR_VEL_DEGPS),
+      minCruiseVelocityMMps(ROBOT_MIN_CRUISE_VELOCITY_MMPS),
+      finalApproachSpeedMMps(ROBOT_FINAL_APPROACH_SPEED_MMPS),
+      maxBaseAccelMMps2(ROBOT_BASE_ACCEL_MMPS2)
 {
-    // Yaw PID: Output is wheel speed differential (mm/s)
+    // Configure yaw PID (output is wheel speed differential in mm/s)
     yawPID.setGains(YAW_KP, YAW_KI, YAW_KD);
     yawPID.setOutputLimit(maxYawDiffMMps);
     yawPID.setDeadband(0.1f);
     yawPID.setDerivativeFilterAlpha(0.9f);
     yawPID.setIntegralLimit(maxYawDiffMMps * 0.2f);
 
-    // Wheel PIDs: Output is duty correction
+    // Configure wheel velocity PIDs (output is duty cycle correction)
     leftWheelPID.setGains(LEFT_WHEEL_KP, LEFT_WHEEL_KI, LEFT_WHEEL_KD);
     rightWheelPID.setGains(RIGHT_WHEEL_KP, RIGHT_WHEEL_KI, RIGHT_WHEEL_KD);
     leftWheelPID.setOutputLimit(1.0f);
@@ -82,7 +97,7 @@ void Robot::driveStraightMMps(float forwardMMps, float holdYawDeg)
     mode = Mode::DriveStraight;
 
     targetForwardMMps = forwardMMps;
-    targetYawDeg      = wrapDeg(holdYawDeg);
+    targetYawDeg      = RobotUtils::wrapAngle180(holdYawDeg);
 
     yawPID.reset();
     leftWheelPID.reset();
@@ -98,10 +113,12 @@ void Robot::driveDistanceMM(float distanceMM, float forwardMMps)
 
     mode = Mode::DriveDistance;
 
-    targetYawDeg = snapToNearest45Deg(sensors->getYaw());
+    // Snap to nearest 45-degree heading for maze alignment
+    targetYawDeg = RobotUtils::snapTo45Degrees(sensors->getYaw());
 
-    driveStartLeftDistMM  = drivetrain->getMotorDistanceMM("left");
-    driveStartRightDistMM = drivetrain->getMotorDistanceMM("right");
+    // Record starting position for distance tracking (using type-safe API)
+    driveStartLeftDistMM  = drivetrain->getMotorDistanceMM(WheelSide::LEFT);
+    driveStartRightDistMM = drivetrain->getMotorDistanceMM(WheelSide::RIGHT);
     driveTargetDistMM     = distanceMM;
 
     targetForwardMMps = forwardMMps;
@@ -119,9 +136,9 @@ void Robot::turnToYawDeg(float targetYawDeg)
     motionDone = false;
 
     targetForwardMMps  = 0.0f;
-    this->targetYawDeg = wrapDeg(targetYawDeg);
+    this->targetYawDeg = RobotUtils::wrapAngle180(targetYawDeg);
 
-    // If you don't do this, the robot will "snap" to 0 before turning
+    // Initialize yaw setpoint to current position to avoid sudden snap
     this->currentYawSetpoint = sensors->getYaw();
 
     yawPID.reset();
@@ -137,9 +154,9 @@ void Robot::turn45Degrees(std::string side, int times)
     float delta = (side == "left") ? -45.0f : +45.0f;
 
     float currYaw = sensors->getYaw();
-    float desired = wrapDeg(currYaw + delta * static_cast<float>(times));
+    float desired = RobotUtils::wrapAngle180(currYaw + delta * static_cast<float>(times));
 
-    turnToYawDeg(snapToNearest45Deg(desired));
+    turnToYawDeg(RobotUtils::snapTo45Degrees(desired));
 }
 
 bool Robot::isMotionDone() const
@@ -163,8 +180,8 @@ float Robot::applySlew(float cmd, float& prevCmd, float dt)
 
 void Robot::setWheelVelocityTargetsMMps(float vLeftMMps, float vRightMMps)
 {
-    targetLeftMMps  = clampAbs(vLeftMMps, maxWheelSpeedMMps);
-    targetRightMMps = clampAbs(vRightMMps, maxWheelSpeedMMps);
+    targetLeftMMps  = RobotUtils::clampAbs(vLeftMMps, maxWheelSpeedMMps);
+    targetRightMMps = RobotUtils::clampAbs(vRightMMps, maxWheelSpeedMMps);
 }
 
 float Robot::rampToward(float desired, float current, float maxDelta)
@@ -177,81 +194,89 @@ float Robot::rampToward(float desired, float current, float maxDelta)
     return current + diff;
 }
 
-void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
+float Robot::applyYawProfiling(float dt)
 {
-    // 1. Linear Velocity Profiling (Already good)
-    vBaseCmdMMps = rampToward(vBaseMMps, vBaseCmdMMps, maxBaseAccelMMps2 * dt);
-
-    // 2. Yaw Profiling: Move the setpoint toward the final targetYawDeg
-    float yawToGoal  = wrapDeg(targetYawDeg - currentYawSetpoint);
+    // Profile yaw setpoint toward final target (prevents sudden turns)
+    float yawToGoal  = RobotUtils::wrapAngle180(targetYawDeg - currentYawSetpoint);
     float maxStepYaw = maxAngularVelDegps * dt;
 
-    // Increment the setpoint toward the final goal
-    currentYawSetpoint += clampAbs(yawToGoal, maxStepYaw);
-    currentYawSetpoint = wrapDeg(currentYawSetpoint);
+    currentYawSetpoint += RobotUtils::clampAbs(yawToGoal, maxStepYaw);
+    currentYawSetpoint = RobotUtils::wrapAngle180(currentYawSetpoint);
 
-    // 3. Compute error based on the PROFILE (not the final goal)
+    // Calculate yaw error from profiled setpoint (not final target)
     float actualYaw        = sensors->getYaw();
-    float profiledYawError = wrapDeg(currentYawSetpoint - actualYaw);
+    float profiledYawError = RobotUtils::wrapAngle180(currentYawSetpoint - actualYaw);
 
-    // 4. Run PID
-    float vDiffMMps = yawPID.calculateOutput(profiledYawError, dt);
+    return profiledYawError;
+}
 
-    // Ensure the turn speed is high enough to overcome static friction
-    // but only if there is actually a meaningful error to correct.
-    float minTurnSpeed = 50.0f; // Minimum differential speed for turning
-    if (std::fabs(profiledYawError) > 0.5f)
-    { // If error > 0.5 degrees
-        if (std::fabs(vDiffMMps) < minTurnSpeed && std::fabs(vDiffMMps) > 1.0f)
+float Robot::calculateYawCorrection(float yawError, float dt)
+{
+    // Run PID to get yaw correction (output is wheel speed differential)
+    float vDiffMMps = yawPID.calculateOutput(yawError, dt);
+
+    // Enforce minimum turn speed to overcome static friction
+    // Only apply when error is significant and PID output is non-zero but below threshold
+    if (std::fabs(yawError) > ROBOT_YAW_ERROR_THRESHOLD_DEG)
+    {
+        if (std::fabs(vDiffMMps) < ROBOT_MIN_TURN_SPEED_MMPS && std::fabs(vDiffMMps) > 1.0f)
         {
-            // Apply minimum speed in the direction the PID wants to go
-            vDiffMMps = (vDiffMMps > 0) ? minTurnSpeed : -minTurnSpeed;
+            // Maintain direction but boost to minimum
+            vDiffMMps = (vDiffMMps > 0) ? ROBOT_MIN_TURN_SPEED_MMPS : -ROBOT_MIN_TURN_SPEED_MMPS;
         }
     }
 
-    vDiffMMps = clampAbs(vDiffMMps, maxYawDiffMMps);
+    // Clamp differential to safe limits
+    return RobotUtils::clampAbs(vDiffMMps, maxYawDiffMMps);
+}
 
+void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
+{
+    // Step 1: Ramp base velocity smoothly toward target
+    vBaseCmdMMps = rampToward(vBaseMMps, vBaseCmdMMps, maxBaseAccelMMps2 * dt);
+
+    // Step 2: Profile yaw and calculate error
+    float yawError = applyYawProfiling(dt);
+
+    // Step 3: Calculate yaw correction (PID + minimum speed enforcement)
+    float vDiffMMps = calculateYawCorrection(yawError, dt);
+
+    // Step 4: Convert to individual wheel targets and execute
     setWheelVelocityTargetsMMps(vBaseCmdMMps + vDiffMMps, vBaseCmdMMps - vDiffMMps);
-    // static int ctr = 0;
-    // if ((ctr++ % 25) == 0)
-    // {
-    //     LOG_DEBUG("Velocity Targets | Left: " + std::to_string(vBaseCmdMMps + vDiffMMps) +
-    //               " mm/s | Right: " + std::to_string(vBaseCmdMMps - vDiffMMps) + " mm/s");
-    // }
     runWheelVelocityControl(dt);
 }
 
 void Robot::runWheelVelocityControl(float dt)
 {
-    // Measure wheel speeds once per tick
-    float vL = drivetrain->getMotorVelocityMMps("left");
-    float vR = drivetrain->getMotorVelocityMMps("right");
+    // Measure current wheel velocities (using type-safe API)
+    float vLeft  = drivetrain->getMotorVelocityMMps(WheelSide::LEFT);
+    float vRight = drivetrain->getMotorVelocityMMps(WheelSide::RIGHT);
 
-    // Feedforward (mm/s -> duty) + feedback (PID output in duty)
-    float ffL = drivetrain->getFeedforward("left", targetLeftMMps);
-    float ffR = drivetrain->getFeedforward("right", targetRightMMps);
+    // Calculate feedforward duty from target velocities (using type-safe API)
+    float ffLeft  = drivetrain->getFeedforward(WheelSide::LEFT, targetLeftMMps);
+    float ffRight = drivetrain->getFeedforward(WheelSide::RIGHT, targetRightMMps);
 
-    float eL = targetLeftMMps - vL;
-    float eR = targetRightMMps - vR;
+    // Calculate velocity errors for PID
+    float errorLeft  = targetLeftMMps - vLeft;
+    float errorRight = targetRightMMps - vRight;
 
-    float fbL = leftWheelPID.calculateOutput(eL, dt);
-    float fbR = rightWheelPID.calculateOutput(eR, dt);
+    // Calculate PID corrections (feedback)
+    float fbLeft  = leftWheelPID.calculateOutput(errorLeft, dt);
+    float fbRight = rightWheelPID.calculateOutput(errorRight, dt);
 
-    float leftDuty  = ffL + fbL;
-    float rightDuty = ffR + fbR;
-    // static int ctr       = 0;
-    // if ((ctr++ % 25) == 0)
-    // {
-    //     LOG_DEBUG("Duty Left: " + std::to_string(leftDuty) +
-    //               " | Duty Right: " + std::to_string(rightDuty));
-    // }
+    // Combine feedforward + feedback
+    float leftDuty  = ffLeft + fbLeft;
+    float rightDuty = ffRight + fbRight;
 
-    leftDuty  = clampAbs(leftDuty, maxDuty);
-    rightDuty = clampAbs(rightDuty, maxDuty);
+    // Clamp to safe duty cycle limits
+    leftDuty  = RobotUtils::clampAbs(leftDuty, maxDuty);
+    rightDuty = RobotUtils::clampAbs(rightDuty, maxDuty);
 
+    // Apply slew rate limiting to prevent sudden changes
     leftDuty  = applySlew(leftDuty, prevLeftDuty, dt);
     rightDuty = applySlew(rightDuty, prevRightDuty, dt);
 
+    // Send duty cycles to motors
     drivetrain->setDuty(leftDuty, rightDuty);
 }
 
@@ -295,119 +320,157 @@ void Robot::update(float dt)
         prevMode = mode;
     }
 
+    // Dispatch to appropriate mode handler
     switch (mode)
     {
         case Mode::Idle:
-        {
-            drivetrain->stop();
-            motionDone = true;
-        }
-        break;
+            handleIdleMode(dt);
+            break;
 
         case Mode::TurnInPlace:
-        {
-            // Update the motor targets using the profile logic above
-            commandBaseAndYaw(0.0f, dt);
-
-            float actualYaw  = sensors->getYaw();
-            float yawError   = wrapDeg(targetYawDeg - actualYaw);
-            float angularVel = sensors->getAngularVelocityDegps();
-            static int ctr        = 0;
-            if ((ctr++ % 25) == 0)
-            {
-                LOG_DEBUG("TurnInPlace | TargetYaw: " + std::to_string(targetYawDeg) +
-                          " | ActualYaw: " + std::to_string(actualYaw) +
-                          " | YawError: " + std::to_string(yawError) +
-                          " | AngularVel: " + std::to_string(angularVel));
-            }
-
-            // Condition 1: Are we at the degree?
-            bool positionReached = std::fabs(yawError) <= yawToleranceDeg;
-
-            // Condition 2: Have we stopped swinging?
-            bool isStable = std::fabs(angularVel) <= 3.0f; // 3 deg/s threshold
-
-            if (positionReached && isStable)
-            {
-                motionDone = true;
-                // We keep commandBaseAndYaw running so it "holds" the position
-                // until the mouse decides its next move.
-            }
-        }
-        break;
+            handleTurnInPlaceMode(dt);
+            break;
 
         case Mode::DriveStraight:
-        {
-            commandBaseAndYaw(targetForwardMMps, dt);
-            motionDone = false;
-        }
-        break;
+            handleDriveStraightMode(dt);
+            break;
 
         case Mode::DriveDistance:
-        {
-            float currLeft  = drivetrain->getMotorDistanceMM("left");
-            float currRight = drivetrain->getMotorDistanceMM("right");
-
-            float traveled = (std::fabs(currLeft - driveStartLeftDistMM) +
-                              std::fabs(currRight - driveStartRightDistMM)) /
-                             2.0f;
-
-            float remaining = driveTargetDistMM - traveled;
-
-            // Calculate actual velocity to check if we're nearly stopped
-            float vLeft  = drivetrain->getMotorVelocityMMps("left");
-            float vRight = drivetrain->getMotorVelocityMMps("right");
-            float vActual = (std::fabs(vLeft) + std::fabs(vRight)) / 2.0f;
-
-            // Improved stopping condition: close to target AND moving slowly
-            if (remaining <= 2.0f && vActual < 50.0f)
-            {
-                stop();
-                motionDone = true;
-                break;
-            }
-
-            // Calculate stopping distance from minimum viable speed to zero
-            // v^2 = u^2 + 2as -> s = (v^2 - u^2) / (2a)
-            float stoppingDistFromMin = (minVelocityMMps * minVelocityMMps) / (2.0f * maxBaseAccelMMps2);
-
-            float vBase;
-            if (remaining > stoppingDistFromMin)
-            {
-                // Far from target: use standard deceleration profile
-                // Physics: v = sqrt(2 * a * (remaining - stoppingDistFromMin)) + minVelocity
-                float vMaxPossible = std::sqrt(2.0f * maxBaseAccelMMps2 * (remaining - stoppingDistFromMin)) + minVelocityMMps;
-                vBase = std::min(targetForwardMMps, vMaxPossible);
-            }
-            else
-            {
-                // Close to target: ramp down from minVelocity to near-zero
-                // v = sqrt(2 * a * remaining)
-                float vMaxPossible = std::sqrt(2.0f * maxBaseAccelMMps2 * remaining);
-                vBase = vMaxPossible;
-
-                // Allow going below minimum in final approach
-                if (vBase < 30.0f)
-                {
-                    vBase = 30.0f; // Very low speed for final positioning
-                }
-            }
-
-            static int ctr = 0;
-            if (ctr++ % 25 == 0)
-            {
-                LOG_DEBUG("DriveDistance | Target: " + std::to_string(driveTargetDistMM) +
-                          " mm | Traveled: " + std::to_string(traveled) +
-                          " mm | Remaining: " + std::to_string(remaining) + " mm");
-                LOG_DEBUG("vBase set to " + std::to_string(vBase) + " mm/s | vActual: " + std::to_string(vActual) + " mm/s");
-            }
-
-            commandBaseAndYaw(vBase, dt);
-            motionDone = false;
-        }
-        break;
+            handleDriveDistanceMode(dt);
+            break;
     }
 }
+
+// ============================================================
+// Helper: Calculate Target Velocity for Distance-Based Motion
+// ============================================================
+
+float Robot::calculateTargetVelocityForDistance(float remaining, float vActual)
+{
+    // Calculate stopping distance from minimum cruise speed to zero
+    float stoppingDistFromMin = RobotUtils::calculateStoppingDistance(
+        minCruiseVelocityMMps, 0.0f, maxBaseAccelMMps2
+    );
+
+    float vBase;
+
+    if (remaining > stoppingDistFromMin)
+    {
+        // Phase 1: Far from target - decelerate to minimum cruise speed
+        // Physics: Can travel at speed that allows stopping at the transition point
+        vBase = RobotUtils::calculateMaxVelocityForDistance(
+            remaining - stoppingDistFromMin, maxBaseAccelMMps2, minCruiseVelocityMMps
+        );
+        vBase = std::min(targetForwardMMps, vBase);
+    }
+    else
+    {
+        // Phase 2: Close to target - decelerate from minimum cruise to final approach speed
+        vBase = RobotUtils::calculateMaxVelocityForDistance(
+            remaining, maxBaseAccelMMps2, 0.0f
+        );
+
+        // Enforce minimum final approach speed to prevent stalling
+        if (vBase < finalApproachSpeedMMps)
+        {
+            vBase = finalApproachSpeedMMps;
+        }
+    }
+
+    return vBase;
+}
+
+// ============================================================
+// Mode Handlers
+// ============================================================
+
+void Robot::handleIdleMode(float dt)
+{
+    (void)dt;  // Unused in idle mode
+    drivetrain->stop();
+    motionDone = true;
+}
+
+void Robot::handleTurnInPlaceMode(float dt)
+{
+    // Execute yaw control (base velocity = 0)
+    commandBaseAndYaw(0.0f, dt);
+
+    // Check completion criteria
+    float actualYaw  = sensors->getYaw();
+    float yawError   = RobotUtils::wrapAngle180(targetYawDeg - actualYaw);
+    float angularVel = sensors->getAngularVelocityDegps();
+
+    static int logCounter = 0;
+    if ((logCounter++ % 25) == 0)
+    {
+        LOG_DEBUG("TurnInPlace | TargetYaw: " + std::to_string(targetYawDeg) +
+                  " | ActualYaw: " + std::to_string(actualYaw) +
+                  " | YawError: " + std::to_string(yawError) +
+                  " | AngularVel: " + std::to_string(angularVel));
+    }
+
+    // Motion is done when both position and angular velocity criteria are met
+    bool positionReached = std::fabs(yawError) <= yawToleranceDeg;
+    bool isStable = std::fabs(angularVel) <= ROBOT_TURN_STABILITY_DEGPS;
+
+    if (positionReached && isStable)
+    {
+        motionDone = true;
+        // Continue holding position until next command
+    }
+}
+
+void Robot::handleDriveStraightMode(float dt)
+{
+    commandBaseAndYaw(targetForwardMMps, dt);
+    motionDone = false;  // Continuous mode, never auto-completes
+}
+
+void Robot::handleDriveDistanceMode(float dt)
+{
+    // Measure distance traveled (using type-safe API)
+    float currLeft  = drivetrain->getMotorDistanceMM(WheelSide::LEFT);
+    float currRight = drivetrain->getMotorDistanceMM(WheelSide::RIGHT);
+
+    float traveled = (std::fabs(currLeft - driveStartLeftDistMM) +
+                      std::fabs(currRight - driveStartRightDistMM)) / 2.0f;
+
+    float remaining = driveTargetDistMM - traveled;
+
+    // Measure actual velocity (using type-safe API)
+    float vLeft  = drivetrain->getMotorVelocityMMps(WheelSide::LEFT);
+    float vRight = drivetrain->getMotorVelocityMMps(WheelSide::RIGHT);
+    float vActual = (std::fabs(vLeft) + std::fabs(vRight)) / 2.0f;
+
+    // Check completion: close to target AND moving slowly
+    if (remaining <= ROBOT_STOPPING_DISTANCE_MM && vActual < ROBOT_STOPPING_VELOCITY_MMPS)
+    {
+        stop();
+        motionDone = true;
+        return;
+    }
+
+    // Calculate target velocity using two-phase deceleration profile
+    float vBase = calculateTargetVelocityForDistance(remaining, vActual);
+
+    static int logCounter = 0;
+    if (logCounter++ % 25 == 0)
+    {
+        LOG_DEBUG("DriveDistance | Target: " + std::to_string(driveTargetDistMM) +
+                  " mm | Traveled: " + std::to_string(traveled) +
+                  " mm | Remaining: " + std::to_string(remaining) + " mm");
+        LOG_DEBUG("vBase: " + std::to_string(vBase) + " mm/s | vActual: " +
+                  std::to_string(vActual) + " mm/s");
+    }
+
+    commandBaseAndYaw(vBase, dt);
+    motionDone = false;
+}
+
+// ============================================================
+// Setters / Configuration
+// ============================================================
 
 void Robot::setYawGains(float kp, float ki, float kd)
 {
@@ -462,29 +525,4 @@ void Robot::setMinSlowdownScale(float minScale)
     minSlowdownScale = minScale;
 }
 
-float Robot::wrapDeg(float deg)
-{
-    while (deg > 180.0f)
-        deg -= 360.0f;
-    while (deg < -180.0f)
-        deg += 360.0f;
-    return deg;
-}
-
-float Robot::snapToNearest45Deg(float yawDeg)
-{
-    float snapped = 45.0f * std::round(yawDeg / 45.0f);
-    snapped       = wrapDeg(snapped);
-    if (snapped == -180.0f)
-        snapped = 180.0f;
-    return snapped;
-}
-
-float Robot::clampAbs(float value, float maxAbs)
-{
-    if (value > maxAbs)
-        return maxAbs;
-    if (value < -maxAbs)
-        return -maxAbs;
-    return value;
-}
+// Note: wrapAngle180(), snapTo45Degrees(), and clampAbs() are now in RobotUtils.h

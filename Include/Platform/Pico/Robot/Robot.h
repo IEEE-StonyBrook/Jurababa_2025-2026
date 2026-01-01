@@ -2,6 +2,7 @@
 #define ROBOT_H
 
 #include "Common/PIDController.h"
+#include "Platform/Pico/Robot/RobotUtils.h"
 #include <cmath>
 #include <string>
 
@@ -68,29 +69,73 @@ class Robot
         TurnInPlace
     };
 
-    // Computes shortest angle difference in degrees (Result in [-180, 180])
-    static float wrapDeg(float deg);
+    // ============= Motion Mode Handlers ============= //
+    void handleIdleMode(float dt);
+    void handleTurnInPlaceMode(float dt);
+    void handleDriveStraightMode(float dt);
+    void handleDriveDistanceMode(float dt);
 
-    // Snaps an angle to the nearest multiple of 45 degrees (Result in [-180, 180])
-    static float snapToNearest45Deg(float yawDeg);
+    // ============= Control Building Blocks ============= //
 
-    // Clamps to [-maxAbs, +maxAbs]
-    static float clampAbs(float value, float maxAbs);
-
-    // Applies slew rate limit to commanded duty
+    /**
+     * @brief Applies slew rate limit to commanded duty cycle
+     *
+     * Prevents sudden duty changes that could cause wheel slip or mechanical stress.
+     */
     float applySlew(float cmd, float& prevCmd, float dt);
 
-    // Sets wheel velocity targets (mm/s)
-    void setWheelVelocityTargetsMMps(float vLeftMMps, float vRightMMps);
-
-    // Ramps a value toward a desired target by maxDelta
+    /**
+     * @brief Ramps current value toward desired target at maximum rate
+     *
+     * Used for smooth velocity profiling during acceleration/deceleration.
+     */
     float rampToward(float desired, float current, float maxDelta);
 
-    // Converts base speed + yaw correction into wheel targets and runs low-level wheel control
+    /**
+     * @brief Sets target velocities for both wheels
+     *
+     * Clamps to maximum safe wheel speed.
+     */
+    void setWheelVelocityTargetsMMps(float vLeftMMps, float vRightMMps);
+
+    /**
+     * @brief Profiles base velocity and yaw, converts to wheel targets
+     *
+     * Handles ramping, yaw profiling, PID control, and minimum speed enforcement.
+     */
     void commandBaseAndYaw(float vBaseMMps, float dt);
 
-    // Runs two wheel PIDs + feedforward and outputs duty to drivetrain
+    /**
+     * @brief Profiles the yaw setpoint smoothly toward target
+     *
+     * Prevents sudden turns by ramping yaw setpoint at max angular velocity.
+     * @return Profiled yaw error for PID control
+     */
+    float applyYawProfiling(float dt);
+
+    /**
+     * @brief Calculates yaw correction with minimum speed enforcement
+     *
+     * Runs PID on yaw error and enforces minimum turn speed to overcome friction.
+     * @param yawError Profiled yaw error in degrees
+     * @param dt Time step in seconds
+     * @return Wheel speed differential (mm/s)
+     */
+    float calculateYawCorrection(float yawError, float dt);
+
+    /**
+     * @brief Runs low-level wheel velocity control with feedforward + PID
+     *
+     * Outputs duty cycles to drivetrain motors.
+     */
     void runWheelVelocityControl(float dt);
+
+    /**
+     * @brief Calculates target velocity for distance-based motion
+     *
+     * Implements two-phase deceleration profile accounting for minimum viable speed.
+     */
+    float calculateTargetVelocityForDistance(float remaining, float vActual);
 
   private:
     Drivetrain* drivetrain;
@@ -119,29 +164,26 @@ class Robot
     float driveStartRightDistMM = 0.0f;
     float driveTargetDistMM     = 0.0f;
 
-    // Completion criteria
-    float yawToleranceDeg = 0.5f;
+    // ============= Configuration (loaded from Config.h) ============= //
+    float yawToleranceDeg;
+    float maxDuty;
+    float maxDutySlewPerSec;
+    float maxWheelSpeedMMps;
+    float maxYawDiffMMps;
+    float maxAngularVelDegps;
+    float minCruiseVelocityMMps;
+    float finalApproachSpeedMMps;
+    float maxBaseAccelMMps2;
 
-    // Limits
-    float maxDuty           = 1.0f;
-    float maxDutySlewPerSec = 10.0f;
-    float maxWheelSpeedMMps = 800.0f;
-    float maxYawDiffMMps    = 300.0f; // yawPID output limit in mm/s differential
-    float maxAngularVelDegps = 360.0f; // Max turning speed (adjust for your mouse)
-    float minVelocityMMps    = 80.0f;  // Minimum cruise speed before final deceleration phase
-
-    // Slew state
+    // ============= Runtime State ============= //
     float prevLeftDuty  = 0.0f;
     float prevRightDuty = 0.0f;
 
-    // DriveDistance shaping
-    float slowdownDistMM   = 80.0f;
-    float minSlowdownScale = 0.2f;
+    float slowdownDistMM   = 80.0f;  // Legacy parameter (unused in new velocity calculation)
+    float minSlowdownScale = 0.2f;   // Legacy parameter (unused in new velocity calculation)
 
-    // Ramping state
-    float vBaseCmdMMps       = 0.0f;   // ramped command actually used
-    float maxBaseAccelMMps2  = 1500.0f; // tune: 1500–5000
-    float currentYawSetpoint = 0.0f;   // The "moving" target for the turn
+    float vBaseCmdMMps       = 0.0f;  // Ramped base velocity command
+    float currentYawSetpoint = 0.0f;  // Profiled yaw target (moves smoothly toward targetYawDeg)
 
     bool motionDone = true;
 };

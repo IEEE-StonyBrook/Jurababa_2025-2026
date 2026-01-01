@@ -88,11 +88,51 @@
 // Expected header bytes for BNO085 RVC packets.
 #define IMU_HDR0 170
 
-// ToF Sensor Wall Distances
-#define TOF_CELL_DEPTH_TO_CHECK_MM  40
-#define TOF_LEFT_WALL_THRESHOLD_MM  100
-#define TOF_RIGHT_WALL_THRESHOLD_MM 100
-#define TOF_FRONT_WALL_THRESHOLD_MM 120
+// ================= Robot Control Constants ================= //
+// High-level motion control tuning parameters
 
-#define CORE_SLEEP_MS 250 // Sleep time for core loops
+// Velocity limits and thresholds
+#define ROBOT_MAX_WHEEL_SPEED_MMPS    800.0f  // Maximum wheel speed (mm/s)
+#define ROBOT_MAX_YAW_DIFF_MMPS       300.0f  // Maximum yaw correction differential (mm/s)
+#define ROBOT_MAX_ANGULAR_VEL_DEGPS   360.0f  // Maximum turning speed (deg/s)
+#define ROBOT_MIN_CRUISE_VELOCITY_MMPS 80.0f  // Minimum cruise speed before final deceleration
+#define ROBOT_FINAL_APPROACH_SPEED_MMPS 30.0f // Very low speed for final positioning
+#define ROBOT_MIN_TURN_SPEED_MMPS     50.0f   // Minimum differential speed for turning
+
+// Acceleration and deceleration
+#define ROBOT_BASE_ACCEL_MMPS2        1500.0f // Linear acceleration rate (mm/s²)
+
+// Completion and tolerance thresholds
+#define ROBOT_YAW_TOLERANCE_DEG       0.5f    // Yaw error tolerance for motion completion (degrees)
+#define ROBOT_YAW_ERROR_THRESHOLD_DEG 0.5f    // Minimum error to apply turn correction (degrees)
+#define ROBOT_STOPPING_DISTANCE_MM    2.0f    // Distance threshold for motion completion (mm)
+#define ROBOT_STOPPING_VELOCITY_MMPS  50.0f   // Velocity threshold for motion completion (mm/s)
+#define ROBOT_TURN_STABILITY_DEGPS    3.0f    // Angular velocity threshold for turn stability (deg/s)
+
+// Control loop limits
+#define ROBOT_MAX_DUTY                1.0f    // Maximum PWM duty cycle
+#define ROBOT_MAX_DUTY_SLEW_PER_SEC   10.0f   // Maximum duty cycle change per second
+
+// ================= Drivetrain Constants ================= //
+#define DRIVETRAIN_MIN_DT             0.001f  // Minimum valid time step for velocity calculation (s)
+#define DRIVETRAIN_FF_DEADZONE_MMPS   10.0f   // Feedforward deadzone to prevent motor buzzing (mm/s)
+#define DRIVETRAIN_MAX_VELOCITY_MMPS  1500.0f // Sanity check threshold for velocity calculation (mm/s)
+
+// ================= Sensor Constants ================= //
+#define SENSORS_ANGULAR_VEL_FILTER_ALPHA 0.7f // Low-pass filter alpha for angular velocity smoothing
+
+// ================= IMU Constants ================= //
+#define IMU_RAW_TO_DEGREES_DIVISOR    100.0f  // Conversion factor from raw IMU value to degrees
+
+// ================= ToF Sensor Constants ================= //
+#define TOF_TIMING_BUDGET_US          20000   // ToF measurement timing budget (microseconds)
+#define TOF_MEASUREMENT_PERIOD_MS     30      // ToF inter-measurement period (milliseconds)
+#define TOF_CELL_DEPTH_TO_CHECK_MM    40      // Depth to check for walls
+#define TOF_LEFT_WALL_THRESHOLD_MM    100     // Left wall detection threshold
+#define TOF_RIGHT_WALL_THRESHOLD_MM   100     // Right wall detection threshold
+#define TOF_FRONT_WALL_THRESHOLD_MM   120     // Front wall detection threshold
+
+// ================= Multicore Constants ================= //
+#define CORE_SLEEP_MS 250 // Sleep time for core loops (ms)
+
 #endif

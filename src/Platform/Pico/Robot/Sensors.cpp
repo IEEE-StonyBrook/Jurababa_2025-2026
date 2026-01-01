@@ -1,4 +1,5 @@
 #include "Platform/Pico/Robot/Sensors.h"
+#include "Platform/Pico/Config.h"
 
 Sensors::Sensors(IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF)
     : imu(imu), leftToF(leftToF), frontToF(frontToF), rightToF(rightToF)
@@ -55,10 +56,11 @@ void Sensors::update(float dt)
     // 3. Calculate velocity (degrees per second)
     float rawVel = deltaYaw / dt;
 
-    // 4. Optional: Simple Low-Pass Filter to smooth out noise
-    // alpha = 1.0 means no filtering, 0.1 means heavy filtering
-    float alpha       = 0.7f;
-    currentAngularVel = (alpha * rawVel) + (1.0f - alpha) * currentAngularVel;
+    // 4. Apply low-pass filter to smooth angular velocity (reduces noise)
+    // alpha closer to 1.0 = less filtering (more responsive)
+    // alpha closer to 0.0 = more filtering (smoother but slower)
+    currentAngularVel = (SENSORS_ANGULAR_VEL_FILTER_ALPHA * rawVel) +
+                        (1.0f - SENSORS_ANGULAR_VEL_FILTER_ALPHA) * currentAngularVel;
 
     lastYaw = currentYaw;
 }
