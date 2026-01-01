@@ -145,6 +145,55 @@ void Robot::turn45Degrees(std::string side, int times)
     turnToYawDeg(RobotUtils::snapTo45Degrees(desired));
 }
 
+void Robot::arcTurnToYawDeg(float targetYawDeg, float arcLengthMM, float baseVelocityMMps)
+{
+    mode = Mode::ArcTurn;
+    motionDone = false;
+
+    // Track arc distance via encoders
+    arcTurnStartLeftDistMM = drivetrain->getMotorDistanceMM(WheelSide::LEFT);
+    arcTurnStartRightDistMM = drivetrain->getMotorDistanceMM(WheelSide::RIGHT);
+    arcTurnTargetArcLengthMM = arcLengthMM;
+    arcTurnBaseVelocityMMps = baseVelocityMMps;
+
+    // Set yaw target and initialize profiling
+    this->arcTurnTargetYawDeg = RobotUtils::wrapAngle180(targetYawDeg);
+    this->targetYawDeg = this->arcTurnTargetYawDeg;
+    this->currentYawSetpoint = sensors->getYaw();
+
+    // Reset PIDs for clean start
+    yawPID.reset();
+    leftWheelPID.reset();
+    rightWheelPID.reset();
+
+    LOG_DEBUG("ArcTurn | Target yaw: " + std::to_string(targetYawDeg) +
+              " | Arc length: " + std::to_string(arcLengthMM) + " mm");
+}
+
+void Robot::arcTurn90Degrees(std::string side)
+{
+    if (side != "left" && side != "right")
+        return;
+
+    float currentYaw = sensors->getYaw();
+    float deltaYaw = (side == "left") ? 90.0f : -90.0f;
+    float targetYaw = RobotUtils::wrapAngle180(currentYaw + deltaYaw);
+
+    arcTurnToYawDeg(targetYaw, ARC_90_DEGREE_LENGTH_MM, ARC_TURN_VELOCITY_MMPS);
+}
+
+void Robot::arcTurn45Degrees(std::string side)
+{
+    if (side != "left" && side != "right")
+        return;
+
+    float currentYaw = sensors->getYaw();
+    float deltaYaw = (side == "left") ? 45.0f : -45.0f;
+    float targetYaw = RobotUtils::wrapAngle180(currentYaw + deltaYaw);
+
+    arcTurnToYawDeg(targetYaw, ARC_45_DEGREE_LENGTH_MM, ARC_TURN_VELOCITY_MMPS);
+}
+
 bool Robot::isMotionDone() const
 {
     return motionDone;
@@ -296,6 +345,12 @@ void Robot::update(float dt)
                 vBaseCmdMMps = 0.0f;
                 break;
 
+            case Mode::ArcTurn:
+                // Only reset when coming from Idle/TurnInPlace for smooth transitions
+                if (prevMode == Mode::Idle || prevMode == Mode::TurnInPlace)
+                    vBaseCmdMMps = 0.0f;
+                break;
+
             case Mode::DriveStraight:
             case Mode::DriveDistance:
                 // Only reset when coming from Idle/Turn. Otherwise preserve for smooth changes.
@@ -323,6 +378,10 @@ void Robot::update(float dt)
 
         case Mode::DriveDistance:
             handleDriveDistanceMode(dt);
+            break;
+
+        case Mode::ArcTurn:
+            handleArcTurnMode(dt);
             break;
     }
 }
@@ -451,6 +510,43 @@ void Robot::handleDriveDistanceMode(float dt)
     }
 
     commandBaseAndYaw(vBase, dt);
+    motionDone = false;
+}
+
+void Robot::handleArcTurnMode(float dt)
+{
+    // Measure arc progress (average of both wheels)
+    float currLeft  = drivetrain->getMotorDistanceMM(WheelSide::LEFT);
+    float currRight = drivetrain->getMotorDistanceMM(WheelSide::RIGHT);
+
+    float traveledArc = (std::fabs(currLeft - arcTurnStartLeftDistMM) +
+                         std::fabs(currRight - arcTurnStartRightDistMM)) / 2.0f;
+
+    // Check completion: arc distance AND yaw both satisfied
+    float remainingArc = arcTurnTargetArcLengthMM - traveledArc;
+    float yawError = RobotUtils::wrapAngle180(arcTurnTargetYawDeg - sensors->getYaw());
+
+    static int logCounter = 0;
+    if (logCounter++ % 25 == 0)
+    {
+        LOG_DEBUG("ArcTurn | Traveled: " + std::to_string(traveledArc) +
+                  " / " + std::to_string(arcTurnTargetArcLengthMM) + " mm | " +
+                  "Yaw: " + std::to_string(sensors->getYaw()) +
+                  " / " + std::to_string(arcTurnTargetYawDeg) + " deg");
+    }
+
+    if (remainingArc <= ARC_TURN_DISTANCE_TOLERANCE_MM &&
+        std::fabs(yawError) <= ARC_TURN_YAW_TOLERANCE_DEG)
+    {
+        stop();
+        motionDone = true;
+        LOG_DEBUG("ArcTurn complete!");
+        return;
+    }
+
+    // Execute arc: commandBaseAndYaw() does BOTH forward motion AND turning!
+    // This is the magic - reuses existing dual PID control
+    commandBaseAndYaw(arcTurnBaseVelocityMMps, dt);
     motionDone = false;
 }
 

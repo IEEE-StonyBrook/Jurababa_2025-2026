@@ -37,6 +37,21 @@ class Robot
     // side must be "left" or "right"
     void turn45Degrees(std::string side, int times);
 
+    // Execute a smooth arc turn at constant radius
+    // Performs a circular arc turn combining forward motion with rotation
+    // targetYawDeg: absolute target yaw angle (degrees, -180 to 180)
+    // arcLengthMM: distance to travel along the arc (millimeters)
+    // baseVelocityMMps: forward velocity during turn (mm/s)
+    void arcTurnToYawDeg(float targetYawDeg, float arcLengthMM, float baseVelocityMMps);
+
+    // Execute a 90-degree arc turn (convenience wrapper)
+    // side must be "left" or "right"
+    void arcTurn90Degrees(std::string side);
+
+    // Execute a 45-degree arc turn
+    // side must be "left" or "right"
+    void arcTurn45Degrees(std::string side);
+
     // Call every control tick (e.g. 5ms or 10ms) to run controllers and update motor outputs
     void update(float dt);
 
@@ -66,7 +81,8 @@ class Robot
         Idle,
         DriveStraight,
         DriveDistance,
-        TurnInPlace
+        TurnInPlace,
+        ArcTurn  // Smooth arc turning (constant radius)
     };
 
     // ============= Motion Mode Handlers ============= //
@@ -74,6 +90,7 @@ class Robot
     void handleTurnInPlaceMode(float dt);
     void handleDriveStraightMode(float dt);
     void handleDriveDistanceMode(float dt);
+    void handleArcTurnMode(float dt);
 
     // ============= Control Building Blocks ============= //
 
@@ -163,6 +180,13 @@ class Robot
     float driveStartLeftDistMM  = 0.0f;
     float driveStartRightDistMM = 0.0f;
     float driveTargetDistMM     = 0.0f;
+
+    // ArcTurn state (Similar to DriveDistance but tracks arc length)
+    float arcTurnStartLeftDistMM      = 0.0f;
+    float arcTurnStartRightDistMM     = 0.0f;
+    float arcTurnTargetArcLengthMM    = 0.0f;
+    float arcTurnTargetYawDeg         = 0.0f;
+    float arcTurnBaseVelocityMMps     = 0.0f;
 
     // ============= Runtime State ============= //
     float prevLeftDuty  = 0.0f;

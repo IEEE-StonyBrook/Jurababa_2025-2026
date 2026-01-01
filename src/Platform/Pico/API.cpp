@@ -110,6 +110,48 @@ void API::turn(int degrees)
     internalMouse->turnIM45DegreeStepsRight(degrees / 45);
 }
 
+// ================== Arc Turns ================== //
+
+void API::arcTurnLeft90()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnLeft90");
+    else
+        LOG_DEBUG("API: Sending ARC_TURN_LEFT_90");
+        CommandHub::send(CommandType::ARC_TURN_LEFT_90);
+    internalMouse->turnIM45DegreeStepsRight(-2);
+}
+
+void API::arcTurnRight90()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnRight90");
+    else
+        LOG_DEBUG("API: Sending ARC_TURN_RIGHT_90");
+        CommandHub::send(CommandType::ARC_TURN_RIGHT_90);
+    internalMouse->turnIM45DegreeStepsRight(2);
+}
+
+void API::arcTurnLeft45()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnLeft45");
+    else
+        LOG_DEBUG("API: Sending ARC_TURN_LEFT_45");
+        CommandHub::send(CommandType::ARC_TURN_LEFT_45);
+    internalMouse->turnIM45DegreeStepsRight(-1);
+}
+
+void API::arcTurnRight45()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnRight45");
+    else
+        LOG_DEBUG("API: Sending ARC_TURN_RIGHT_45");
+        CommandHub::send(CommandType::ARC_TURN_RIGHT_45);
+    internalMouse->turnIM45DegreeStepsRight(1);
+}
+
 // ================== Sequence Execution ================== //
 
 // Parse commands like "F3#L#R90#F2".

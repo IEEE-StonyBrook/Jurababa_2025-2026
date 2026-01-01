@@ -144,6 +144,26 @@ void processCommands(Robot* robot, Sensors* sensors)
             }
             break;
 
+            case CommandType::ARC_TURN_LEFT_90:
+                LOG_DEBUG("Robot executing arc turn left 90°");
+                robot->arcTurn90Degrees("left");
+                break;
+
+            case CommandType::ARC_TURN_RIGHT_90:
+                LOG_DEBUG("Robot executing arc turn right 90°");
+                robot->arcTurn90Degrees("right");
+                break;
+
+            case CommandType::ARC_TURN_LEFT_45:
+                LOG_DEBUG("Robot executing arc turn left 45°");
+                robot->arcTurn45Degrees("left");
+                break;
+
+            case CommandType::ARC_TURN_RIGHT_45:
+                LOG_DEBUG("Robot executing arc turn right 45°");
+                robot->arcTurn45Degrees("right");
+                break;
+
             // Core0 may send this, but Core1 doesn't need to act on it
             case CommandType::SNAPSHOT:
             case CommandType::NONE:

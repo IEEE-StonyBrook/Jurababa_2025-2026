@@ -34,6 +34,12 @@ class IAPIInterface
     virtual void turnRight90()       = 0;
     virtual void turn(int degrees)   = 0;
 
+    // Arc turns (smooth turns combining forward motion + rotation).
+    virtual void arcTurnLeft90()     = 0;
+    virtual void arcTurnRight90()    = 0;
+    virtual void arcTurnLeft45()     = 0;
+    virtual void arcTurnRight45()    = 0;
+
     // Execute command sequence like "L90#F5#R45".
     virtual void executeSequence(const std::string& sequence) = 0;
 

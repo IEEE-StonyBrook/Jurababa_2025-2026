@@ -63,6 +63,38 @@
 #define TURN_FINAL_SPEED 0.0f   // End angular speed.
 #define TURN_ACCEL       50.0f  // Angular accel (deg/s^2).
 
+// ================= ARC TURN CONFIGURATION ================= //
+// Arc turning parameters for smooth turns (replaces in-place pivots)
+
+// Linear velocity during arc turns (mm/s)
+// Conservative starting value: 300 mm/s (0.3 m/s)
+// Can increase after testing stability
+#define ARC_TURN_VELOCITY_MMPS         300.0f
+
+// Centripetal acceleration limit (mm/s²)
+// Physics: a_c = v² / R, so R = v² / a_c
+// With 300 mm/s and 1500 mm/s²: R = 60mm (tight but feasible)
+#define ARC_CENTRIPETAL_ACCEL_MMPS2  1500.0f
+
+// Turn radius calculation (derived from above)
+// R = v² / a_c = (300²) / 1500 = 60mm
+#define ARC_TURN_RADIUS_MM  \
+    ((ARC_TURN_VELOCITY_MMPS * ARC_TURN_VELOCITY_MMPS) / ARC_CENTRIPETAL_ACCEL_MMPS2)
+
+// Arc length for standard turns (calculated from radius)
+// For 90°: L = R × π/2 = 60 × 1.5708 ≈ 94mm
+// For 45°: L = R × π/4 = 60 × 0.7854 ≈ 47mm
+#define ARC_90_DEGREE_LENGTH_MM   (ARC_TURN_RADIUS_MM * 1.5708f)  // π/2 ≈ 1.5708
+#define ARC_45_DEGREE_LENGTH_MM   (ARC_TURN_RADIUS_MM * 0.7854f)  // π/4 ≈ 0.7854
+
+// Completion tolerance for arc turns
+#define ARC_TURN_DISTANCE_TOLERANCE_MM  3.0f    // Arc length completion threshold
+#define ARC_TURN_YAW_TOLERANCE_DEG      1.0f    // Yaw accuracy (looser than in-place 0.5°)
+
+// Velocity profiles (differentiated speeds for different maneuvers)
+#define VELOCITY_PROFILE_STRAIGHT_MMPS  500.0f  // Speed during straights (faster)
+#define VELOCITY_PROFILE_TURN_MMPS      300.0f  // Speed during turns (conservative)
+
 // ================= IMU UART CONFIG ================= //
 #define IMU_UART_ID   uart1            // UART interface used by IMU.
 #define IMU_UART_IRQ  UART1_IRQ        // Interrupt request line for IMU UART.

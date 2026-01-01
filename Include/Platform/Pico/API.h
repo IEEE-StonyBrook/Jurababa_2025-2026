@@ -38,6 +38,12 @@ class API : public IAPIInterface
     void turnRight90() override;
     void turn(int degrees) override;
 
+    // Arc turns (override from IAPIInterface).
+    void arcTurnLeft90() override;
+    void arcTurnRight90() override;
+    void arcTurnLeft45() override;
+    void arcTurnRight45() override;
+
     // Execute command sequence like "L90#F5#R45" (override from IAPIInterface).
     void executeSequence(const std::string& sequence) override;
 

@@ -14,7 +14,11 @@ enum class CommandType : uint8_t
     TURN_ARBITRARY,   // 5
     MOVE_FWD_HALF,    // 6
     CENTER_FROM_EDGE, // 7
-    SNAPSHOT          // 8
+    SNAPSHOT,         // 8
+    ARC_TURN_LEFT_90,  // 9  Smooth 90° arc turn left
+    ARC_TURN_RIGHT_90, // 10 Smooth 90° arc turn right
+    ARC_TURN_LEFT_45,  // 11 Smooth 45° arc turn left
+    ARC_TURN_RIGHT_45  // 12 Smooth 45° arc turn right
 };
 
 // Command packet structure

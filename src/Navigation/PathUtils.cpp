@@ -27,11 +27,11 @@ void interpretLFRPath(IAPIInterface* apiPtr, std::string lfrPath)
     {
         if (t == "R")
         {
-            apiPtr->turnRight90();
+            apiPtr->arcTurnRight90();  // Use arc turn for smoother motion
         }
         else if (t == "L")
         {
-            apiPtr->turnLeft90();
+            apiPtr->arcTurnLeft90();  // Use arc turn for smoother motion
         }
         else if (t == "F")
         {
@@ -39,11 +39,11 @@ void interpretLFRPath(IAPIInterface* apiPtr, std::string lfrPath)
         }
         else if (t == "R45")
         {
-            apiPtr->turnRight45();
+            apiPtr->arcTurnRight45();  // Use arc turn for smoother motion
         }
         else if (t == "L45")
         {
-            apiPtr->turnLeft45();
+            apiPtr->arcTurnLeft45();  // Use arc turn for smoother motion
         }
         else if (t == "FH")
         {
