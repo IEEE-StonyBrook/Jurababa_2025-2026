@@ -56,6 +56,12 @@ void API::moveForward(int steps)
     internalMouse->moveIMForwardOneCell(steps);
 }
 
+void API::ghostMoveForward(int steps)
+{
+    // Ghost move only updates internal mouse position without sending commands.
+    internalMouse->moveIMForwardOneCell(steps);
+}
+
 void API::goToCenterFromEdge()
 {
     CommandHub::send(CommandType::CENTER_FROM_EDGE);
@@ -205,6 +211,17 @@ void API::setColor(int x, int y, char color)
     if (runOnSimulator)
         std::cout << "setColor " << x << " " << y << " " << color << '\n';
 }
+
+void API::setPhaseColor(char color)
+{
+    // Store phase color for use during movement updates.
+    // This color will be applied to cells as the mouse moves.
+    // Note: In simulator mode, this is handled differently.
+    // Here we just store it for later use.
+    // In movement methods, we will color the current cell.
+    phaseColor_ = color;
+}
+
 void API::clearColor(int x, int y)
 {
     if (runOnSimulator)

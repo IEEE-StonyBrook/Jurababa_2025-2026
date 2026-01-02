@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "Platform/IAPIInterface.h"
-#include "Platform/Pico/Config.h"
 #include "Maze/InternalMouse.h"
+#include "Platform/IAPIInterface.h"
 #include "Platform/Pico/CommandHub.h"
+#include "Platform/Pico/Config.h"
 #include "Platform/Pico/Robot/Drivetrain.h"
 
 class API : public IAPIInterface
@@ -32,6 +32,7 @@ class API : public IAPIInterface
     void moveForwardHalf() override;
     void moveForward() override;
     void moveForward(int steps) override;
+    void ghostMoveForward(int steps) override;
     void turnLeft45() override;
     void turnLeft90() override;
     void turnRight45() override;
@@ -53,6 +54,7 @@ class API : public IAPIInterface
 
     // Cell coloring and labels (override from IAPIInterface).
     void setColor(int x, int y, char color) override;
+    void setPhaseColor(char color) override;
     void clearColor(int x, int y) override;
     void clearAllColor() override;
     void setText(int x, int y, const std::string& text) override;
@@ -77,6 +79,7 @@ class API : public IAPIInterface
   private:
     Drivetrain*    drivetrain;
     InternalMouse* internalMouse;
+    char           phaseColor_ = 'y'; // Default to yellow
 };
 
 #endif
