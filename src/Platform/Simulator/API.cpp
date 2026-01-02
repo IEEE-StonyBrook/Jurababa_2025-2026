@@ -41,15 +41,21 @@ void API_SIMULATOR::moveForwardHalf()
 {
     if (runOnSimulator)
         getSimulatorResponse("moveForwardHalf");
+    // Note: We don't update internalMouse position for half moves (by design for diagonalization)
+    // but we still want to color the cell for visualization.
+    // The simulator tracks the actual robot position - we query it to get the current cell.
+    // For now, color the current logical cell (may not be perfectly accurate for diagonal paths).
 }
 void API_SIMULATOR::moveForward()
 {
     if (runOnSimulator)
+    {
         getSimulatorResponse("moveForward");
+        int XPos = internalMouse->getCurrentRobotNode()->getCellXPos();
+        int YPos = internalMouse->getCurrentRobotNode()->getCellYPos();
+        setColor(XPos, YPos, phaseColor_);
+    }
     internalMouse->moveIMForwardOneCell(1);
-    int XPos = internalMouse->getCurrentRobotNode()->getCellXPos();
-    int YPos = internalMouse->getCurrentRobotNode()->getCellYPos();
-    setColor(XPos, YPos, phaseColor_);
 }
 
 void API_SIMULATOR::moveForward(int steps)
@@ -58,9 +64,18 @@ void API_SIMULATOR::moveForward(int steps)
     {
         std::ostringstream commandStream;
         commandStream << "moveForward" << steps;
+        std::string command = commandStream.str();
 
-        getSimulatorResponse("moveForwardHalf");
+        getSimulatorResponse(command);
     }
+    for (int i = 0; i < steps; i++)
+    {
+        internalMouse->moveIMForwardOneCell(1);
+    }
+}
+
+void API_SIMULATOR::ghostMoveForward(int steps)
+{
     internalMouse->moveIMForwardOneCell(steps);
 }
 

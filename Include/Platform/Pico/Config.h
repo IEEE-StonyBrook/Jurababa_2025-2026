@@ -6,13 +6,13 @@
 #define LOOP_INTERVAL_S   (1.0f / LOOP_FREQUENCY_HZ) // Seconds per update.
 
 // Encoder and wheel geometry.
-#define WHEEL_DIAMETER_MM     39.5f  // Wheel diameter.
-#define TICKS_PER_REVOLUTION  360.0f // Encoder ticks per wheel turn.
+#define WHEEL_DIAMETER_MM     39.8f     // Wheel diameter.
+#define TICKS_PER_REVOLUTION  359.7222f // Encoder ticks per wheel turn.
 #define MM_PER_TICK           ((WHEEL_DIAMETER_MM * 3.14159265f) / TICKS_PER_REVOLUTION) // Distance per tick.
 #define TO_CENTER_DISTANCE_MM ((167.5f - WHEEL_DIAMETER_MM) / 2.0f)
 
 // Robot geometry.
-#define WHEEL_BASE_MM 85.0f // Distance between left and right wheels.
+#define WHEEL_BASE_MM 81.95f // Distance between left and right wheels.
 #define DEG_PER_MM_DIFFERENCE                                                                      \
     (180.0f / (3.14159265f * WHEEL_BASE_MM)) // Deg per mm difference between wheels.
 
@@ -27,8 +27,8 @@
 // Feedforward constants.
 #define FORWARD_KVL 0.000410f // Left duty gain forward (duty per mm/s)
 #define FORWARD_KVR 0.000382f // Right duty gain forward (duty per mm/s)
-#define FORWARD_KSL 0.505f     // Left static friction duty forward (duty)
-#define FORWARD_KSR 0.52f    // Right static friction duty forward (duty)
+#define FORWARD_KSL 0.505f    // Left static friction duty forward (duty)
+#define FORWARD_KSR 0.52f     // Right static friction duty forward (duty)
 
 #define REVERSE_KVL 0.000410f // TEMP: set after reverse sweep fit
 #define REVERSE_KVR 0.000382f // TEMP: set after reverse sweep fit
@@ -69,31 +69,31 @@
 // Linear velocity during arc turns (mm/s)
 // Conservative starting value: 300 mm/s (0.3 m/s)
 // Can increase after testing stability
-#define ARC_TURN_VELOCITY_MMPS         300.0f
+#define ARC_TURN_VELOCITY_MMPS 300.0f
 
 // Centripetal acceleration limit (mm/s²)
 // Physics: a_c = v² / R, so R = v² / a_c
 // With 300 mm/s and 1500 mm/s²: R = 60mm (tight but feasible)
-#define ARC_CENTRIPETAL_ACCEL_MMPS2  1500.0f
+#define ARC_CENTRIPETAL_ACCEL_MMPS2 1500.0f
 
 // Turn radius calculation (derived from above)
 // R = v² / a_c = (300²) / 1500 = 60mm
-#define ARC_TURN_RADIUS_MM  \
+#define ARC_TURN_RADIUS_MM                                                                         \
     ((ARC_TURN_VELOCITY_MMPS * ARC_TURN_VELOCITY_MMPS) / ARC_CENTRIPETAL_ACCEL_MMPS2)
 
 // Arc length for standard turns (calculated from radius)
 // For 90°: L = R × π/2 = 60 × 1.5708 ≈ 94mm
 // For 45°: L = R × π/4 = 60 × 0.7854 ≈ 47mm
-#define ARC_90_DEGREE_LENGTH_MM   (ARC_TURN_RADIUS_MM * 1.5708f)  // π/2 ≈ 1.5708
-#define ARC_45_DEGREE_LENGTH_MM   (ARC_TURN_RADIUS_MM * 0.7854f)  // π/4 ≈ 0.7854
+#define ARC_90_DEGREE_LENGTH_MM (ARC_TURN_RADIUS_MM * 1.5708f) // π/2 ≈ 1.5708
+#define ARC_45_DEGREE_LENGTH_MM (ARC_TURN_RADIUS_MM * 0.7854f) // π/4 ≈ 0.7854
 
 // Completion tolerance for arc turns
-#define ARC_TURN_DISTANCE_TOLERANCE_MM  3.0f    // Arc length completion threshold
-#define ARC_TURN_YAW_TOLERANCE_DEG      1.0f    // Yaw accuracy (looser than in-place 0.5°)
+#define ARC_TURN_DISTANCE_TOLERANCE_MM 3.0f // Arc length completion threshold
+#define ARC_TURN_YAW_TOLERANCE_DEG     1.0f // Yaw accuracy (looser than in-place 0.5°)
 
 // Velocity profiles (differentiated speeds for different maneuvers)
-#define VELOCITY_PROFILE_STRAIGHT_MMPS  500.0f  // Speed during straights (faster)
-#define VELOCITY_PROFILE_TURN_MMPS      300.0f  // Speed during turns (conservative)
+#define VELOCITY_PROFILE_STRAIGHT_MMPS 500.0f // Speed during straights (faster)
+#define VELOCITY_PROFILE_TURN_MMPS     300.0f // Speed during turns (conservative)
 
 // ================= IMU UART CONFIG ================= //
 #define IMU_UART_ID   uart1            // UART interface used by IMU.
@@ -124,45 +124,47 @@
 // High-level motion control tuning parameters
 
 // Velocity limits and thresholds
-#define ROBOT_MAX_WHEEL_SPEED_MMPS    800.0f  // Maximum wheel speed (mm/s)
-#define ROBOT_MAX_YAW_DIFF_MMPS       300.0f  // Maximum yaw correction differential (mm/s)
-#define ROBOT_MAX_ANGULAR_VEL_DEGPS   360.0f  // Maximum turning speed (deg/s)
-#define ROBOT_MIN_CRUISE_VELOCITY_MMPS 80.0f  // Minimum cruise speed before final deceleration
-#define ROBOT_FINAL_APPROACH_SPEED_MMPS 30.0f // Very low speed for final positioning
-#define ROBOT_MIN_TURN_SPEED_MMPS     50.0f   // Minimum differential speed for turning
+#define ROBOT_MAX_WHEEL_SPEED_MMPS      800.0f // Maximum wheel speed (mm/s)
+#define ROBOT_MAX_YAW_DIFF_MMPS         300.0f // Maximum yaw correction differential (mm/s)
+#define ROBOT_MAX_ANGULAR_VEL_DEGPS     360.0f // Maximum turning speed (deg/s)
+#define ROBOT_MIN_CRUISE_VELOCITY_MMPS  80.0f  // Minimum cruise speed before final deceleration
+#define ROBOT_FINAL_APPROACH_SPEED_MMPS 30.0f  // Very low speed for final positioning
+#define ROBOT_MIN_TURN_SPEED_MMPS       50.0f  // Minimum differential speed for turning
 
 // Acceleration and deceleration
-#define ROBOT_BASE_ACCEL_MMPS2        1500.0f // Linear acceleration rate (mm/s²)
+#define ROBOT_BASE_ACCEL_MMPS2 1500.0f // Linear acceleration rate (mm/s²)
 
 // Completion and tolerance thresholds
-#define ROBOT_YAW_TOLERANCE_DEG       0.5f    // Yaw error tolerance for motion completion (degrees)
-#define ROBOT_YAW_ERROR_THRESHOLD_DEG 0.5f    // Minimum error to apply turn correction (degrees)
-#define ROBOT_STOPPING_DISTANCE_MM    2.0f    // Distance threshold for motion completion (mm)
-#define ROBOT_STOPPING_VELOCITY_MMPS  50.0f   // Velocity threshold for motion completion (mm/s)
-#define ROBOT_TURN_STABILITY_DEGPS    3.0f    // Angular velocity threshold for turn stability (deg/s)
+#define ROBOT_YAW_TOLERANCE_DEG       0.5f  // Yaw error tolerance for motion completion (degrees)
+#define ROBOT_YAW_ERROR_THRESHOLD_DEG 0.5f  // Minimum error to apply turn correction (degrees)
+#define ROBOT_STOPPING_DISTANCE_MM    2.0f  // Distance threshold for motion completion (mm)
+#define ROBOT_STOPPING_VELOCITY_MMPS  50.0f // Velocity threshold for motion completion (mm/s)
+#define ROBOT_TURN_STABILITY_DEGPS    3.0f  // Angular velocity threshold for turn stability (deg/s)
 
 // Control loop limits
-#define ROBOT_MAX_DUTY                1.0f    // Maximum PWM duty cycle
-#define ROBOT_MAX_DUTY_SLEW_PER_SEC   10.0f   // Maximum duty cycle change per second
+#define ROBOT_MAX_DUTY              1.0f  // Maximum PWM duty cycle
+#define ROBOT_MAX_DUTY_SLEW_PER_SEC 10.0f // Maximum duty cycle change per second
 
 // ================= Drivetrain Constants ================= //
-#define DRIVETRAIN_MIN_DT             0.001f  // Minimum valid time step for velocity calculation (s)
-#define DRIVETRAIN_FF_DEADZONE_MMPS   10.0f   // Feedforward deadzone to prevent motor buzzing (mm/s)
-#define DRIVETRAIN_MAX_VELOCITY_MMPS  1500.0f // Sanity check threshold for velocity calculation (mm/s)
+#define DRIVETRAIN_MIN_DT           0.001f // Minimum valid time step for velocity calculation (s)
+#define DRIVETRAIN_FF_DEADZONE_MMPS 10.0f  // Feedforward deadzone to prevent motor buzzing (mm/s)
+#define DRIVETRAIN_MAX_VELOCITY_MMPS                                                               \
+    1500.0f // Sanity check threshold for velocity calculation (mm/s)
 
 // ================= Sensor Constants ================= //
-#define SENSORS_ANGULAR_VEL_FILTER_ALPHA 0.7f // Low-pass filter alpha for angular velocity smoothing
+#define SENSORS_ANGULAR_VEL_FILTER_ALPHA                                                           \
+    0.7f // Low-pass filter alpha for angular velocity smoothing
 
 // ================= IMU Constants ================= //
-#define IMU_RAW_TO_DEGREES_DIVISOR    100.0f  // Conversion factor from raw IMU value to degrees
+#define IMU_RAW_TO_DEGREES_DIVISOR 100.0f // Conversion factor from raw IMU value to degrees
 
 // ================= ToF Sensor Constants ================= //
-#define TOF_TIMING_BUDGET_US          20000   // ToF measurement timing budget (microseconds)
-#define TOF_MEASUREMENT_PERIOD_MS     30      // ToF inter-measurement period (milliseconds)
-#define TOF_CELL_DEPTH_TO_CHECK_MM    40      // Depth to check for walls
-#define TOF_LEFT_WALL_THRESHOLD_MM    100     // Left wall detection threshold
-#define TOF_RIGHT_WALL_THRESHOLD_MM   100     // Right wall detection threshold
-#define TOF_FRONT_WALL_THRESHOLD_MM   120     // Front wall detection threshold
+#define TOF_TIMING_BUDGET_US        20000 // ToF measurement timing budget (microseconds)
+#define TOF_MEASUREMENT_PERIOD_MS   30    // ToF inter-measurement period (milliseconds)
+#define TOF_CELL_DEPTH_TO_CHECK_MM  40    // Depth to check for walls
+#define TOF_LEFT_WALL_THRESHOLD_MM  100   // Left wall detection threshold
+#define TOF_RIGHT_WALL_THRESHOLD_MM 100   // Right wall detection threshold
+#define TOF_FRONT_WALL_THRESHOLD_MM 120   // Front wall detection threshold
 
 // ================= Multicore Constants ================= //
 #define CORE_SLEEP_MS 250 // Sleep time for core loops (ms)

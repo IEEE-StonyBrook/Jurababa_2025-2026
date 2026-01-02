@@ -67,7 +67,7 @@ void API::turnLeft45()
         getSimulatorResponse("turnLeft45");
     else
         LOG_DEBUG("API: Sending TURN_LEFT 45");
-        CommandHub::send(CommandType::TURN_LEFT, 1);
+    CommandHub::send(CommandType::TURN_LEFT, 1);
     internalMouse->turnIM45DegreeStepsRight(-1);
 }
 
@@ -77,7 +77,7 @@ void API::turnLeft90()
         getSimulatorResponse("turnLeft90");
     else
         LOG_DEBUG("API: Sending TURN_LEFT 90");
-        CommandHub::send(CommandType::TURN_LEFT, 2);
+    CommandHub::send(CommandType::TURN_LEFT, 2);
     internalMouse->turnIM45DegreeStepsRight(-2);
 }
 
@@ -87,7 +87,7 @@ void API::turnRight45()
         getSimulatorResponse("turnRight45");
     else
         LOG_DEBUG("API: Sending TURN_RIGHT 45");
-        CommandHub::send(CommandType::TURN_RIGHT, 1);
+    CommandHub::send(CommandType::TURN_RIGHT, 1);
     internalMouse->turnIM45DegreeStepsRight(1);
 }
 
@@ -97,7 +97,7 @@ void API::turnRight90()
         getSimulatorResponse("turnRight90");
     else
         LOG_DEBUG("API: Sending TURN_RIGHT 90");
-        CommandHub::send(CommandType::TURN_RIGHT, 2);
+    CommandHub::send(CommandType::TURN_RIGHT, 2);
     internalMouse->turnIM45DegreeStepsRight(2);
 }
 
@@ -118,7 +118,7 @@ void API::arcTurnLeft90()
         getSimulatorResponse("arcTurnLeft90");
     else
         LOG_DEBUG("API: Sending ARC_TURN_LEFT_90");
-        CommandHub::send(CommandType::ARC_TURN_LEFT_90);
+    CommandHub::send(CommandType::ARC_TURN_LEFT_90);
     internalMouse->turnIM45DegreeStepsRight(-2);
 }
 
@@ -128,7 +128,7 @@ void API::arcTurnRight90()
         getSimulatorResponse("arcTurnRight90");
     else
         LOG_DEBUG("API: Sending ARC_TURN_RIGHT_90");
-        CommandHub::send(CommandType::ARC_TURN_RIGHT_90);
+    CommandHub::send(CommandType::ARC_TURN_RIGHT_90);
     internalMouse->turnIM45DegreeStepsRight(2);
 }
 
@@ -138,7 +138,7 @@ void API::arcTurnLeft45()
         getSimulatorResponse("arcTurnLeft45");
     else
         LOG_DEBUG("API: Sending ARC_TURN_LEFT_45");
-        CommandHub::send(CommandType::ARC_TURN_LEFT_45);
+    CommandHub::send(CommandType::ARC_TURN_LEFT_45);
     internalMouse->turnIM45DegreeStepsRight(-1);
 }
 
@@ -148,7 +148,7 @@ void API::arcTurnRight45()
         getSimulatorResponse("arcTurnRight45");
     else
         LOG_DEBUG("API: Sending ARC_TURN_RIGHT_45");
-        CommandHub::send(CommandType::ARC_TURN_RIGHT_45);
+    CommandHub::send(CommandType::ARC_TURN_RIGHT_45);
     internalMouse->turnIM45DegreeStepsRight(1);
 }
 

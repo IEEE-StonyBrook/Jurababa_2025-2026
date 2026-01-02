@@ -23,7 +23,7 @@ void InternalMouse::turnIM45DegreeStepsRight(int halfStepsRight)
 
 int InternalMouse::indexOfDirection(std::string direction)
 {
-    for (int i = 0; i < possibleDirections.size(); i++)
+    for (size_t i = 0; i < possibleDirections.size(); i++)
     {
         if (possibleDirections[i] == direction)
         {

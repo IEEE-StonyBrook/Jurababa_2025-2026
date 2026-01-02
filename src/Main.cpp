@@ -15,7 +15,6 @@
 #include <string>
 #include <vector>
 
-
 #include "Common/LogSystem.h"
 #include "Maze/InternalMouse.h"
 #include "Maze/MazeGraph.h"

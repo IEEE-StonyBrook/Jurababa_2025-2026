@@ -25,13 +25,14 @@ void interpretLFRPath(IAPIInterface* apiPtr, std::string lfrPath)
     // Go through each token and run movement.
     for (std::string t : tokens)
     {
+        LOG_INFO("Executing token: " + t);
         if (t == "R")
         {
-            apiPtr->arcTurnRight90();  // Use arc turn for smoother motion
+            apiPtr->turnRight90(); // Use regular turn for smoother motion
         }
         else if (t == "L")
         {
-            apiPtr->arcTurnLeft90();  // Use arc turn for smoother motion
+            apiPtr->turnLeft90(); // Use regular turn for smoother motion
         }
         else if (t == "F")
         {
@@ -39,15 +40,19 @@ void interpretLFRPath(IAPIInterface* apiPtr, std::string lfrPath)
         }
         else if (t == "R45")
         {
-            apiPtr->arcTurnRight45();  // Use arc turn for smoother motion
+            apiPtr->turnRight45(); // Use regular turn for smoother motion
         }
         else if (t == "L45")
         {
-            apiPtr->arcTurnLeft45();  // Use arc turn for smoother motion
+            apiPtr->turnLeft45(); // Use regular turn for smoother motion
         }
         else if (t == "FH")
         {
             apiPtr->moveForwardHalf();
+        }
+        else if (t == "GMF")
+        {
+            apiPtr->ghostMoveForward(1);
         }
         else
         {
@@ -83,17 +88,22 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
         setAllExplored(mouse);
     }
 
-    // Save original goal cells to restore after traversal
-    std::vector<std::array<int, 2>> originalGoalCells = mouse->getGoalCells();
-    mouse->setGoalCells(goalCells);
-
     while (true)
     {
         // --- Step 1: Exploration marking ---
         currNode->markAsExplored();
 
-        // --- Step 2: Goal check ---
-        if (mouse->isAGoalCell(currNode))
+        // --- Step 2: Goal check - check against the target goalCells, not mouse's goal cells
+        bool reachedGoal = false;
+        for (const auto& gc : goalCells)
+        {
+            if (currNode->getCellXPos() == gc[0] && currNode->getCellYPos() == gc[1])
+            {
+                reachedGoal = true;
+                break;
+            }
+        }
+        if (reachedGoal)
         {
             // LOG_INFO("Reached goal at (" + std::to_string(currNode->getCellXPos()) + "," +
             //          std::to_string(currNode->getCellYPos()) + ")");
@@ -114,41 +124,26 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
         if (lfrPath.empty())
         {
             LOG_ERROR("No path found!");
-            mouse->setGoalCells(originalGoalCells);
             return false;
         }
 
         LOG_INFO("A* LFR Path: " + lfrPath);
 
         // --- Step 5: Optional diagonalization ---
-        // NOTE: Diagonalization disabled for simulator because InternalMouse
-        // doesn't track sub-cell positions. Half-cell moves (FH) don't update
-        // the mouse's logical position, causing infinite loops.
-        // TODO: Enable when InternalMouse supports sub-cell position tracking.
-        // if (allExplored && diagonalsAllowed)
-        // {
-        //     lfrPath = Diagonalizer::diagonalize(lfrPath);
-        //     LOG_INFO("Diagonalized Path: " + lfrPath);
-        // }
-
-        bool SHOW_PATH       = true;
-        char GOAL_PATH_COLOR = 'G';
-        // --- Step 6: Optional coloring (like old code) ---
-        if (SHOW_PATH && allExplored)
+        // When maze is fully explored and diagonals allowed, diagonalize the path
+        // and execute it all at once (no re-calculation needed).
+        if (allExplored && diagonalsAllowed)
         {
-            // Just color current path from A*
-            std::stringstream ss(lfrPath);
-            std::string       token;
-            int               x = currNode->getCellXPos();
-            int               y = currNode->getCellYPos();
-            while (std::getline(ss, token, '#'))
-            {
-                apiPtr->setColor(x, y, GOAL_PATH_COLOR);
-                // NOTE: For real coloring, you’d need to map tokens back to cells.
-            }
+            std::string diagPath = Diagonalizer::diagonalize(lfrPath);
+            LOG_INFO("Diagonalized Path: " + diagPath);
+
+            // Execute the entire diagonalized path without interruption
+            interpretLFRPath(apiPtr, diagPath);
+
+            return true;
         }
 
-        // --- Step 7: Execute path step-by-step ---
+        // --- Step 6: Execute path step-by-step ---
         std::stringstream ss(lfrPath);
         std::string       move;
         while (std::getline(ss, move, '#'))
@@ -175,7 +170,6 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
         // break;  // Keep the FIXME break like the original Java version
     }
 
-    mouse->setGoalCells(originalGoalCells);
     return true;
 }
 

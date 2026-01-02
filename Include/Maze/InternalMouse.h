@@ -86,8 +86,8 @@ class InternalMouse
     int         indexOfDirection(std::string direction);
     std::string getNewDirectionAfterAddingHalfStepsRight(int halfStepsRight);
 
-    std::string                     currentRobotDirection;
     std::array<int, 2>              currentRobotPosition;
+    std::string                     currentRobotDirection;
     std::vector<std::array<int, 2>> goalCells;
     MazeGraph*                      mazeGraph;
 
@@ -95,7 +95,7 @@ class InternalMouse
                                                                           "s", "sw", "w", "nw"};
     const std::map<std::string, std::array<int, 2>> directionStringToOffsetArrayMap = {
         {"n", {0, 1}},  {"ne", {1, 1}},   {"e", {1, 0}},  {"se", {1, -1}},
-        {"s", {0, -1}}, {"sw", {-1, -1}}, {"w", {-1, 0}}, {"n", {-1, 1}}};
+        {"s", {0, -1}}, {"sw", {-1, -1}}, {"w", {-1, 0}}, {"nw", {-1, 1}}};
 };
 
 #endif

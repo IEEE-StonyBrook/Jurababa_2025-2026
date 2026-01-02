@@ -3,8 +3,8 @@
 
 #include <string>
 
-#include "Platform/IAPIInterface.h"
 #include "Maze/InternalMouse.h"
+#include "Platform/IAPIInterface.h"
 
 class API_SIMULATOR : public IAPIInterface
 {
@@ -69,6 +69,14 @@ class API_SIMULATOR : public IAPIInterface
      * @param steps The number of steps to move forward.
      */
     void moveForward(int steps) override;
+
+    /**
+     * Moves the mouse forward by a specified number of steps without updating
+     * the simulator.
+     *
+     * @param steps The number of steps to move forward.
+     */
+    void ghostMoveForward(int steps) override;
 
     /**
      * Turns the mouse left by 45 degrees.
@@ -194,7 +202,7 @@ class API_SIMULATOR : public IAPIInterface
 
   private:
     InternalMouse* internalMouse;
-    char           phaseColor_ = 'y';  // Default to yellow
+    char           phaseColor_ = 'y'; // Default to yellow
 
     std::string getSimulatorResponse(std::string commandUsed);
     int         getSimulatorIntegerResponse(std::string commandUsed);
