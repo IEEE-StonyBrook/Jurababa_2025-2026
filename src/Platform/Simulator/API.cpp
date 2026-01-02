@@ -51,9 +51,9 @@ void API_SIMULATOR::moveForward()
     if (runOnSimulator)
     {
         getSimulatorResponse("moveForward");
-        int XPos = internalMouse->getCurrentRobotNode()->getCellXPos();
-        int YPos = internalMouse->getCurrentRobotNode()->getCellYPos();
-        setColor(XPos, YPos, phaseColor_);
+        // int XPos = internalMouse->getCurrentRobotNode()->getCellXPos();
+        // int YPos = internalMouse->getCurrentRobotNode()->getCellYPos();
+        // setColor(XPos, YPos, phaseColor_);
     }
     internalMouse->moveIMForwardOneCell(1);
 }
