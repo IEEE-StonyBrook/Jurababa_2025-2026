@@ -55,6 +55,9 @@ class IAPIInterface
     virtual void clearText(int x, int y)                         = 0;
     virtual void clearAllText()                                  = 0;
 
+    // Phase tracking for visualization.
+    virtual void setPhaseColor(char color)                       = 0;
+
     // Setup and print.
     virtual void setUp(std::array<int, 2>                startCell,
                        std::vector<std::array<int, 2>> goalCells) = 0;

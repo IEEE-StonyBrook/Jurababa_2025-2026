@@ -20,7 +20,7 @@ void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api,
   MazeNode* currNode = start;
 
   while (!frontiers.empty()) {
-    LOG_INFO("Found new frontier");
+    // LOG_INFO("Found new frontier");
 
     // 1) Pick the closest frontier.
     MazeNode* nextFrontier =
@@ -28,23 +28,23 @@ void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api,
     if (nextFrontier == nullptr) {
       break;
     }
-    LOG_DEBUG("Next frontier at (" +
-              std::to_string(nextFrontier->getCellXPos()) + "," +
-              std::to_string(nextFrontier->getCellYPos()) + ")");
+    // LOG_DEBUG("Next frontier at (" +
+    //           std::to_string(nextFrontier->getCellXPos()) + "," +
+    //           std::to_string(nextFrontier->getCellYPos()) + ")");
 
-    LOG_INFO("Continuing explore");
+    // LOG_INFO("Continuing explore");
     bool moved = traversePathIteratively(
         &api, &mouse,
         {{nextFrontier->getCellXPos(), nextFrontier->getCellYPos()}},
         diagonalsAllowed, false, true);
-    LOG_INFO("Traversed");
+    // LOG_INFO("Traversed");
     if (!moved) {
       api.setText(nextFrontier->getCellXPos(), nextFrontier->getCellYPos(), "");
       frontiers.erase(nextFrontier);
       // continue;
     }
 
-    LOG_INFO("Detecting walls");
+    // LOG_INFO("Detecting walls");
     // 3) Arrived: detect walls, mark as explored.
     currNode = mouse.getCurrentRobotNode();
     detectWalls(api, mouse);
@@ -52,9 +52,9 @@ void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api,
     api.setText(currNode->getCellXPos(), currNode->getCellYPos(), "");
     frontiers.erase(currNode);
 
-    LOG_INFO("Adding neighbors of frontier at (" +
-             std::to_string(currNode->getCellXPos()) + "," +
-             std::to_string(currNode->getCellYPos()) + ")");
+    // LOG_INFO("Adding neighbors of frontier at (" +
+            //  std::to_string(currNode->getCellXPos()) + "," +
+            //  std::to_string(currNode->getCellYPos()) + ")");
     // 4) Add valid neighbors (ignore goal cells).
     std::vector<MazeNode*> neighbors =
         mouse.getNodeNeighbors(currNode, diagonalsAllowed);
@@ -66,7 +66,7 @@ void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api,
         frontiers.insert(neighbor);
       }
     }
-    LOG_INFO("Done with loop");
+    // LOG_INFO("Done with loop");
   }
 
   // 5) Finally, visit each avoided goal cell (if reachable).

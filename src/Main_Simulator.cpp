@@ -32,19 +32,22 @@ int main()
 
     // Phase 1: EXPLORATION - Map entire maze using frontier-based search
     LOG_INFO("Phase 1: Exploration (Frontier-Based)");
+    api.setPhaseColor('y');  // Yellow for exploration
     FrontierBased::explore(mouse, api, false);
     LOG_INFO("✓ Maze fully explored\n");
 
     // Phase 2: RETURN - Go back to start using discovered layout (no diagonals)
     LOG_INFO("Phase 2: Return to Start (A* without diagonals)");
+    api.setPhaseColor('c');  // Cyan for return path
     setAllExplored(&mouse);
     traversePathIteratively(&api, &mouse, {start}, false, true, false);
     LOG_INFO("✓ Returned to start\n");
 
-    // // Phase 3: SPEED RUN - Optimal path to goal with diagonals
-    // LOG_INFO("Phase 3: Speed Run (A* with diagonals)");
-    // traversePathIteratively(&api, &mouse, goal, true, true, false);
-    // LOG_INFO("✓ Speed run complete\n");
+    // Phase 3: SPEED RUN - Optimal path to goal with diagonals
+    LOG_INFO("Phase 3: Speed Run (A* with diagonals)");
+    api.setPhaseColor('G');  // Green for speed run
+    traversePathIteratively(&api, &mouse, goal, true, true, false);
+    LOG_INFO("✓ Speed run complete\n");
 
     LOG_INFO("=== SIMULATION COMPLETE ===");
     return 0;

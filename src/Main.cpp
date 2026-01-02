@@ -10,10 +10,11 @@
  *   - Core 1 → Core 0: Sensor data via MulticoreSensorHub
  */
 
-#include <stdio.h>
 #include <array>
+#include <stdio.h>
 #include <string>
 #include <vector>
+
 
 #include "Common/LogSystem.h"
 #include "Maze/InternalMouse.h"
@@ -46,7 +47,7 @@
 void processCommands(Robot* robot)
 {
     CommandPacket cmd;
-    bool sawStop = false;
+    bool          sawStop = false;
 
     // Drain all pending commands each tick
     while (CommandHub::receiveNonBlocking(cmd))
@@ -148,16 +149,16 @@ void core1_RobotController()
     multicore_fifo_push_blocking(1);
 
     // Real-time control loop (100Hz = 10ms period)
-    const int CONTROL_PERIOD_MS = 10;
-    absolute_time_t nextTick = make_timeout_time_ms(CONTROL_PERIOD_MS);
-    absolute_time_t lastTick = get_absolute_time();
+    const int       CONTROL_PERIOD_MS = 10;
+    absolute_time_t nextTick          = make_timeout_time_ms(CONTROL_PERIOD_MS);
+    absolute_time_t lastTick          = get_absolute_time();
 
     while (true)
     {
         // Calculate delta time for control updates
         absolute_time_t now = get_absolute_time();
-        float dt = absolute_time_diff_us(lastTick, now) * 1e-6f;
-        lastTick = now;
+        float           dt  = absolute_time_diff_us(lastTick, now) * 1e-6f;
+        lastTick            = now;
 
         // Update robot control (PID, motion profiling, etc.)
         robot.update(dt);
@@ -167,13 +168,13 @@ void core1_RobotController()
 
         // Publish sensor data to Core 0
         MulticoreSensorData sensorData{};
-        sensorData.left_encoder_count = leftEncoder.getTickCount();
+        sensorData.left_encoder_count  = leftEncoder.getTickCount();
         sensorData.right_encoder_count = rightEncoder.getTickCount();
-        sensorData.tof_left_mm = static_cast<int16_t>(leftToF.getToFDistanceFromWallMM());
-        sensorData.tof_front_mm = static_cast<int16_t>(frontToF.getToFDistanceFromWallMM());
-        sensorData.tof_right_mm = static_cast<int16_t>(rightToF.getToFDistanceFromWallMM());
-        sensorData.imu_yaw = imu.getIMUYawDegreesNeg180ToPos180();
-        sensorData.timestamp_ms = to_ms_since_boot(now);
+        sensorData.tof_left_mm         = static_cast<int16_t>(leftToF.getToFDistanceFromWallMM());
+        sensorData.tof_front_mm        = static_cast<int16_t>(frontToF.getToFDistanceFromWallMM());
+        sensorData.tof_right_mm        = static_cast<int16_t>(rightToF.getToFDistanceFromWallMM());
+        sensorData.imu_yaw             = imu.getIMUYawDegreesNeg180ToPos180();
+        sensorData.timestamp_ms        = to_ms_since_boot(now);
         MulticoreSensorHub::publish(sensorData);
 
         // Sleep until next control tick
@@ -205,11 +206,11 @@ int main()
     LOG_DEBUG("Core0: Core1 ready, starting maze solver");
 
     // Initialize maze solving components
-    std::array<int, 2> startCell = {0, 0};
+    std::array<int, 2>              startCell = {0, 0};
     std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
-    MazeGraph maze(16, 16);
-    InternalMouse mouse(startCell, std::string("n"), goalCells, &maze);
-    API api(&mouse);
+    MazeGraph                       maze(16, 16);
+    InternalMouse                   mouse(startCell, std::string("n"), goalCells, &maze);
+    API                             api(&mouse);
 
     // ========================================================================
     // Algorithm Execution - Modify this section for different solving modes
@@ -218,8 +219,8 @@ int main()
     // EXPLORATION MODE: Use frontier-based search to map unknown maze
     // Uncomment to enable:
     // FrontierBasedSearchSolver frontierSolver(&mouse);
-    // bool explorationComplete = traversePathIteratively(&api, &mouse, goalCells, false, false, false);
-    // if (explorationComplete) {
+    // bool explorationComplete = traversePathIteratively(&api, &mouse, goalCells, false, false,
+    // false); if (explorationComplete) {
     //     LOG_INFO("Maze exploration complete!");
     // }
 

@@ -1,6 +1,6 @@
 #include "Common/LogSystem.h"
 
-LogPriority LogSystem::printPriorityLevel = LogPriority::DEBUG;
+LogPriority LogSystem::printPriorityLevel = LogPriority::INFO;
 
 void LogSystem::logMessage(LogPriority logPriority, std::string logMessage)
 {

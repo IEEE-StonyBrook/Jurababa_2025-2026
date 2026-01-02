@@ -52,15 +52,15 @@ std::string Diagonalizer::diagonalize(const std::string& path) {
     MovementBlock prevBlockType = MovementBlock::DEFAULT;
     int i = 0;
 
-    debugLog("Split path into tokens:");
+    // debugLog("Split path into tokens:");
     for (auto& t : movementsSequence) {
-        debugLog("  token = " + t);
+        // debugLog("  token = " + t);
     }
 
     auto append = [&](const std::string& seq, const std::string& reason) {
         diagPath << seq;
         if (!seq.empty() && seq.back() != '#') diagPath << "#";
-        debugLog("Appending \"" + seq + "\" because: " + reason);
+        // debugLog("Appending \"" + seq + "\" because: " + reason);
     };
 
     while (i < static_cast<int>(movementsSequence.size())) {
@@ -151,31 +151,25 @@ std::string Diagonalizer::diagonalize(const std::string& path) {
                     break;
 
                 default:
-                    if (movementsSequence[i] == "F") {
-                        append("F#", "leftover forward");
-                    } else {
-                        debugLog("Skipping leftover turn: " + movementsSequence[i]);
-                    }
+                    // No diagonal pattern matched - preserve the original movement
+                    append(movementsSequence[i] + "#", "no diagonal pattern - keeping original");
                     break;
             }
             prevBlockType = blockType;
         } else {
-            if (movementsSequence[i] == "F") {
-                append("F#", "leftover forward at end");
-            } else {
-                debugLog("Skipping leftover turn at end: " + movementsSequence[i]);
-            }
+            // Not enough tokens for a 4-move pattern - preserve original movement
+            append(movementsSequence[i] + "#", "leftover at end - keeping original");
         }
 
         i++;
     }
 
-    debugLog("Correcting for edge...");
+    // debugLog("Correcting for edge...");
     correctForEdge(diagPath, prevBlockType);
 
     std::string out = diagPath.str();
     if (!out.empty() && out.back() == '#') out.pop_back();
-    debugLog("Final diagonalized path: " + out);
+    // debugLog("Final diagonalized path: " + out);
     return out;
 }
 
@@ -184,10 +178,10 @@ std::string Diagonalizer::diagonalize(const std::string& path) {
 // ------------------------------------------------------------
 void Diagonalizer::correctForEdge(std::ostringstream& diagPath, MovementBlock prevBlockType) {
     if (prevBlockType == MovementBlock::RFLF || prevBlockType == MovementBlock::LFLF) {
-        debugLog("Edge correction: ending with L45#FH#");
+        // debugLog("Edge correction: ending with L45#FH#");
         diagPath << "L45#FH#";
     } else if (prevBlockType == MovementBlock::LFRF || prevBlockType == MovementBlock::RFRF) {
-        debugLog("Edge correction: ending with R45#FH#");
+        // debugLog("Edge correction: ending with R45#FH#");
         diagPath << "R45#FH#";
     }
 }

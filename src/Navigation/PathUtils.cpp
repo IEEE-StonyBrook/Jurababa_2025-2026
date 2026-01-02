@@ -95,8 +95,8 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
         // --- Step 2: Goal check ---
         if (mouse->isAGoalCell(currNode))
         {
-            LOG_INFO("Reached goal at (" + std::to_string(currNode->getCellXPos()) + "," +
-                     std::to_string(currNode->getCellYPos()) + ")");
+            // LOG_INFO("Reached goal at (" + std::to_string(currNode->getCellXPos()) + "," +
+            //          std::to_string(currNode->getCellYPos()) + ")");
             break;
         }
 
@@ -105,10 +105,10 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
 
         // --- Step 4: Get path from A* ---
         std::string lfrPath = aStar.go(goalCells, diagonalsAllowed, !avoidGoalCells);
-        LOG_DEBUG("Goal Cells:");
+        LOG_INFO("Goal Cells:");
         for (const auto& cell : goalCells)
         {
-            LOG_DEBUG(" - (" + std::to_string(cell[0]) + "," + std::to_string(cell[1]) + ")");
+            LOG_INFO(" - (" + std::to_string(cell[0]) + "," + std::to_string(cell[1]) + ")");
         }
 
         if (lfrPath.empty())
@@ -121,11 +121,15 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
         LOG_INFO("A* LFR Path: " + lfrPath);
 
         // --- Step 5: Optional diagonalization ---
-        if (allExplored && diagonalsAllowed)
-        {
-            lfrPath = Diagonalizer::diagonalize(lfrPath);
-            LOG_INFO("Diagonalized Path: " + lfrPath);
-        }
+        // NOTE: Diagonalization disabled for simulator because InternalMouse
+        // doesn't track sub-cell positions. Half-cell moves (FH) don't update
+        // the mouse's logical position, causing infinite loops.
+        // TODO: Enable when InternalMouse supports sub-cell position tracking.
+        // if (allExplored && diagonalsAllowed)
+        // {
+        //     lfrPath = Diagonalizer::diagonalize(lfrPath);
+        //     LOG_INFO("Diagonalized Path: " + lfrPath);
+        // }
 
         bool SHOW_PATH       = true;
         char GOAL_PATH_COLOR = 'G';

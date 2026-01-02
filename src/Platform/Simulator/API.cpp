@@ -49,7 +49,7 @@ void API_SIMULATOR::moveForward()
     internalMouse->moveIMForwardOneCell(1);
     int XPos = internalMouse->getCurrentRobotNode()->getCellXPos();
     int YPos = internalMouse->getCurrentRobotNode()->getCellYPos();
-    setColor(XPos, YPos, 'y');
+    setColor(XPos, YPos, phaseColor_);
 }
 
 void API_SIMULATOR::moveForward(int steps)
@@ -237,6 +237,11 @@ void API_SIMULATOR::clearAllText()
 {
     if (runOnSimulator)
         std::cout << "clearAllText" << '\n';
+}
+
+void API_SIMULATOR::setPhaseColor(char color)
+{
+    phaseColor_ = color;
 }
 
 std::string API_SIMULATOR::getSimulatorResponse(std::string commandUsed)

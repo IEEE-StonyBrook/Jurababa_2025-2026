@@ -179,6 +179,13 @@ class API_SIMULATOR : public IAPIInterface
      */
     void clearAllText() override;
 
+    /**
+     * Sets the color used for path visualization during movement.
+     *
+     * @param color The color character to use (e.g., 'y', 'c', 'G').
+     */
+    void setPhaseColor(char color) override;
+
     void setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells) override;
     void printMaze() override;
     void executeSequence(const std::string& seq) override;
@@ -186,7 +193,8 @@ class API_SIMULATOR : public IAPIInterface
     bool runOnSimulator;
 
   private:
-  InternalMouse* internalMouse;
+    InternalMouse* internalMouse;
+    char           phaseColor_ = 'y';  // Default to yellow
 
     std::string getSimulatorResponse(std::string commandUsed);
     int         getSimulatorIntegerResponse(std::string commandUsed);
