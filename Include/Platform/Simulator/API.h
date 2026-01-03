@@ -194,6 +194,13 @@ class API_SIMULATOR : public IAPIInterface
      */
     void setPhaseColor(char color) override;
 
+    /**
+     * Gets the current phase color.
+     *
+     * @return The current phase color character.
+     */
+    char getPhaseColor() override;
+
     void setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells) override;
     void printMaze() override;
     void executeSequence(const std::string& seq) override;

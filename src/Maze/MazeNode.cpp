@@ -133,6 +133,17 @@ bool MazeNode::getCellIsExplored()
 {
     return cellIsExplored;
 }
+
+int MazeNode::getWallCount()
+{
+    int count = 0;
+    if (isThereNWall) count++;
+    if (isThereEWall) count++;
+    if (isThereSWall) count++;
+    if (isThereWWall) count++;
+    return count;
+}
+
 void MazeNode::markAsExplored()
 {
     cellIsExplored = true;

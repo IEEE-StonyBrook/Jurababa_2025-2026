@@ -59,6 +59,7 @@ class IAPIInterface
 
     // Phase tracking for visualization.
     virtual void setPhaseColor(char color) = 0;
+    virtual char getPhaseColor() = 0;
 
     // Setup and print.
     virtual void setUp(std::array<int, 2> startCell, std::vector<std::array<int, 2>> goalCells) = 0;

@@ -259,6 +259,11 @@ void API_SIMULATOR::setPhaseColor(char color)
     phaseColor_ = color;
 }
 
+char API_SIMULATOR::getPhaseColor()
+{
+    return phaseColor_;
+}
+
 std::string API_SIMULATOR::getSimulatorResponse(std::string commandUsed)
 {
     std::cout << commandUsed << '\n';

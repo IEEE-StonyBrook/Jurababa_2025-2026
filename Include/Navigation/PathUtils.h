@@ -12,4 +12,11 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
 void setAllExplored(InternalMouse* mouse);
 void detectWalls(IAPIInterface& api, InternalMouse& internalMouse);
 
+/**
+ * @brief Colors the cells in the given path with the current phase color.
+ * @param apiPtr Pointer to the API interface.
+ * @param cellPath Vector of MazeNode pointers representing the path cells.
+ */
+void colorPathCells(IAPIInterface* apiPtr, const std::vector<MazeNode*>& cellPath);
+
 #endif

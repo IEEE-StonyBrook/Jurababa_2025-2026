@@ -44,7 +44,6 @@ void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api,
       // continue;
     }
 
-    // LOG_INFO("Detecting walls");
     // 3) Arrived: detect walls, mark as explored.
     currNode = mouse.getCurrentRobotNode();
     detectWalls(api, mouse);
@@ -52,10 +51,20 @@ void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api,
     api.setText(currNode->getCellXPos(), currNode->getCellYPos(), "");
     frontiers.erase(currNode);
 
-    // LOG_INFO("Adding neighbors of frontier at (" +
-            //  std::to_string(currNode->getCellXPos()) + "," +
-            //  std::to_string(currNode->getCellYPos()) + ")");
-    // 4) Add valid neighbors (ignore goal cells).
+    // 4) Optimization: Mark neighbors with 3+ walls as explored (dead ends).
+    // A cell with 3 walls has only one entrance, so once we know about it,
+    // there's no need to physically visit it.
+    std::vector<MazeNode*> allNeighbors =
+        mouse.getNodeNeighbors(currNode, false);  // Cardinal only for wall check
+    for (MazeNode* neighbor : allNeighbors) {
+      if (!neighbor->getCellIsExplored() && neighbor->getWallCount() >= 3) {
+        neighbor->markAsExplored();
+        api.setText(neighbor->getCellXPos(), neighbor->getCellYPos(), "");
+        frontiers.erase(neighbor);
+      }
+    }
+
+    // 5) Add valid neighbors as frontiers (ignore goal cells).
     std::vector<MazeNode*> neighbors =
         mouse.getNodeNeighbors(currNode, diagonalsAllowed);
     for (MazeNode* neighbor : neighbors) {
@@ -66,7 +75,6 @@ void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api,
         frontiers.insert(neighbor);
       }
     }
-    // LOG_INFO("Done with loop");
   }
 
   // 5) Finally, visit each avoided goal cell (if reachable).

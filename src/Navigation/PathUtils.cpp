@@ -6,6 +6,7 @@
 
 #include "Common/LogSystem.h"
 #include "Navigation/Diagonalizer.h"
+#include "Navigation/PathConverter.h"
 
 void interpretLFRPath(IAPIInterface* apiPtr, std::string lfrPath)
 {
@@ -25,7 +26,7 @@ void interpretLFRPath(IAPIInterface* apiPtr, std::string lfrPath)
     // Go through each token and run movement.
     for (std::string t : tokens)
     {
-        LOG_INFO("Executing token: " + t);
+        // LOG_INFO("Executing token: " + t);
         if (t == "R")
         {
             apiPtr->turnRight90(); // Use regular turn for smoother motion
@@ -114,18 +115,21 @@ bool traversePathIteratively(IAPIInterface* apiPtr, InternalMouse* mouse,
         detectWalls(*apiPtr, *mouse);
 
         // --- Step 4: Get path from A* ---
-        std::string lfrPath = aStar.go(goalCells, diagonalsAllowed, !avoidGoalCells);
-        LOG_INFO("Goal Cells:");
-        for (const auto& cell : goalCells)
-        {
-            LOG_INFO(" - (" + std::to_string(cell[0]) + "," + std::to_string(cell[1]) + ")");
-        }
+        std::vector<MazeNode*> cellPath = aStar.getCellPath(goalCells, diagonalsAllowed, !avoidGoalCells);
 
-        if (lfrPath.empty())
+        if (cellPath.empty())
         {
             LOG_ERROR("No path found!");
             return false;
         }
+
+        // Color the path cells with the current phase color
+        colorPathCells(apiPtr, cellPath);
+
+        // Convert cell path to LFR format
+        std::string lfrPath = PathConverter::buildLFRPath(
+            mouse->getCurrentRobotNode(),
+            mouse->getCurrentRobotDirArray(), cellPath);
 
         LOG_INFO("A* LFR Path: " + lfrPath);
 
@@ -190,5 +194,14 @@ void detectWalls(IAPIInterface& api, InternalMouse& internalMouse)
     {
         api.setWall(currCell->getCellXPos(), currCell->getCellYPos(),
                     internalMouse.getDirectionToTheRight());
+    }
+}
+
+void colorPathCells(IAPIInterface* apiPtr, const std::vector<MazeNode*>& cellPath)
+{
+    char color = apiPtr->getPhaseColor();
+    for (MazeNode* node : cellPath)
+    {
+        apiPtr->setColor(node->getCellXPos(), node->getCellYPos(), color);
     }
 }
