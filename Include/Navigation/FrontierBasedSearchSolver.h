@@ -1,10 +1,7 @@
 #ifndef FRONTIERBASED_H
 #define FRONTIERBASED_H
 
-#include <limits>
 #include <queue>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "Common/LogSystem.h"
@@ -14,17 +11,22 @@
 
 /**
  * @class FrontierBased
- * @brief Implements the Frontier-Based exploration algorithm.
+ * @brief Implements Flood-Fill maze exploration algorithm.
  *
- * This class provides exploration logic for the micromouse by
- * expanding frontiers (unexplored nodes) until all reachable
- * nodes are visited. It uses BFS distance to select the closest
- * frontier and traverses using A*.
+ * This class provides exploration logic for the micromouse using
+ * flood-fill with distance gradient. This approach:
+ * - Maintains a distance grid from goal cells
+ * - Follows the gradient to efficiently explore all cells
+ * - Naturally handles backtracking through explored regions
+ * - Avoids goal cells until exploration is complete
  */
 class FrontierBased {
  public:
   /**
-   * @brief Explores the maze using the Frontier-Based algorithm.
+   * @brief Explores the maze using Flood-Fill algorithm.
+   *
+   * Uses distance gradient to visit all reachable cells efficiently.
+   * Goal cells are avoided until exploration is complete.
    *
    * @param mouse Reference to the InternalMouse instance representing the
    * mouse's state.
@@ -35,32 +37,76 @@ class FrontierBased {
   static void explore(InternalMouse& mouse, IAPIInterface& api, bool diagonalsAllowed);
 
  private:
+  // Distance grid for flood-fill (16x16 maze)
+  static int distanceGrid_[16][16];
+  static const int INFINITY_DIST = 9999;
+  static const int MAZE_SIZE = 16;
+
   /**
-   * @brief Picks the closest frontier using BFS to find distances from the
-   * current node.
+   * @brief Initializes the distance grid with infinity and goal cells at 0.
    *
    * @param mouse Reference to the InternalMouse instance.
-   * @param frontiers Reference to the set of frontier nodes.
-   * @param diagonalsAllowed Whether diagonal movements are permitted.
-   * @return MazeNode* Pointer to the closest frontier node, or nullptr if none
-   * is reachable.
    */
-  static MazeNode* pickNextFrontier(InternalMouse& mouse,
-                                    std::unordered_set<MazeNode*>& frontiers,
+  static void initializeDistanceGrid(InternalMouse& mouse);
+
+  /**
+   * @brief Updates distances using wavefront propagation from goal cells.
+   *
+   * Only propagates through accessible paths (no walls between cells).
+   *
+   * @param mouse Reference to the InternalMouse instance.
+   * @param diagonalsAllowed Whether diagonal movements are permitted.
+   */
+  static void updateDistances(InternalMouse& mouse, bool diagonalsAllowed);
+
+  /**
+   * @brief Gets the best neighbor to move to.
+   *
+   * Prioritizes unexplored cells, then picks lowest distance.
+   * Falls back to explored cells for backtracking.
+   *
+   * @param mouse Reference to the InternalMouse instance.
+   * @param current Current cell the robot is on.
+   * @param diagonalsAllowed Whether diagonal movements are permitted.
+   * @return MazeNode* Best neighbor to move to, or nullptr if none.
+   */
+  static MazeNode* getBestNeighbor(InternalMouse& mouse, MazeNode* current,
                                     bool diagonalsAllowed);
 
   /**
-   * @brief Performs BFS to calculate distances from the start node to all
-   * reachable nodes.
+   * @brief Moves directly to an adjacent cell without pathfinding.
+   *
+   * Calculates the required turn and moves forward one cell.
+   *
+   * @param api Reference to the IAPIInterface for movement commands.
+   * @param mouse Reference to the InternalMouse instance.
+   * @param target Pointer to the adjacent target cell.
+   */
+  static void moveDirectlyToAdjacent(IAPIInterface& api, InternalMouse& mouse,
+                                     MazeNode* target);
+
+  /**
+   * @brief Cascades dead-end marking from a cell.
+   *
+   * When a cell has 3 walls, it's marked as explored. This may cause
+   * adjacent cells to become dead-ends, triggering a cascade.
    *
    * @param mouse Reference to the InternalMouse instance.
-   * @param startNode Pointer to the starting MazeNode.
+   * @param api Reference to the IAPIInterface for visualization.
+   * @param cell The cell to start cascade from.
    * @param diagonalsAllowed Whether diagonal movements are permitted.
-   * @return std::unordered_map<MazeNode*, double> Map of nodes to their
-   * distance from the start node.
    */
-  static std::unordered_map<MazeNode*, double> getBFSDist(
-      InternalMouse& mouse, MazeNode* startNode, bool diagonalsAllowed);
+  static void markDeadEndCascade(InternalMouse& mouse, IAPIInterface& api,
+                                  MazeNode* cell, bool diagonalsAllowed);
+
+  /**
+   * @brief Updates the distance text display for all cells.
+   *
+   * Shows the flood-fill distance values on each cell for visualization.
+   *
+   * @param api Reference to the IAPIInterface for text display.
+   */
+  static void updateDistanceDisplay(IAPIInterface& api);
 };
 
 #endif  // FRONTIERBASED_H

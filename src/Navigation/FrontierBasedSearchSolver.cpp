@@ -1,142 +1,341 @@
 #include "Navigation/FrontierBasedSearchSolver.h"
 
+#include <algorithm>
+#include <unordered_set>
+
 #include "Navigation/PathUtils.h"
 
+// Static member definition
+int FrontierBased::distanceGrid_[16][16];
+
 /**
- * @brief Explores the maze using the Frontier-Based algorithm.
+ * @brief Initializes the distance grid with infinity.
+ */
+void FrontierBased::initializeDistanceGrid(InternalMouse& mouse)
+{
+    (void)mouse;
+    for (int x = 0; x < MAZE_SIZE; x++)
+    {
+        for (int y = 0; y < MAZE_SIZE; y++)
+        {
+            distanceGrid_[x][y] = INFINITY_DIST;
+        }
+    }
+}
+
+/**
+ * @brief Updates distances using wavefront propagation FROM UNEXPLORED FRONTIER CELLS.
  *
- * @param mouse Reference to the InternalMouse instance representing the mouse's
- * state.
- * @param api Reference to the IAPIInterface instance for interacting with the maze
- * display (platform-agnostic).
- * @param diagonalsAllowed Whether diagonal movements are permitted.
+ * Frontier cells = unexplored cells adjacent to explored cells (reachable).
+ * This creates a distance field where each explored cell knows how far it is
+ * from the nearest unexplored frontier. During backtracking, we follow the
+ * gradient toward lower distances (toward unexplored cells).
  */
-void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api,
-                            bool diagonalsAllowed) {
-  std::unordered_set<MazeNode*> frontiers;
-  MazeNode* start = mouse.getCurrentRobotNode();
-  frontiers.insert(start);
-  start->markAsExplored();
-  MazeNode* currNode = start;
-
-  while (!frontiers.empty()) {
-    // LOG_INFO("Found new frontier");
-
-    // 1) Pick the closest frontier.
-    MazeNode* nextFrontier =
-        pickNextFrontier(mouse, frontiers, diagonalsAllowed);
-    if (nextFrontier == nullptr) {
-      break;
-    }
-    // LOG_DEBUG("Next frontier at (" +
-    //           std::to_string(nextFrontier->getCellXPos()) + "," +
-    //           std::to_string(nextFrontier->getCellYPos()) + ")");
-
-    // LOG_INFO("Continuing explore");
-    bool moved = traversePathIteratively(
-        &api, &mouse,
-        {{nextFrontier->getCellXPos(), nextFrontier->getCellYPos()}},
-        diagonalsAllowed, false, true);
-    // LOG_INFO("Traversed");
-    if (!moved) {
-      api.setText(nextFrontier->getCellXPos(), nextFrontier->getCellYPos(), "");
-      frontiers.erase(nextFrontier);
-      // continue;
+void FrontierBased::updateDistances(InternalMouse& mouse, bool diagonalsAllowed)
+{
+    // Reset all cells to infinity
+    for (int x = 0; x < MAZE_SIZE; x++)
+    {
+        for (int y = 0; y < MAZE_SIZE; y++)
+        {
+            distanceGrid_[x][y] = INFINITY_DIST;
+        }
     }
 
-    // 3) Arrived: detect walls, mark as explored.
-    currNode = mouse.getCurrentRobotNode();
+    std::queue<MazeNode*>         queue;
+    std::unordered_set<MazeNode*> inQueue;
+
+    // Find all frontier cells (unexplored cells reachable from explored cells)
+    // These get distance 0
+    for (int x = 0; x < MAZE_SIZE; x++)
+    {
+        for (int y = 0; y < MAZE_SIZE; y++)
+        {
+            MazeNode* cell = mouse.getNodeAtPos(x, y);
+            if (cell == nullptr)
+                continue;
+
+            // Skip explored cells and goal cells
+            if (cell->getCellIsExplored() || mouse.isAGoalCell(cell))
+                continue;
+
+            // Check if this unexplored cell is adjacent to an explored cell
+            std::vector<MazeNode*> neighbors = mouse.getNodeNeighbors(cell, diagonalsAllowed);
+            for (MazeNode* neighbor : neighbors)
+            {
+                if (neighbor->getCellIsExplored() &&
+                    mouse.getCanMoveBetweenNodes(neighbor, cell, diagonalsAllowed))
+                {
+                    // This is a frontier cell - reachable unexplored
+                    distanceGrid_[x][y] = 0;
+                    queue.push(cell);
+                    inQueue.insert(cell);
+                    break;
+                }
+            }
+        }
+    }
+
+    // Wavefront propagation through explored cells
+    // Each explored cell gets distance = how far from nearest frontier
+    while (!queue.empty())
+    {
+        MazeNode* cell        = queue.front();
+        queue.pop();
+        int x           = cell->getCellXPos();
+        int y           = cell->getCellYPos();
+        int currentDist = distanceGrid_[x][y];
+
+        std::vector<MazeNode*> neighbors = mouse.getNodeNeighbors(cell, diagonalsAllowed);
+        for (MazeNode* neighbor : neighbors)
+        {
+            if (inQueue.find(neighbor) != inQueue.end())
+                continue;
+            if (!mouse.getCanMoveBetweenNodes(cell, neighbor, diagonalsAllowed))
+                continue;
+
+            // Only propagate to/through explored cells
+            if (!neighbor->getCellIsExplored())
+                continue;
+
+            int nx      = neighbor->getCellXPos();
+            int ny      = neighbor->getCellYPos();
+            int newDist = currentDist + 1;
+
+            if (newDist < distanceGrid_[nx][ny])
+            {
+                distanceGrid_[nx][ny] = newDist;
+                queue.push(neighbor);
+                inQueue.insert(neighbor);
+            }
+        }
+    }
+}
+
+/**
+ * @brief Gets the best neighbor to move to.
+ *
+ * Prioritizes unexplored cells (they have distance 0).
+ * Falls back to explored cells with lowest distance (toward nearest unexplored).
+ * Returns nullptr if no frontiers remain (exploration complete).
+ */
+MazeNode* FrontierBased::getBestNeighbor(InternalMouse& mouse, MazeNode* current,
+                                         bool diagonalsAllowed)
+{
+    MazeNode* bestUnexplored   = nullptr;
+    MazeNode* bestExplored     = nullptr;
+    int       bestExploredDist = INFINITY_DIST + 1;
+
+    std::vector<MazeNode*> neighbors = mouse.getNodeNeighbors(current, diagonalsAllowed);
+    for (MazeNode* neighbor : neighbors)
+    {
+        if (!mouse.getCanMoveBetweenNodes(current, neighbor, diagonalsAllowed))
+        {
+            continue;
+        }
+        if (mouse.isAGoalCell(neighbor))
+        {
+            continue;
+        }
+
+        if (!neighbor->getCellIsExplored())
+        {
+            // Found an unexplored neighbor - take it
+            bestUnexplored = neighbor;
+            break;  // Immediately prefer unexplored
+        }
+        else
+        {
+            // Track explored neighbor with lowest distance to frontier
+            int nx   = neighbor->getCellXPos();
+            int ny   = neighbor->getCellYPos();
+            int dist = distanceGrid_[nx][ny];
+            if (dist < bestExploredDist)
+            {
+                bestExploredDist = dist;
+                bestExplored     = neighbor;
+            }
+        }
+    }
+
+    // If we found an unexplored neighbor, return it
+    if (bestUnexplored)
+    {
+        return bestUnexplored;
+    }
+
+    // If best explored distance is still INFINITY, no frontiers exist - exploration done
+    if (bestExploredDist >= INFINITY_DIST)
+    {
+        return nullptr;
+    }
+
+    return bestExplored;
+}
+
+/**
+ * @brief Updates the distance text display for all cells.
+ */
+void FrontierBased::updateDistanceDisplay(IAPIInterface& api)
+{
+    for (int x = 0; x < MAZE_SIZE; x++)
+    {
+        for (int y = 0; y < MAZE_SIZE; y++)
+        {
+            int dist = distanceGrid_[x][y];
+            if (dist < INFINITY_DIST)
+            {
+                api.setText(x, y, std::to_string(dist));
+            }
+            else
+            {
+                api.setText(x, y, "");  // Clear text for unexplored/unreachable cells
+            }
+        }
+    }
+}
+
+/**
+ * @brief Explores the maze using Flood-Fill algorithm.
+ */
+void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api, bool diagonalsAllowed)
+{
+    initializeDistanceGrid(mouse);
+
+    MazeNode* current = mouse.getCurrentRobotNode();
+
+    // Initial setup: detect walls, mark explored
     detectWalls(api, mouse);
-    currNode->markAsExplored();
-    api.setText(currNode->getCellXPos(), currNode->getCellYPos(), "");
-    frontiers.erase(currNode);
+    current->markAsExplored();
+    api.setColor(current->getCellXPos(), current->getCellYPos(), api.getPhaseColor());
 
-    // 4) Optimization: Mark neighbors with 3+ walls as explored (dead ends).
-    // A cell with 3 walls has only one entrance, so once we know about it,
-    // there's no need to physically visit it.
-    std::vector<MazeNode*> allNeighbors =
-        mouse.getNodeNeighbors(currNode, false);  // Cardinal only for wall check
-    for (MazeNode* neighbor : allNeighbors) {
-      if (!neighbor->getCellIsExplored() && neighbor->getWallCount() >= 3) {
-        neighbor->markAsExplored();
-        api.setText(neighbor->getCellXPos(), neighbor->getCellYPos(), "");
-        frontiers.erase(neighbor);
-      }
+    // Update distances from frontier cells
+    updateDistances(mouse, diagonalsAllowed);
+    updateDistanceDisplay(api);
+
+    int       moveCount = 0;
+    const int MAX_MOVES = 1000;  // Safety limit
+
+    while (moveCount < MAX_MOVES)
+    {
+        moveCount++;
+
+        // Mark dead-end neighbors (cells with 3 walls)
+        markDeadEndCascade(mouse, api, current, diagonalsAllowed);
+
+        // Update distances (frontiers may have changed due to dead-end marking)
+        updateDistances(mouse, diagonalsAllowed);
+        updateDistanceDisplay(api);
+
+        // Get best neighbor
+        MazeNode* next = getBestNeighbor(mouse, current, diagonalsAllowed);
+
+        if (next == nullptr)
+        {
+            // No more accessible cells - exploration complete
+            break;
+        }
+
+        // Move to next cell
+        moveDirectlyToAdjacent(api, mouse, next);
+        current = mouse.getCurrentRobotNode();
+
+        // If this cell is unexplored, detect walls and mark it
+        if (!current->getCellIsExplored())
+        {
+            detectWalls(api, mouse);
+            current->markAsExplored();
+            api.setColor(current->getCellXPos(), current->getCellYPos(), api.getPhaseColor());
+        }
     }
 
-    // 5) Add valid neighbors as frontiers (ignore goal cells).
-    std::vector<MazeNode*> neighbors =
-        mouse.getNodeNeighbors(currNode, diagonalsAllowed);
-    for (MazeNode* neighbor : neighbors) {
-      if (!neighbor->getCellIsExplored() &&
-          mouse.getCanMoveBetweenNodes(currNode, neighbor, diagonalsAllowed) &&
-          !mouse.isAGoalCell(neighbor)) {
-        api.setText(neighbor->getCellXPos(), neighbor->getCellYPos(), "*");
-        frontiers.insert(neighbor);
-      }
-    }
-  }
-
-  // 5) Finally, visit each avoided goal cell (if reachable).
-  traversePathIteratively(&api, &mouse, mouse.getGoalCells(), diagonalsAllowed,
-                          false, false);
+    // Finally visit goal cells
+    traversePathIteratively(&api, &mouse, mouse.getGoalCells(), diagonalsAllowed, false, false);
 }
 
 /**
- * @brief Picks the closest frontier using BFS to find distances from current
- * node.
+ * @brief Moves directly to an adjacent cell without pathfinding.
  */
-MazeNode* FrontierBased::pickNextFrontier(
-    InternalMouse& mouse, std::unordered_set<MazeNode*>& frontiers,
-    bool diagonalsAllowed) {
-  MazeNode* currNode = mouse.getCurrentRobotNode();
-  MazeNode* bestNode = nullptr;
-  double bestDist = std::numeric_limits<double>::infinity();
+void FrontierBased::moveDirectlyToAdjacent(IAPIInterface& api, InternalMouse& mouse,
+                                           MazeNode* target)
+{
+    MazeNode* current = mouse.getCurrentRobotNode();
 
-  // Get BFS distances from current node to all reachable nodes
-  std::unordered_map<MazeNode*, double> distMap =
-      getBFSDist(mouse, currNode, diagonalsAllowed);
+    int dx = target->getCellXPos() - current->getCellXPos();
+    int dy = target->getCellYPos() - current->getCellYPos();
 
-  for (MazeNode* frontier : frontiers) {
-    auto it = distMap.find(frontier);
-    if (it != distMap.end()) {
-      double dist = it->second;
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestNode = frontier;
-      }
+    std::array<int, 2> currentDir = mouse.getCurrentRobotDirArray();
+    std::array<int, 2> targetDir  = {dx, dy};
+
+    if (currentDir == targetDir)
+    {
+        api.moveForward();
     }
-  }
-  return bestNode;
+    else
+    {
+        int cross = currentDir[0] * targetDir[1] - currentDir[1] * targetDir[0];
+        int dot   = currentDir[0] * targetDir[0] + currentDir[1] * targetDir[1];
+
+        if (cross > 0)
+        {
+            if (dot == 0)
+            {
+                api.turnLeft90();
+            }
+            else if (dot < 0)
+            {
+                api.turnLeft90();
+                api.turnLeft45();
+            }
+            else
+            {
+                api.turnLeft45();
+            }
+        }
+        else if (cross < 0)
+        {
+            if (dot == 0)
+            {
+                api.turnRight90();
+            }
+            else if (dot < 0)
+            {
+                api.turnRight90();
+                api.turnRight45();
+            }
+            else
+            {
+                api.turnRight45();
+            }
+        }
+        else
+        {
+            if (dot < 0)
+            {
+                api.turnRight90();
+                api.turnRight90();
+            }
+        }
+        api.moveForward();
+    }
 }
 
 /**
- * @brief Performs BFS to calculate distances from the start node to all
- * reachable nodes.
+ * @brief Cascades dead-end marking from a cell.
  */
-std::unordered_map<MazeNode*, double> FrontierBased::getBFSDist(
-    InternalMouse& mouse, MazeNode* startNode, bool diagonalsAllowed) {
-  std::queue<MazeNode*> queue;
-  std::unordered_map<MazeNode*, double> distMap;
+void FrontierBased::markDeadEndCascade(InternalMouse& mouse, IAPIInterface& api, MazeNode* cell,
+                                       bool diagonalsAllowed)
+{
+    std::vector<MazeNode*> neighbors = mouse.getNodeNeighbors(cell, false);
 
-  distMap[startNode] = 0.0;
-  queue.push(startNode);
-
-  while (!queue.empty()) {
-    MazeNode* currNode = queue.front();
-    queue.pop();
-    double currDist = distMap[currNode];
-
-    std::vector<MazeNode*> neighbors =
-        mouse.getNodeNeighbors(currNode, diagonalsAllowed);
-    for (MazeNode* neighbor : neighbors) {
-      if (distMap.find(neighbor) == distMap.end() &&
-          mouse.getCanMoveBetweenNodes(currNode, neighbor, diagonalsAllowed)) {
-        distMap[neighbor] =
-            currDist + InternalMouse::euclideanDistance(*currNode, *neighbor);
-        queue.push(neighbor);
-      }
+    for (MazeNode* neighbor : neighbors)
+    {
+        if (!neighbor->getCellIsExplored() && neighbor->getWallCount() == 3)
+        {
+            neighbor->markAsExplored();
+            api.setColor(neighbor->getCellXPos(), neighbor->getCellYPos(), api.getPhaseColor());
+            api.setText(neighbor->getCellXPos(), neighbor->getCellYPos(), "");
+            markDeadEndCascade(mouse, api, neighbor, diagonalsAllowed);
+        }
     }
-  }
-  return distMap;
 }
