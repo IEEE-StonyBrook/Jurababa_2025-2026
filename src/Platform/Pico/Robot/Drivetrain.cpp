@@ -20,6 +20,10 @@ void Drivetrain::reset()
 
     left_velocity_mm_per_second_ = 0.0f;
     right_velocity_mm_per_second_ = 0.0f;
+
+    // Reset delta tracking for incremental error accumulation
+    last_left_position_mm_ = 0.0f;
+    last_right_position_mm_ = 0.0f;
 }
 
 // ============================================================
@@ -39,25 +43,47 @@ float Drivetrain::getMotorVelocityMMps(WheelSide side)
                                       : right_velocity_mm_per_second_;
 }
 
-float Drivetrain::getFeedforward(WheelSide side, float wheel_speed_mm_per_second)
+float Drivetrain::getFeedforward(WheelSide side, float wheel_speed_mm_per_second,
+                                float wheel_accel_mm_per_second2)
 {
     if (std::fabs(wheel_speed_mm_per_second) < DRIVETRAIN_FF_DEADZONE_MMPS)
         return 0.0f;
 
     bool is_left = (side == WheelSide::LEFT);
 
+    // TODO: Mazerunner-core has per-motor Ka tuning for better asymmetry compensation
     if (wheel_speed_mm_per_second > 0.0f)
     {
         float kv = is_left ? FORWARD_KVL : FORWARD_KVR;
         float ks = is_left ? FORWARD_KSL : FORWARD_KSR;
-        return kv * wheel_speed_mm_per_second + ks;
+        float ka = is_left ? FORWARD_KAL : FORWARD_KAR;
+        return kv * wheel_speed_mm_per_second + ks + ka * wheel_accel_mm_per_second2;
     }
     else
     {
         float kv = is_left ? REVERSE_KVL : REVERSE_KVR;
         float ks = is_left ? REVERSE_KSL : REVERSE_KSR;
-        return kv * wheel_speed_mm_per_second - ks;
+        float ka = is_left ? REVERSE_KAL : REVERSE_KAR;
+        return kv * wheel_speed_mm_per_second - ks + ka * wheel_accel_mm_per_second2;
     }
+}
+
+float Drivetrain::getMotorDeltaMM(WheelSide side)
+{
+    // Get current position
+    float current_pos = getMotorDistanceMM(side);
+
+    // Get last position reference
+    float& last_pos = (side == WheelSide::LEFT) ? last_left_position_mm_
+                                                  : last_right_position_mm_;
+
+    // Calculate delta
+    float delta = current_pos - last_pos;
+
+    // Update last position for next call
+    last_pos = current_pos;
+
+    return delta;
 }
 
 // ============================================================
@@ -86,12 +112,13 @@ float Drivetrain::getMotorVelocityMMps(std::string side)
     return 0.0f;
 }
 
-float Drivetrain::getFeedforward(std::string side, float wheel_speed_mm_per_second)
+float Drivetrain::getFeedforward(std::string side, float wheel_speed_mm_per_second,
+                                float wheel_accel_mm_per_second2)
 {
     if (side == "left")
-        return getFeedforward(WheelSide::LEFT, wheel_speed_mm_per_second);
+        return getFeedforward(WheelSide::LEFT, wheel_speed_mm_per_second, wheel_accel_mm_per_second2);
     if (side == "right")
-        return getFeedforward(WheelSide::RIGHT, wheel_speed_mm_per_second);
+        return getFeedforward(WheelSide::RIGHT, wheel_speed_mm_per_second, wheel_accel_mm_per_second2);
 
     LOG_ERROR("Drivetrain::getFeedforward - Invalid side string: " + side);
     return 0.0f;

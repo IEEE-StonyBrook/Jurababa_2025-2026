@@ -1,6 +1,7 @@
 #ifndef ROBOT_H
 #define ROBOT_H
 
+#include "Common/MotionProfile.h"
 #include "Common/PIDController.h"
 #include "Platform/Pico/Robot/RobotUtils.h"
 #include <cmath>
@@ -9,193 +10,264 @@
 class Drivetrain;
 class Sensors;
 
+/**
+ * @brief High-level robot controller with position-based control
+ *
+ * Implements mazerunner-core style dual PD controllers for position and
+ * rotation control with trapezoidal motion profiling. Clean movement API
+ * for maze navigation.
+ */
 class Robot
 {
   public:
-    // Construct robot "Brain" using drivetrain + sensors (Hardware wrappers)
+    /**
+     * @brief Construct robot controller with hardware components
+     * @param drivetrain Pointer to drivetrain interface
+     * @param sensors Pointer to sensor interface
+     */
     Robot(Drivetrain* drivetrain, Sensors* sensors);
 
-    // Reset drivetrain/sensors and clear controller state (Call when switching modes)
+    /**
+     * @brief Reset all controllers and state
+     */
     void reset();
 
-    // Immediately stop motors and enter Idle mode
-    void stop();
-
-    // Drive forward at a target speed while holding a target yaw
-    // forwardMMps is millimeters/second, holdYawDeg is degrees [-180, 180]
-    void driveStraightMMps(float forwardMMps, float holdYawDeg);
-
-    // Drive a fixed distance while holding the nearest 45-degree heading
-    // distanceMM is always positive; forwardMMps sets direction by sign
-    void driveDistanceMM(float distanceMM, float forwardMMps);
-
-    // Turn in place to a target yaw using IMU yaw feedback
-    // targetYawDeg is degrees [-180, 180]
-    void turnToYawDeg(float targetYawDeg);
-
-    // Turn to the nearest 45-degree heading after applying a +/-45 step
-    // side must be "left" or "right"
-    void turn45Degrees(std::string side, int times);
-
-    // Execute a smooth arc turn at constant radius
-    // Performs a circular arc turn combining forward motion with rotation
-    // targetYawDeg: absolute target yaw angle (degrees, -180 to 180)
-    // arcLengthMM: distance to travel along the arc (millimeters)
-    // baseVelocityMMps: forward velocity during turn (mm/s)
-    void arcTurnToYawDeg(float targetYawDeg, float arcLengthMM, float baseVelocityMMps);
-
-    // Execute a 90-degree arc turn (convenience wrapper)
-    // side must be "left" or "right"
-    void arcTurn90Degrees(std::string side);
-
-    // Execute a 45-degree arc turn
-    // side must be "left" or "right"
-    void arcTurn45Degrees(std::string side);
-
-    // Call every control tick (e.g. 5ms or 10ms) to run controllers and update motor outputs
-    void update(float dt);
-
-    // Returns true when the current motion goal is satisfied
-    bool isMotionDone() const;
-
-    // Tuning
-    void setYawGains(float kp, float ki, float kd);
-    void setWheelGains(float kp, float ki, float kd);
-
-    // Limits
-    void setMaxDuty(float maxDuty);
-    void setMaxDutySlewPerSec(float maxDutyChangePerSec);
-    void setMaxWheelSpeedMMps(float maxWheelSpeedMMps);
-    void setMaxYawDiffMMps(float maxYawDiffMMps);
-
-    // Completion criteria
-    void setYawToleranceDeg(float tolDeg);
-
-    // DriveDistance shaping
-    void setSlowdownDistMM(float slowdownDistMM);
-    void setMinSlowdownScale(float minScale);
-
-  private:
-    enum class Mode
-    {
-        Idle,
-        DriveStraight,
-        DriveDistance,
-        TurnInPlace,
-        ArcTurn  // Smooth arc turning (constant radius)
-    };
-
-    // ============= Motion Mode Handlers ============= //
-    void handleIdleMode(float dt);
-    void handleTurnInPlaceMode(float dt);
-    void handleDriveStraightMode(float dt);
-    void handleDriveDistanceMode(float dt);
-    void handleArcTurnMode(float dt);
-
-    // ============= Control Building Blocks ============= //
+    // ============================================================
+    // Basic Motion Commands
+    // ============================================================
 
     /**
-     * @brief Applies slew rate limit to commanded duty cycle
+     * @brief Move forward/backward a specified distance with profiling
      *
-     * Prevents sudden duty changes that could cause wheel slip or mechanical stress.
+     * @param distanceMM Distance to travel (positive=forward, negative=backward)
+     * @param maxVelocityMMps Maximum velocity during motion
+     * @param accelerationMMps2 Acceleration/deceleration rate
+     */
+    void moveDistance(float distanceMM, float maxVelocityMMps, float accelerationMMps2);
+
+    /**
+     * @brief Turn in place by specified angle with profiling
+     *
+     * @param degrees Angle to turn (positive=CCW, negative=CW)
+     * @param maxVelocityDegps Maximum angular velocity
+     * @param accelerationDegps2 Angular acceleration/deceleration rate
+     */
+    void turnInPlace(float degrees, float maxVelocityDegps, float accelerationDegps2);
+
+    /**
+     * @brief Stop at cell center with position hold
+     */
+    void stopAtCenter();
+
+    /**
+     * @brief Immediately stop motors and reset state
+     */
+    void stop();
+
+    // ============================================================
+    // Cell Navigation (Convenience Wrappers)
+    // ============================================================
+
+    /**
+     * @brief Move exactly one cell forward (180mm)
+     */
+    void moveToNextCell();
+
+    /**
+     * @brief Turn 90 degrees left (CCW)
+     */
+    void turnLeft90();
+
+    /**
+     * @brief Turn 90 degrees right (CW)
+     */
+    void turnRight90();
+
+    /**
+     * @brief Turn 180 degrees (alternates direction to reduce drift)
+     */
+    void turnAround();
+
+    // ============================================================
+    // Advanced Motion
+    // ============================================================
+
+    /**
+     * @brief Execute coordinated arc turn (forward + rotation)
+     *
+     * @param degrees Angle to turn
+     * @param radiusMM Turn radius
+     */
+    void smoothTurn(float degrees, float radiusMM);
+
+    /**
+     * @brief Reverse until wall contact, then recalibrate position
+     *
+     * @param maxDistanceMM Maximum distance to travel backward
+     */
+    void backToWall(float maxDistanceMM);
+
+    /**
+     * @brief Adjust lateral position using ToF sensors
+     */
+    void centerWithWalls();
+
+    // ============================================================
+    // Status Queries
+    // ============================================================
+
+    /**
+     * @brief Check if current motion is complete
+     * @return true if motion finished, false otherwise
+     */
+    bool isMotionComplete() const;
+
+    /**
+     * @brief Get remaining distance in current motion
+     * @return Remaining distance in mm
+     */
+    float getRemainingDistance() const;
+
+    /**
+     * @brief Get remaining angle in current rotation
+     * @return Remaining angle in degrees
+     */
+    float getRemainingAngle() const;
+
+    // ============================================================
+    // Control Loop
+    // ============================================================
+
+    /**
+     * @brief Main control update (call at 100Hz from Core1)
+     *
+     * @param dt Time step in seconds since last update
+     */
+    void updateControl(float dt);
+
+    // ============================================================
+    // Controller Tuning
+    // ============================================================
+
+    void setForwardGains(float kp, float ki, float kd);
+    void setRotationGains(float kp, float ki, float kd);
+
+    // ============================================================
+    // Legacy API (Deprecated - for backward compatibility)
+    // ============================================================
+    // TODO: Remove once all calling code is migrated to new API
+
+    void driveStraightMMps(float forwardMMps, float holdYawDeg);
+    void driveDistanceMM(float distanceMM, float forwardMMps);
+    void turnToYawDeg(float targetYawDeg);
+    void turn45Degrees(std::string side, int times);
+    void arcTurnToYawDeg(float targetYawDeg, float arcLengthMM, float baseVelocityMMps);
+    void arcTurn90Degrees(std::string side);
+    void arcTurn45Degrees(std::string side);
+    void update(float dt);  // Wrapper for updateControl
+    bool isMotionDone() const;  // Wrapper for isMotionComplete
+
+  private:
+    // ============================================================
+    // Motion State
+    // ============================================================
+
+    enum class MotionState
+    {
+        Idle,           // Not moving
+        MovingForward,  // Linear motion (forward or backward)
+        TurningInPlace, // Rotating on center axis
+        SmoothTurning,  // Coordinated arc turn
+        Stopping        // Settling to final position
+    };
+
+    MotionState state_ = MotionState::Idle;
+
+    // ============================================================
+    // Profile Update Methods
+    // ============================================================
+
+    void updateForwardProfile(float dt);
+    void updateRotationProfile(float dt);
+
+    // ============================================================
+    // Completion Check Methods
+    // ============================================================
+
+    void checkForwardCompletion();
+    void checkRotationCompletion();
+    void checkSmoothTurnCompletion();
+    void checkStoppingCompletion();
+
+    // ============================================================
+    // Control Methods
+    // ============================================================
+
+    /**
+     * @brief Position control loop with incremental error accumulation
+     *
+     * Implements mazerunner-core dual PD controller pattern with
+     * feedforward compensation.
+     *
+     * @param dt Time step in seconds
+     */
+    void runPositionControl(float dt);
+
+    /**
+     * @brief Apply slew rate limiting to duty cycle
      */
     float applySlew(float cmd, float& prevCmd, float dt);
 
     /**
-     * @brief Ramps current value toward desired target at maximum rate
-     *
-     * Used for smooth velocity profiling during acceleration/deceleration.
+     * @brief Get state name for logging
      */
-    float rampToward(float desired, float current, float maxDelta);
+    std::string getStateName() const;
 
-    /**
-     * @brief Sets target velocities for both wheels
-     *
-     * Clamps to maximum safe wheel speed.
-     */
-    void setWheelVelocityTargetsMMps(float vLeftMMps, float vRightMMps);
+    // ============================================================
+    // Hardware Interfaces
+    // ============================================================
 
-    /**
-     * @brief Profiles base velocity and yaw, converts to wheel targets
-     *
-     * Handles ramping, yaw profiling, PID control, and minimum speed enforcement.
-     */
-    void commandBaseAndYaw(float vBaseMMps, float dt);
-
-    /**
-     * @brief Profiles the yaw setpoint smoothly toward target
-     *
-     * Prevents sudden turns by ramping yaw setpoint at max angular velocity.
-     * @return Profiled yaw error for PID control
-     */
-    float applyYawProfiling(float dt);
-
-    /**
-     * @brief Calculates yaw correction with minimum speed enforcement
-     *
-     * Runs PID on yaw error and enforces minimum turn speed to overcome friction.
-     * @param yawError Profiled yaw error in degrees
-     * @param dt Time step in seconds
-     * @return Wheel speed differential (mm/s)
-     */
-    float calculateYawCorrection(float yawError, float dt);
-
-    /**
-     * @brief Runs low-level wheel velocity control with feedforward + PID
-     *
-     * Outputs duty cycles to drivetrain motors.
-     */
-    void runWheelVelocityControl(float dt);
-
-    /**
-     * @brief Calculates target velocity for distance-based motion
-     *
-     * Implements two-phase deceleration profile accounting for minimum viable speed.
-     */
-    float calculateTargetVelocityForDistance(float remaining, float vActual);
-
-  private:
     Drivetrain* drivetrain;
     Sensors*    sensors;
 
-    // High-level yaw controller: Output is wheel speed differential (mm/s)
-    PIDController yawPID;
+    // ============================================================
+    // Motion Profiles (Trapezoidal velocity generation)
+    // ============================================================
 
-    // Low-level wheel speed controllers: Output is duty correction
-    PIDController leftWheelPID;
-    PIDController rightWheelPID;
+    MotionProfile forwardProfile_;   // Linear motion profiling
+    MotionProfile rotationProfile_;  // Angular motion profiling
 
-    Mode mode     = Mode::Idle;
-    Mode prevMode = Mode::Idle;
+    // ============================================================
+    // Position Controllers (PD-based, mazerunner-core pattern)
+    // ============================================================
 
-    // Motion targets
-    float targetForwardMMps = 0.0f;
-    float targetYawDeg      = 0.0f;
+    PIDController forwardController_;   // Forward position control (Ki=0 for PD)
+    PIDController rotationController_;  // Rotation angle control (Ki=0 for PD)
 
-    // Wheel targets (consumed by runWheelVelocityControl)
-    float targetLeftMMps  = 0.0f;
-    float targetRightMMps = 0.0f;
+    // Incremental error accumulation (mazerunner-core pattern)
+    float forwardError_     = 0.0f;
+    float rotationError_    = 0.0f;
+    float prevForwardError_  = 0.0f;
+    float prevRotationError_ = 0.0f;
 
-    // DriveDistance state (Per wheel for robustness)
-    float driveStartLeftDistMM  = 0.0f;
-    float driveStartRightDistMM = 0.0f;
-    float driveTargetDistMM     = 0.0f;
+    // ============================================================
+    // Target Tracking (for feedforward)
+    // ============================================================
 
-    // ArcTurn state (Similar to DriveDistance but tracks arc length)
-    float arcTurnStartLeftDistMM      = 0.0f;
-    float arcTurnStartRightDistMM     = 0.0f;
-    float arcTurnTargetArcLengthMM    = 0.0f;
-    float arcTurnTargetYawDeg         = 0.0f;
-    float arcTurnBaseVelocityMMps     = 0.0f;
+    float targetForwardVelocityMMps_      = 0.0f;  // From forward profile
+    float targetAngularVelocityDegps_     = 0.0f;  // From rotation profile
+    float targetForwardAccelerationMMps2_ = 0.0f;  // For Ka feedforward
 
-    // ============= Runtime State ============= //
-    float prevLeftDuty  = 0.0f;
-    float prevRightDuty = 0.0f;
+    float targetYawDeg_ = 0.0f;  // Target heading for alignment
 
-    float vBaseCmdMMps       = 0.0f;  // Ramped base velocity command
-    float currentYawSetpoint = 0.0f;  // Profiled yaw target (moves smoothly toward targetYawDeg)
+    // ============================================================
+    // Runtime State
+    // ============================================================
 
-    bool motionDone = true;
+    float prevLeftDuty_  = 0.0f;  // For slew rate limiting
+    float prevRightDuty_ = 0.0f;
+
+    bool motionDone_ = true;  // Motion completion flag
 };
 
 #endif
