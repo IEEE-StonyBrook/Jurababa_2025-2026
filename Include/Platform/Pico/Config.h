@@ -168,6 +168,40 @@
 #define TOF_LEFT_WALL_THRESHOLD_MM  100   // Left wall detection threshold
 #define TOF_RIGHT_WALL_THRESHOLD_MM 100   // Right wall detection threshold
 #define TOF_FRONT_WALL_THRESHOLD_MM 120   // Front wall detection threshold
+#define TOF_MAX_RANGE_MM            500   // Maximum ToF sensor range (mm)
+
+// ================= Mazerunner-Core Position Control ================= //
+// Forward PD controller gains (position control, not velocity!)
+#define FWD_KP  0.05f  // Proportional gain for forward position error
+#define FWD_KD  0.6f   // Derivative gain for forward position error
+
+// Rotation PD controller gains (angle control)
+#define ROT_KP  0.15f  // Proportional gain for rotation error
+#define ROT_KD  0.5f   // Derivative gain for rotation error
+
+// Acceleration feedforward constants (Ka term) - Start at 0, tune empirically
+// TODO: Tune these values after testing - typical range 0.0001 to 0.001
+#define FORWARD_KAL  0.0f  // Left motor acceleration gain (duty per mm/s²)
+#define FORWARD_KAR  0.0f  // Right motor acceleration gain
+#define REVERSE_KAL  0.0f  // Left motor reverse acceleration gain
+#define REVERSE_KAR  0.0f  // Right motor reverse acceleration gain
+
+// Cell navigation constants
+#define CELL_SIZE_MM  180.0f  // Standard micromouse cell size (mm)
+
+// Motion speed presets (mazerunner-core style)
+#define ROBOT_MAX_SEARCH_SPEED_MMPS       300.0f  // Search mode speed (mm/s)
+#define ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS  250.0f  // Arc turn speed (mm/s)
+#define ROBOT_MAX_TURN_SPEED_DEGPS        360.0f  // Turn speed (deg/s) - alias for clarity
+#define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2   720.0f  // Angular acceleration (deg/s²)
+#define ROBOT_BACKUP_SPEED_MMPS           100.0f  // Backup/reverse speed (mm/s)
+
+// Wall calibration constants
+#define WALL_CONTACT_THRESHOLD_MM  30.0f  // Distance indicating wall contact (mm)
+#define BACK_WALL_TO_CENTER_MM     90.0f  // Distance from back wall to cell center (mm)
+
+// Wall following and centering
+#define CENTERING_CORRECTION_GAIN  0.01f  // Lateral centering gain (dimensionless)
 
 // ================= Multicore Constants ================= //
 #define CORE_SLEEP_MS 250 // Sleep time for core loops (ms)

@@ -54,9 +54,44 @@ class Sensors
     float getAngularVelocityDegps();
 
     /**
+     * @brief Returns yaw change since last call (incremental tracking)
+     *
+     * This method tracks angular position changes between calls, enabling
+     * incremental error accumulation pattern for rotation control.
+     *
+     * @return Angular delta in degrees since last call
+     */
+    float getYawDelta();
+
+    /**
+     * @brief Returns front ToF sensor distance
+     * @return Distance in millimeters
+     */
+    float getFrontDistanceMM();
+
+    /**
+     * @brief Returns left ToF sensor distance
+     * @return Distance in millimeters
+     */
+    float getLeftDistanceMM();
+
+    /**
+     * @brief Returns right ToF sensor distance
+     * @return Distance in millimeters
+     */
+    float getRightDistanceMM();
+
+    /**
      * @brief Resets IMU yaw to zero at current heading
      */
     void resetYaw();
+
+    /**
+     * @brief Resets position for odometry recalibration
+     *
+     * Called after backing into wall to reset known position reference.
+     */
+    void resetPosition();
 
     /**
      * @brief Updates angular velocity estimate
@@ -74,6 +109,9 @@ class Sensors
     // Angular velocity estimation state
     float previous_yaw_ = 0.0f;
     float current_angular_velocity_deg_per_second_ = 0.0f;
+
+    // Yaw delta tracking for incremental error accumulation
+    float last_yaw_for_delta_ = 0.0f;
 };
 
 #endif

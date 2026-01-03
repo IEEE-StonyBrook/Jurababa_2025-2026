@@ -51,16 +51,31 @@ class Drivetrain
     float getMotorVelocityMMps(WheelSide side);
 
     /**
-     * @brief Calculates feedforward duty cycle for target velocity
+     * @brief Calculates feedforward duty cycle for target velocity and acceleration
      *
-     * Uses empirically-tuned velocity gain (Kv) and static friction (Ks)
-     * coefficients to compensate for motor nonlinearities.
+     * Uses empirically-tuned coefficients to compensate for motor nonlinearities:
+     * - Kv: Velocity gain (back-EMF compensation)
+     * - Ks: Static friction compensation
+     * - Ka: Acceleration gain (inertial compensation) [mazerunner-core enhancement]
      *
      * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
      * @param wheel_speed_mm_per_second Target velocity in mm/s
+     * @param wheel_accel_mm_per_second2 Target acceleration in mm/s² (default 0)
      * @return Feedforward duty cycle [-1.0, 1.0]
      */
-    float getFeedforward(WheelSide side, float wheel_speed_mm_per_second);
+    float getFeedforward(WheelSide side, float wheel_speed_mm_per_second,
+                        float wheel_accel_mm_per_second2 = 0.0f);
+
+    /**
+     * @brief Returns distance traveled since last call (incremental tracking)
+     *
+     * This method tracks position changes between calls, enabling incremental
+     * error accumulation pattern used in mazerunner-core position control.
+     *
+     * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
+     * @return Distance delta in millimeters since last call
+     */
+    float getMotorDeltaMM(WheelSide side);
 
     // ============= Legacy String API (Deprecated) ============= //
     // These overloads maintain backward compatibility
@@ -68,7 +83,8 @@ class Drivetrain
 
     float getMotorDistanceMM(std::string side);
     float getMotorVelocityMMps(std::string side);
-    float getFeedforward(std::string side, float wheel_speed_mm_per_second);
+    float getFeedforward(std::string side, float wheel_speed_mm_per_second,
+                        float wheel_accel_mm_per_second2 = 0.0f);
 
     // ============= Common Operations ============= //
 
@@ -106,6 +122,10 @@ class Drivetrain
     // Current velocity estimates in mm/s
     float left_velocity_mm_per_second_ = 0.0f;
     float right_velocity_mm_per_second_ = 0.0f;
+
+    // Previous positions for delta tracking (incremental error accumulation)
+    float last_left_position_mm_ = 0.0f;
+    float last_right_position_mm_ = 0.0f;
 };
 
 #endif

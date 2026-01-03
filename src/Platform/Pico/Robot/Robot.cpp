@@ -1,31 +1,26 @@
 #include "Platform/Pico/Robot/Robot.h"
 #include "Common/LogSystem.h"
-#include "Common/PIDController.h"
 #include "Platform/Pico/Config.h"
 #include "Platform/Pico/Robot/Drivetrain.h"
 #include "Platform/Pico/Robot/Sensors.h"
 
 Robot::Robot(Drivetrain* drivetrain, Sensors* sensors)
-    : drivetrain(drivetrain), sensors(sensors), yawPID(), leftWheelPID(), rightWheelPID()
+    : drivetrain(drivetrain),
+      sensors(sensors),
+      forwardController_(),
+      rotationController_()
 {
-    // Configure yaw PID (output is wheel speed differential in mm/s)
-    yawPID.setGains(YAW_KP, YAW_KI, YAW_KD);
-    yawPID.setOutputLimit(ROBOT_MAX_YAW_DIFF_MMPS);
-    yawPID.setDeadband(0.1f);
-    yawPID.setDerivativeFilterAlpha(0.9f);
-    yawPID.setIntegralLimit(ROBOT_MAX_YAW_DIFF_MMPS * 0.2f);
+    // Configure forward controller (PD only: Ki=0 for position control)
+    forwardController_.setGains(FWD_KP, 0.0f, FWD_KD);
+    forwardController_.setOutputLimit(ROBOT_MAX_DUTY);
+    forwardController_.setDeadband(0.0f);
+    forwardController_.setDerivativeFilterAlpha(0.9f);
 
-    // Configure wheel velocity PIDs (output is duty cycle correction)
-    leftWheelPID.setGains(LEFT_WHEEL_KP, LEFT_WHEEL_KI, LEFT_WHEEL_KD);
-    rightWheelPID.setGains(RIGHT_WHEEL_KP, RIGHT_WHEEL_KI, RIGHT_WHEEL_KD);
-    leftWheelPID.setOutputLimit(1.0f);
-    rightWheelPID.setOutputLimit(1.0f);
-    leftWheelPID.setDeadband(0.0f);
-    rightWheelPID.setDeadband(0.0f);
-    leftWheelPID.setDerivativeFilterAlpha(0.9f);
-    rightWheelPID.setDerivativeFilterAlpha(0.9f);
-    leftWheelPID.setIntegralLimit(0.2f);
-    rightWheelPID.setIntegralLimit(0.2f);
+    // Configure rotation controller (PD only: Ki=0 for angle control)
+    rotationController_.setGains(ROT_KP, 0.0f, ROT_KD);
+    rotationController_.setOutputLimit(ROBOT_MAX_DUTY);
+    rotationController_.setDeadband(0.0f);
+    rotationController_.setDerivativeFilterAlpha(0.9f);
 
     reset();
 }
@@ -35,169 +30,526 @@ void Robot::reset()
     drivetrain->reset();
     sensors->resetYaw();
 
-    yawPID.reset();
-    leftWheelPID.reset();
-    rightWheelPID.reset();
+    forwardController_.reset();
+    rotationController_.reset();
+    forwardProfile_.reset();
+    rotationProfile_.reset();
 
-    mode     = Mode::Idle;
-    prevMode = Mode::Idle;
+    state_ = MotionState::Idle;
 
-    targetForwardMMps = 0.0f;
-    targetYawDeg      = 0.0f;
+    forwardError_     = 0.0f;
+    rotationError_    = 0.0f;
+    prevForwardError_  = 0.0f;
+    prevRotationError_ = 0.0f;
 
-    targetLeftMMps  = 0.0f;
-    targetRightMMps = 0.0f;
+    targetForwardVelocityMMps_      = 0.0f;
+    targetAngularVelocityDegps_     = 0.0f;
+    targetForwardAccelerationMMps2_ = 0.0f;
+    targetYawDeg_                   = 0.0f;
 
-    driveStartLeftDistMM  = 0.0f;
-    driveStartRightDistMM = 0.0f;
-    driveTargetDistMM     = 0.0f;
+    prevLeftDuty_  = 0.0f;
+    prevRightDuty_ = 0.0f;
 
-    prevLeftDuty  = 0.0f;
-    prevRightDuty = 0.0f;
+    motionDone_ = true;
+}
 
-    vBaseCmdMMps = 0.0f;
+// ============================================================
+// Basic Motion Commands
+// ============================================================
 
-    motionDone = true;
+void Robot::moveDistance(float distanceMM, float maxVelocityMMps, float accelerationMMps2)
+{
+    state_ = MotionState::MovingForward;
+
+    // Get current position baseline
+    float currentPos = (drivetrain->getMotorDistanceMM(WheelSide::LEFT) +
+                       drivetrain->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
+
+    // Start forward motion profile
+    forwardProfile_.start(distanceMM, maxVelocityMMps, accelerationMMps2, currentPos);
+    rotationProfile_.reset();
+
+    // Snap to nearest 45-degree heading for maze alignment
+    targetYawDeg_ = RobotUtils::snapTo45Degrees(sensors->getYaw());
+
+    // Reset controllers for clean start
+    forwardController_.reset();
+    rotationController_.reset();
+    forwardError_     = 0.0f;
+    rotationError_    = 0.0f;
+    prevForwardError_  = 0.0f;
+    prevRotationError_ = 0.0f;
+
+    // Initialize velocity targets
+    targetForwardVelocityMMps_      = 0.0f;  // Will be updated by profile
+    targetAngularVelocityDegps_     = 0.0f;  // Maintain heading
+    targetForwardAccelerationMMps2_ = 0.0f;
+
+    motionDone_ = false;
+}
+
+void Robot::turnInPlace(float degrees, float maxVelocityDegps, float accelerationDegps2)
+{
+    state_ = MotionState::TurningInPlace;
+
+    // Get current angle baseline
+    float currentAngle = sensors->getYaw();
+
+    // Start rotation profile
+    rotationProfile_.start(degrees, maxVelocityDegps, accelerationDegps2, currentAngle);
+    forwardProfile_.reset();
+
+    // Reset controllers for clean start
+    forwardController_.reset();
+    rotationController_.reset();
+    forwardError_     = 0.0f;
+    rotationError_    = 0.0f;
+    prevForwardError_  = 0.0f;
+    prevRotationError_ = 0.0f;
+
+    // Initialize velocity targets
+    targetForwardVelocityMMps_      = 0.0f;  // No forward motion
+    targetAngularVelocityDegps_     = 0.0f;  // Will be updated by profile
+    targetForwardAccelerationMMps2_ = 0.0f;
+
+    motionDone_ = false;
+}
+
+void Robot::stopAtCenter()
+{
+    state_ = MotionState::Stopping;
+
+    // Reset profiles to stop motion
+    forwardProfile_.reset();
+    rotationProfile_.reset();
+
+    // Set zero velocity targets (controllers remain active for position hold)
+    targetForwardVelocityMMps_      = 0.0f;
+    targetAngularVelocityDegps_     = 0.0f;
+    targetForwardAccelerationMMps2_ = 0.0f;
+
+    // Keep errors intact for smooth settling
+    // Controllers will naturally decay errors as robot stops
 }
 
 void Robot::stop()
 {
-    mode     = Mode::Idle;
-    prevMode = Mode::Idle;
+    state_ = MotionState::Idle;
 
-    targetForwardMMps = 0.0f;
-    targetLeftMMps    = 0.0f;
-    targetRightMMps   = 0.0f;
+    // Reset profiles
+    forwardProfile_.reset();
+    rotationProfile_.reset();
 
-    prevLeftDuty  = 0.0f;
-    prevRightDuty = 0.0f;
+    // Reset all targets
+    targetForwardVelocityMMps_      = 0.0f;
+    targetAngularVelocityDegps_     = 0.0f;
+    targetForwardAccelerationMMps2_ = 0.0f;
 
-    vBaseCmdMMps = 0.0f;
+    // Reset controllers and errors for full stop
+    forwardController_.reset();
+    rotationController_.reset();
+    forwardError_     = 0.0f;
+    rotationError_    = 0.0f;
+    prevForwardError_  = 0.0f;
+    prevRotationError_ = 0.0f;
 
-    motionDone = true;
+    // Stop motors immediately
+    prevLeftDuty_  = 0.0f;
+    prevRightDuty_ = 0.0f;
     drivetrain->stop();
+
+    motionDone_ = true;
 }
 
-void Robot::driveStraightMMps(float forwardMMps, float holdYawDeg)
+// ============================================================
+// Cell Navigation (Convenience Wrappers)
+// ============================================================
+
+void Robot::moveToNextCell()
 {
-    mode = Mode::DriveStraight;
-
-    targetForwardMMps = forwardMMps;
-    targetYawDeg      = RobotUtils::wrapAngle180(holdYawDeg);
-
-    yawPID.reset();
-    leftWheelPID.reset();
-    rightWheelPID.reset();
-
-    motionDone = false;
+    moveDistance(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
 }
 
-void Robot::driveDistanceMM(float distanceMM, float forwardMMps)
+void Robot::turnLeft90()
 {
-    if (distanceMM < 0.0f)
-        distanceMM = -distanceMM;
-
-    mode = Mode::DriveDistance;
-
-    // Snap to nearest 45-degree heading for maze alignment
-    targetYawDeg = RobotUtils::snapTo45Degrees(sensors->getYaw());
-
-    // Record starting position for distance tracking (using type-safe API)
-    driveStartLeftDistMM  = drivetrain->getMotorDistanceMM(WheelSide::LEFT);
-    driveStartRightDistMM = drivetrain->getMotorDistanceMM(WheelSide::RIGHT);
-    driveTargetDistMM     = distanceMM;
-
-    targetForwardMMps = forwardMMps;
-
-    yawPID.reset();
-    leftWheelPID.reset();
-    rightWheelPID.reset();
-
-    motionDone = false;
+    turnInPlace(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
 
-void Robot::turnToYawDeg(float targetYawDeg)
+void Robot::turnRight90()
 {
-    mode       = Mode::TurnInPlace;
-    motionDone = false;
-
-    targetForwardMMps  = 0.0f;
-    this->targetYawDeg = RobotUtils::wrapAngle180(targetYawDeg);
-
-    // Initialize yaw setpoint to current position to avoid sudden snap
-    this->currentYawSetpoint = sensors->getYaw();
-
-    yawPID.reset();
-    leftWheelPID.reset();
-    rightWheelPID.reset();
+    turnInPlace(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
 
-void Robot::turn45Degrees(std::string side, int times)
+void Robot::turnAround()
 {
-    if (side != "left" && side != "right")
+    // Alternate direction like mazerunner-core to reduce drift
+    static bool turnRight = true;
+    float angle = turnRight ? 180.0f : -180.0f;
+    turnRight = !turnRight;
+
+    turnInPlace(angle, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+}
+
+// ============================================================
+// Advanced Motion
+// ============================================================
+
+void Robot::smoothTurn(float degrees, float radiusMM)
+{
+    state_ = MotionState::SmoothTurning;
+
+    // Calculate arc length from turn angle and radius
+    float arcLengthMM = std::fabs(degrees) * (M_PI / 180.0f) * radiusMM;
+
+    // Get current baselines
+    float currentPos   = (drivetrain->getMotorDistanceMM(WheelSide::LEFT) +
+                         drivetrain->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
+    float currentAngle = sensors->getYaw();
+
+    // Start both profiles simultaneously for coordinated motion
+    forwardProfile_.start(arcLengthMM, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS,
+                        ROBOT_BASE_ACCEL_MMPS2, currentPos);
+    rotationProfile_.start(degrees, ROBOT_MAX_TURN_SPEED_DEGPS,
+                         ROBOT_BASE_ANGULAR_ACCEL_DEGPS2, currentAngle);
+
+    // Reset controllers for clean start
+    forwardController_.reset();
+    rotationController_.reset();
+    forwardError_     = 0.0f;
+    rotationError_    = 0.0f;
+    prevForwardError_  = 0.0f;
+    prevRotationError_ = 0.0f;
+
+    // Initialize velocity targets (will be updated by profiles)
+    targetForwardVelocityMMps_      = 0.0f;
+    targetAngularVelocityDegps_     = 0.0f;
+    targetForwardAccelerationMMps2_ = 0.0f;
+
+    motionDone_ = false;
+
+    LOG_DEBUG("SmoothTurn | Angle: " + std::to_string(degrees) +
+              " deg | Radius: " + std::to_string(radiusMM) +
+              " mm | Arc: " + std::to_string(arcLengthMM) + " mm");
+}
+
+void Robot::backToWall(float maxDistanceMM)
+{
+    state_ = MotionState::MovingForward;
+
+    // Move backward slowly until wall detected or max distance reached
+    float currentPos = (drivetrain->getMotorDistanceMM(WheelSide::LEFT) +
+                       drivetrain->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
+
+    // Negative distance for reverse motion
+    forwardProfile_.start(-maxDistanceMM, ROBOT_BACKUP_SPEED_MMPS,
+                        ROBOT_BASE_ACCEL_MMPS2, currentPos);
+    rotationProfile_.reset();
+
+    // Snap to current heading
+    targetYawDeg_ = RobotUtils::snapTo45Degrees(sensors->getYaw());
+
+    // Reset controllers
+    forwardController_.reset();
+    rotationController_.reset();
+    forwardError_     = 0.0f;
+    rotationError_    = 0.0f;
+    prevForwardError_  = 0.0f;
+    prevRotationError_ = 0.0f;
+
+    // Initialize velocity targets
+    targetForwardVelocityMMps_      = 0.0f;
+    targetAngularVelocityDegps_     = 0.0f;
+    targetForwardAccelerationMMps2_ = 0.0f;
+
+    motionDone_ = false;
+
+    LOG_DEBUG("BackToWall | Max distance: " + std::to_string(maxDistanceMM) + " mm");
+}
+
+void Robot::centerWithWalls()
+{
+    // Use ToF sensors to adjust lateral position for centering
+    // This is a position adjustment, not continuous motion
+
+    float leftDistMM  = sensors->getLeftDistanceMM();
+    float rightDistMM = sensors->getRightDistanceMM();
+
+    // Calculate centering offset
+    float lateralErrorMM = (rightDistMM - leftDistMM) / 2.0f;
+
+    // Only center if walls are detected on both sides
+    if (leftDistMM > TOF_MAX_RANGE_MM || rightDistMM > TOF_MAX_RANGE_MM)
+    {
+        LOG_DEBUG("CenterWithWalls | Cannot center - wall(s) not detected");
+        return;
+    }
+
+    // TODO: Mazerunner-core uses sensor fusion for better wall following
+    // Small lateral adjustment using rotation controller as steering correction
+    // This adds to rotation error during next motion command
+    rotationError_ += lateralErrorMM * CENTERING_CORRECTION_GAIN;
+
+    LOG_DEBUG("CenterWithWalls | Left: " + std::to_string(leftDistMM) +
+              " mm | Right: " + std::to_string(rightDistMM) +
+              " mm | Offset: " + std::to_string(lateralErrorMM) + " mm");
+}
+
+// ============================================================
+// Status Queries
+// ============================================================
+
+bool Robot::isMotionComplete() const
+{
+    return motionDone_;
+}
+
+float Robot::getRemainingDistance() const
+{
+    return forwardProfile_.getRemainingDistance();
+}
+
+float Robot::getRemainingAngle() const
+{
+    return rotationProfile_.getRemainingDistance();  // Same method for angular distance
+}
+
+// ============================================================
+// Control Loop (called at 100Hz from Core1)
+// ============================================================
+
+void Robot::updateControl(float dt)
+{
+    if (dt <= 0.0f)
         return;
 
-    float delta = (side == "left") ? -45.0f : +45.0f;
+    // Update sensor measurements
+    drivetrain->updateVelocities(dt);
+    sensors->update(dt);
 
-    float currYaw = sensors->getYaw();
-    float desired = RobotUtils::wrapAngle180(currYaw + delta * static_cast<float>(times));
+    // Periodic logging
+    static int logCounter = 0;
+    if ((logCounter++ % 100) == 0)  // Every 1 second at 100Hz
+    {
+        LOG_DEBUG("Robot | State: " + getStateName() +
+                  " | ForwardVel: " + std::to_string(targetForwardVelocityMMps_) +
+                  " mm/s | AngularVel: " + std::to_string(targetAngularVelocityDegps_) +
+                  " deg/s | Yaw: " + std::to_string(sensors->getYaw()) + " deg");
+    }
 
-    turnToYawDeg(RobotUtils::snapTo45Degrees(desired));
+    // Update motion profiles based on current state
+    switch (state_)
+    {
+        case MotionState::MovingForward:
+            updateForwardProfile(dt);
+            checkForwardCompletion();
+            break;
+
+        case MotionState::TurningInPlace:
+            updateRotationProfile(dt);
+            checkRotationCompletion();
+            break;
+
+        case MotionState::SmoothTurning:
+            updateForwardProfile(dt);
+            updateRotationProfile(dt);
+            checkSmoothTurnCompletion();
+            break;
+
+        case MotionState::Stopping:
+            // No profile updates - just let controllers settle
+            checkStoppingCompletion();
+            break;
+
+        case MotionState::Idle:
+            // Do nothing
+            return;
+    }
+
+    // Run position control loop (all states except Idle)
+    if (state_ != MotionState::Idle)
+    {
+        runPositionControl(dt);
+    }
 }
 
-void Robot::arcTurnToYawDeg(float targetYawDeg, float arcLengthMM, float baseVelocityMMps)
+// ============================================================
+// Profile Update Methods
+// ============================================================
+
+void Robot::updateForwardProfile(float dt)
 {
-    mode = Mode::ArcTurn;
-    motionDone = false;
+    // Get current position from encoders
+    float currentPos = (drivetrain->getMotorDistanceMM(WheelSide::LEFT) +
+                       drivetrain->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
 
-    // Track arc distance via encoders
-    arcTurnStartLeftDistMM = drivetrain->getMotorDistanceMM(WheelSide::LEFT);
-    arcTurnStartRightDistMM = drivetrain->getMotorDistanceMM(WheelSide::RIGHT);
-    arcTurnTargetArcLengthMM = arcLengthMM;
-    arcTurnBaseVelocityMMps = baseVelocityMMps;
+    // Update profile
+    forwardProfile_.update(currentPos, dt);
 
-    // Set yaw target and initialize profiling
-    this->arcTurnTargetYawDeg = RobotUtils::wrapAngle180(targetYawDeg);
-    this->targetYawDeg = this->arcTurnTargetYawDeg;
-    this->currentYawSetpoint = sensors->getYaw();
-
-    // Reset PIDs for clean start
-    yawPID.reset();
-    leftWheelPID.reset();
-    rightWheelPID.reset();
-
-    LOG_DEBUG("ArcTurn | Target yaw: " + std::to_string(targetYawDeg) +
-              " | Arc length: " + std::to_string(arcLengthMM) + " mm");
+    // Update target velocity and acceleration for control loop
+    targetForwardVelocityMMps_      = forwardProfile_.getTargetVelocity();
+    targetForwardAccelerationMMps2_ = forwardProfile_.getTargetAcceleration();
 }
 
-void Robot::arcTurn90Degrees(std::string side)
+void Robot::updateRotationProfile(float dt)
 {
-    if (side != "left" && side != "right")
-        return;
+    // Get current angle from IMU
+    float currentAngle = sensors->getYaw();
 
-    float currentYaw = sensors->getYaw();
-    float deltaYaw = (side == "left") ? 90.0f : -90.0f;
-    float targetYaw = RobotUtils::wrapAngle180(currentYaw + deltaYaw);
+    // Update profile
+    rotationProfile_.update(currentAngle, dt);
 
-    arcTurnToYawDeg(targetYaw, ARC_90_DEGREE_LENGTH_MM, ARC_TURN_VELOCITY_MMPS);
+    // Update target angular velocity
+    targetAngularVelocityDegps_ = rotationProfile_.getTargetVelocity();
 }
 
-void Robot::arcTurn45Degrees(std::string side)
+// ============================================================
+// Completion Check Methods
+// ============================================================
+
+void Robot::checkForwardCompletion()
 {
-    if (side != "left" && side != "right")
-        return;
+    if (forwardProfile_.isFinished())
+    {
+        // Check if we need to stop due to wall detection (for backToWall)
+        if (state_ == MotionState::MovingForward && targetForwardVelocityMMps_ < 0.0f)
+        {
+            // Backing up - check for wall contact
+            float frontDistMM = sensors->getFrontDistanceMM();
+            if (frontDistMM < WALL_CONTACT_THRESHOLD_MM)
+            {
+                stop();
+                motionDone_ = true;
 
-    float currentYaw = sensors->getYaw();
-    float deltaYaw = (side == "left") ? 45.0f : -45.0f;
-    float targetYaw = RobotUtils::wrapAngle180(currentYaw + deltaYaw);
+                // Reset odometry - we know we're BACK_WALL_TO_CENTER mm from center
+                sensors->resetPosition();
+                LOG_DEBUG("BackToWall | Wall contact detected, position reset");
+                return;
+            }
+        }
 
-    arcTurnToYawDeg(targetYaw, ARC_45_DEGREE_LENGTH_MM, ARC_TURN_VELOCITY_MMPS);
+        // Normal completion
+        stopAtCenter();
+        motionDone_ = true;
+    }
 }
 
-bool Robot::isMotionDone() const
+void Robot::checkRotationCompletion()
 {
-    return motionDone;
+    if (rotationProfile_.isFinished())
+    {
+        // Additional stability check - verify angular velocity is low
+        float angularVel = sensors->getAngularVelocityDegps();
+
+        if (std::fabs(angularVel) <= ROBOT_TURN_STABILITY_DEGPS)
+        {
+            stopAtCenter();
+            motionDone_ = true;
+        }
+    }
 }
+
+void Robot::checkSmoothTurnCompletion()
+{
+    // Smooth turn complete when BOTH profiles finish
+    if (forwardProfile_.isFinished() && rotationProfile_.isFinished())
+    {
+        stopAtCenter();
+        motionDone_ = true;
+    }
+}
+
+void Robot::checkStoppingCompletion()
+{
+    // Check if robot has settled
+    float vLeft  = drivetrain->getMotorVelocityMMps(WheelSide::LEFT);
+    float vRight = drivetrain->getMotorVelocityMMps(WheelSide::RIGHT);
+    float vAvg   = (std::fabs(vLeft) + std::fabs(vRight)) / 2.0f;
+
+    float angularVel = sensors->getAngularVelocityDegps();
+
+    // Both linear and angular velocity must be low
+    if (vAvg < ROBOT_STOPPING_VELOCITY_MMPS &&
+        std::fabs(angularVel) <= ROBOT_TURN_STABILITY_DEGPS)
+    {
+        stop();
+        motionDone_ = true;
+    }
+}
+
+// ============================================================
+// Position Control Loop (replaces runWheelVelocityControl)
+// ============================================================
+
+void Robot::runPositionControl(float dt)
+{
+    // Step 1: Get encoder deltas (actual movement this cycle)
+    float leftDelta  = drivetrain->getMotorDeltaMM(WheelSide::LEFT);
+    float rightDelta = drivetrain->getMotorDeltaMM(WheelSide::RIGHT);
+    float forwardDelta = (leftDelta + rightDelta) / 2.0f;
+
+    // Step 2: Get IMU delta (actual rotation this cycle)
+    float rotationDelta = sensors->getYawDelta();
+
+    // Step 3: Update forward controller (incremental error accumulation)
+    float expectedForward = targetForwardVelocityMMps_ * dt;
+    forwardError_ += (expectedForward - forwardDelta);
+
+    // Step 4: Update rotation controller (incremental error accumulation)
+    float expectedRotation = targetAngularVelocityDegps_ * dt;
+    rotationError_ += (expectedRotation - rotationDelta);
+
+    // TODO: Mazerunner-core adds steering correction here from wall sensors
+    // rotationError_ += calculateSteeringCorrection();
+
+    // Step 5: Calculate PD control outputs
+    float forwardOutput  = forwardController_.calculateOutput(forwardError_, dt);
+    float rotationOutput = rotationController_.calculateOutput(rotationError_, dt);
+
+    // Step 6: Combine for differential drive
+    float leftDuty  = forwardOutput - rotationOutput;
+    float rightDuty = forwardOutput + rotationOutput;
+
+    // Step 7: Calculate wheel velocities and accelerations for feedforward
+    float wheelbaseRadius = WHEEL_BASE_MM / 2.0f;
+    float tangentialVel   = targetAngularVelocityDegps_ * (M_PI / 180.0f) * wheelbaseRadius;
+
+    float leftVel  = targetForwardVelocityMMps_ - tangentialVel;
+    float rightVel = targetForwardVelocityMMps_ + tangentialVel;
+
+    // Calculate accelerations (for Ka feedforward term)
+    static float prevLeftVel  = 0.0f;
+    static float prevRightVel = 0.0f;
+    float leftAccel  = (leftVel - prevLeftVel) / dt;
+    float rightAccel = (rightVel - prevRightVel) / dt;
+    prevLeftVel  = leftVel;
+    prevRightVel = rightVel;
+
+    // Step 8: Add feedforward (Kv + Ks + Ka)
+    float ffLeft  = drivetrain->getFeedforward(WheelSide::LEFT, leftVel, leftAccel);
+    float ffRight = drivetrain->getFeedforward(WheelSide::RIGHT, rightVel, rightAccel);
+
+    leftDuty  += ffLeft;
+    rightDuty += ffRight;
+
+    // Step 9: Clamp to safe duty cycle limits
+    leftDuty  = RobotUtils::clampAbs(leftDuty, ROBOT_MAX_DUTY);
+    rightDuty = RobotUtils::clampAbs(rightDuty, ROBOT_MAX_DUTY);
+
+    // Step 10: Apply slew rate limiting to prevent sudden changes
+    leftDuty  = applySlew(leftDuty, prevLeftDuty_, dt);
+    rightDuty = applySlew(rightDuty, prevRightDuty_, dt);
+
+    // Step 11: Send duty cycles to motors
+    drivetrain->setDuty(leftDuty, rightDuty);
+
+    // Step 12: Update previous errors for derivative calculation
+    prevForwardError_  = forwardError_;
+    prevRotationError_ = rotationError_;
+}
+
+// ============================================================
+// Helper Methods
+// ============================================================
 
 float Robot::applySlew(float cmd, float& prevCmd, float dt)
 {
@@ -213,399 +565,98 @@ float Robot::applySlew(float cmd, float& prevCmd, float dt)
     return prevCmd;
 }
 
-void Robot::setWheelVelocityTargetsMMps(float vLeftMMps, float vRightMMps)
+std::string Robot::getStateName() const
 {
-    targetLeftMMps  = RobotUtils::clampAbs(vLeftMMps, ROBOT_MAX_WHEEL_SPEED_MMPS);
-    targetRightMMps = RobotUtils::clampAbs(vRightMMps, ROBOT_MAX_WHEEL_SPEED_MMPS);
-}
-
-float Robot::rampToward(float desired, float current, float maxDelta)
-{
-    float diff = desired - current;
-    if (diff > maxDelta)
-        diff = maxDelta;
-    if (diff < -maxDelta)
-        diff = -maxDelta;
-    return current + diff;
-}
-
-float Robot::applyYawProfiling(float dt)
-{
-    // Profile yaw setpoint toward final target (prevents sudden turns)
-    float yawToGoal  = RobotUtils::wrapAngle180(targetYawDeg - currentYawSetpoint);
-    float maxStepYaw = ROBOT_MAX_ANGULAR_VEL_DEGPS * dt;
-
-    currentYawSetpoint += RobotUtils::clampAbs(yawToGoal, maxStepYaw);
-    currentYawSetpoint = RobotUtils::wrapAngle180(currentYawSetpoint);
-
-    // Calculate yaw error from profiled setpoint (not final target)
-    float actualYaw        = sensors->getYaw();
-    float profiledYawError = RobotUtils::wrapAngle180(currentYawSetpoint - actualYaw);
-
-    return profiledYawError;
-}
-
-float Robot::calculateYawCorrection(float yawError, float dt)
-{
-    // Run PID to get yaw correction (output is wheel speed differential)
-    float vDiffMMps = yawPID.calculateOutput(yawError, dt);
-
-    // Enforce minimum turn speed to overcome static friction
-    // Only apply when error is significant and PID output is non-zero but below threshold
-    if (std::fabs(yawError) > ROBOT_YAW_ERROR_THRESHOLD_DEG)
+    switch (state_)
     {
-        if (std::fabs(vDiffMMps) < ROBOT_MIN_TURN_SPEED_MMPS && std::fabs(vDiffMMps) > 1.0f)
-        {
-            // Maintain direction but boost to minimum
-            vDiffMMps = (vDiffMMps > 0) ? ROBOT_MIN_TURN_SPEED_MMPS : -ROBOT_MIN_TURN_SPEED_MMPS;
-        }
+        case MotionState::Idle:           return "Idle";
+        case MotionState::MovingForward:  return "MovingForward";
+        case MotionState::TurningInPlace: return "TurningInPlace";
+        case MotionState::SmoothTurning:  return "SmoothTurning";
+        case MotionState::Stopping:       return "Stopping";
+        default:                          return "Unknown";
     }
-
-    // Clamp differential to safe limits
-    return RobotUtils::clampAbs(vDiffMMps, ROBOT_MAX_YAW_DIFF_MMPS);
 }
 
-void Robot::commandBaseAndYaw(float vBaseMMps, float dt)
+// ============================================================
+// Controller Tuning
+// ============================================================
+
+void Robot::setForwardGains(float kp, float ki, float kd)
 {
-    // Step 1: Ramp base velocity smoothly toward target
-    vBaseCmdMMps = rampToward(vBaseMMps, vBaseCmdMMps, ROBOT_BASE_ACCEL_MMPS2 * dt);
-
-    // Step 2: Profile yaw and calculate error
-    float yawError = applyYawProfiling(dt);
-
-    // Step 3: Calculate yaw correction (PID + minimum speed enforcement)
-    float vDiffMMps = calculateYawCorrection(yawError, dt);
-
-    // Step 4: Convert to individual wheel targets and execute
-    setWheelVelocityTargetsMMps(vBaseCmdMMps + vDiffMMps, vBaseCmdMMps - vDiffMMps);
-    runWheelVelocityControl(dt);
+    forwardController_.setGains(kp, ki, kd);
 }
 
-void Robot::runWheelVelocityControl(float dt)
+void Robot::setRotationGains(float kp, float ki, float kd)
 {
-    // Measure current wheel velocities (using type-safe API)
-    float vLeft  = drivetrain->getMotorVelocityMMps(WheelSide::LEFT);
-    float vRight = drivetrain->getMotorVelocityMMps(WheelSide::RIGHT);
+    rotationController_.setGains(kp, ki, kd);
+}
 
-    // Calculate feedforward duty from target velocities (using type-safe API)
-    float ffLeft  = drivetrain->getFeedforward(WheelSide::LEFT, targetLeftMMps);
-    float ffRight = drivetrain->getFeedforward(WheelSide::RIGHT, targetRightMMps);
+// ============================================================
+// Legacy API (Deprecated - for backward compatibility)
+// ============================================================
 
-    // Calculate velocity errors for PID
-    float errorLeft  = targetLeftMMps - vLeft;
-    float errorRight = targetRightMMps - vRight;
+void Robot::driveStraightMMps(float forwardMMps, float holdYawDeg)
+{
+    // TODO: Implement using new architecture or mark as unsupported
+    LOG_ERROR("driveStraightMMps is deprecated, use moveDistance() instead");
+}
 
-    // Calculate PID corrections (feedback)
-    float fbLeft  = leftWheelPID.calculateOutput(errorLeft, dt);
-    float fbRight = rightWheelPID.calculateOutput(errorRight, dt);
+void Robot::driveDistanceMM(float distanceMM, float forwardMMps)
+{
+    LOG_DEBUG("driveDistanceMM (deprecated) | Calling moveDistance() instead");
+    moveDistance(distanceMM, forwardMMps, ROBOT_BASE_ACCEL_MMPS2);
+}
 
-    // Combine feedforward + feedback
-    float leftDuty  = ffLeft + fbLeft;
-    float rightDuty = ffRight + fbRight;
+void Robot::turnToYawDeg(float targetYawDeg)
+{
+    LOG_DEBUG("turnToYawDeg (deprecated) | Calling turnInPlace() instead");
+    float currentYaw = sensors->getYaw();
+    float deltaDeg = RobotUtils::wrapAngle180(targetYawDeg - currentYaw);
+    turnInPlace(deltaDeg, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+}
 
-    // Clamp to safe duty cycle limits
-    leftDuty  = RobotUtils::clampAbs(leftDuty, ROBOT_MAX_DUTY);
-    rightDuty = RobotUtils::clampAbs(rightDuty, ROBOT_MAX_DUTY);
+void Robot::turn45Degrees(std::string side, int times)
+{
+    LOG_DEBUG("turn45Degrees (deprecated) | Calling turnInPlace() instead");
+    float delta = (side == "left") ? -45.0f : +45.0f;
+    turnInPlace(delta * static_cast<float>(times), ROBOT_MAX_TURN_SPEED_DEGPS,
+                ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+}
 
-    // Apply slew rate limiting to prevent sudden changes
-    leftDuty  = applySlew(leftDuty, prevLeftDuty, dt);
-    rightDuty = applySlew(rightDuty, prevRightDuty, dt);
+void Robot::arcTurnToYawDeg(float targetYawDeg, float arcLengthMM, float baseVelocityMMps)
+{
+    LOG_DEBUG("arcTurnToYawDeg (deprecated) | Calling smoothTurn() instead");
+    float currentYaw = sensors->getYaw();
+    float deltaDeg = RobotUtils::wrapAngle180(targetYawDeg - currentYaw);
 
-    // Send duty cycles to motors
-    drivetrain->setDuty(leftDuty, rightDuty);
+    // Estimate radius from arc length and angle
+    float radiusMM = arcLengthMM / (std::fabs(deltaDeg) * (M_PI / 180.0f));
+    smoothTurn(deltaDeg, radiusMM);
+}
+
+void Robot::arcTurn90Degrees(std::string side)
+{
+    LOG_DEBUG("arcTurn90Degrees (deprecated) | Calling smoothTurn() instead");
+    float degrees = (side == "left") ? 90.0f : -90.0f;
+    smoothTurn(degrees, ARC_TURN_RADIUS_MM);
+}
+
+void Robot::arcTurn45Degrees(std::string side)
+{
+    LOG_DEBUG("arcTurn45Degrees (deprecated) | Calling smoothTurn() instead");
+    float degrees = (side == "left") ? 45.0f : -45.0f;
+    smoothTurn(degrees, ARC_TURN_RADIUS_MM);
 }
 
 void Robot::update(float dt)
 {
-    if (dt <= 0.0f)
-        return;
-
-    // Update measured velocities (linear and angular)
-    drivetrain->updateVelocities(dt);
-    sensors->update(dt);
-    static int ctr = 0;
-    if ((ctr++ % 10) == 0)
-    {
-        LOG_DEBUG(
-            "Robot Update | LeftVel: " + std::to_string(drivetrain->getMotorVelocityMMps("left")) +
-            " mm/s | RightVel: " + std::to_string(drivetrain->getMotorVelocityMMps("right")) +
-            " mm/s | Yaw: " + std::to_string(sensors->getYaw()) +
-            " deg | AngularVel: " + std::to_string(sensors->getAngularVelocityDegps()) + " deg/s");
-    }
-
-    if (mode != prevMode)
-    {
-        switch (mode)
-        {
-            case Mode::Idle:
-                vBaseCmdMMps = 0.0f;
-                break;
-
-            case Mode::TurnInPlace:
-                vBaseCmdMMps = 0.0f;
-                break;
-
-            case Mode::ArcTurn:
-                // Only reset when coming from Idle/TurnInPlace for smooth transitions
-                if (prevMode == Mode::Idle || prevMode == Mode::TurnInPlace)
-                    vBaseCmdMMps = 0.0f;
-                break;
-
-            case Mode::DriveStraight:
-            case Mode::DriveDistance:
-                // Only reset when coming from Idle/Turn. Otherwise preserve for smooth changes.
-                if (prevMode == Mode::Idle || prevMode == Mode::TurnInPlace)
-                    vBaseCmdMMps = 0.0f;
-                break;
-        }
-        prevMode = mode;
-    }
-
-    // Dispatch to appropriate mode handler
-    switch (mode)
-    {
-        case Mode::Idle:
-            handleIdleMode(dt);
-            break;
-
-        case Mode::TurnInPlace:
-            handleTurnInPlaceMode(dt);
-            break;
-
-        case Mode::DriveStraight:
-            handleDriveStraightMode(dt);
-            break;
-
-        case Mode::DriveDistance:
-            handleDriveDistanceMode(dt);
-            break;
-
-        case Mode::ArcTurn:
-            handleArcTurnMode(dt);
-            break;
-    }
+    // Wrapper for updateControl
+    updateControl(dt);
 }
 
-// ============================================================
-// Helper: Calculate Target Velocity for Distance-Based Motion
-// ============================================================
-
-float Robot::calculateTargetVelocityForDistance(float remaining, float vActual)
+bool Robot::isMotionDone() const
 {
-    // Calculate stopping distance from minimum cruise speed to zero
-    float stoppingDistFromMin = RobotUtils::calculateStoppingDistance(
-        ROBOT_MIN_CRUISE_VELOCITY_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2
-    );
-
-    float vBase;
-
-    if (remaining > stoppingDistFromMin)
-    {
-        // Phase 1: Far from target - decelerate to minimum cruise speed
-        // Physics: Can travel at speed that allows stopping at the transition point
-        vBase = RobotUtils::calculateMaxVelocityForDistance(
-            remaining - stoppingDistFromMin, ROBOT_BASE_ACCEL_MMPS2, ROBOT_MIN_CRUISE_VELOCITY_MMPS
-        );
-        vBase = std::min(targetForwardMMps, vBase);
-    }
-    else
-    {
-        // Phase 2: Close to target - decelerate from minimum cruise to final approach speed
-        vBase = RobotUtils::calculateMaxVelocityForDistance(
-            remaining, ROBOT_BASE_ACCEL_MMPS2, 0.0f
-        );
-
-        // Enforce minimum final approach speed to prevent stalling
-        if (vBase < ROBOT_FINAL_APPROACH_SPEED_MMPS)
-        {
-            vBase = ROBOT_FINAL_APPROACH_SPEED_MMPS;
-        }
-    }
-
-    return vBase;
-}
-
-// ============================================================
-// Mode Handlers
-// ============================================================
-
-void Robot::handleIdleMode(float dt)
-{
-    (void)dt;  // Unused in idle mode
-    drivetrain->stop();
-    motionDone = true;
-}
-
-void Robot::handleTurnInPlaceMode(float dt)
-{
-    // Execute yaw control (base velocity = 0)
-    commandBaseAndYaw(0.0f, dt);
-
-    // Check completion criteria
-    float actualYaw  = sensors->getYaw();
-    float yawError   = RobotUtils::wrapAngle180(targetYawDeg - actualYaw);
-    float angularVel = sensors->getAngularVelocityDegps();
-
-    static int logCounter = 0;
-    if ((logCounter++ % 25) == 0)
-    {
-        LOG_DEBUG("TurnInPlace | TargetYaw: " + std::to_string(targetYawDeg) +
-                  " | ActualYaw: " + std::to_string(actualYaw) +
-                  " | YawError: " + std::to_string(yawError) +
-                  " | AngularVel: " + std::to_string(angularVel));
-    }
-
-    // Motion is done when both position and angular velocity criteria are met
-    bool positionReached = std::fabs(yawError) <= ROBOT_YAW_TOLERANCE_DEG;
-    bool isStable = std::fabs(angularVel) <= ROBOT_TURN_STABILITY_DEGPS;
-
-    if (positionReached && isStable)
-    {
-        motionDone = true;
-        // Continue holding position until next command
-    }
-}
-
-void Robot::handleDriveStraightMode(float dt)
-{
-    commandBaseAndYaw(targetForwardMMps, dt);
-    motionDone = false;  // Continuous mode, never auto-completes
-}
-
-void Robot::handleDriveDistanceMode(float dt)
-{
-    // Measure distance traveled (using type-safe API)
-    float currLeft  = drivetrain->getMotorDistanceMM(WheelSide::LEFT);
-    float currRight = drivetrain->getMotorDistanceMM(WheelSide::RIGHT);
-
-    float traveled = (std::fabs(currLeft - driveStartLeftDistMM) +
-                      std::fabs(currRight - driveStartRightDistMM)) / 2.0f;
-
-    float remaining = driveTargetDistMM - traveled;
-
-    // Measure actual velocity (using type-safe API)
-    float vLeft  = drivetrain->getMotorVelocityMMps(WheelSide::LEFT);
-    float vRight = drivetrain->getMotorVelocityMMps(WheelSide::RIGHT);
-    float vActual = (std::fabs(vLeft) + std::fabs(vRight)) / 2.0f;
-
-    // Check completion: close to target AND moving slowly
-    if (remaining <= ROBOT_STOPPING_DISTANCE_MM && vActual < ROBOT_STOPPING_VELOCITY_MMPS)
-    {
-        stop();
-        motionDone = true;
-        return;
-    }
-
-    // Calculate target velocity using two-phase deceleration profile
-    float vBase = calculateTargetVelocityForDistance(remaining, vActual);
-
-    static int logCounter = 0;
-    if (logCounter++ % 25 == 0)
-    {
-        LOG_DEBUG("DriveDistance | Target: " + std::to_string(driveTargetDistMM) +
-                  " mm | Traveled: " + std::to_string(traveled) +
-                  " mm | Remaining: " + std::to_string(remaining) + " mm");
-        LOG_DEBUG("vBase: " + std::to_string(vBase) + " mm/s | vActual: " +
-                  std::to_string(vActual) + " mm/s");
-    }
-
-    commandBaseAndYaw(vBase, dt);
-    motionDone = false;
-}
-
-void Robot::handleArcTurnMode(float dt)
-{
-    // Measure arc progress (average of both wheels)
-    float currLeft  = drivetrain->getMotorDistanceMM(WheelSide::LEFT);
-    float currRight = drivetrain->getMotorDistanceMM(WheelSide::RIGHT);
-
-    float traveledArc = (std::fabs(currLeft - arcTurnStartLeftDistMM) +
-                         std::fabs(currRight - arcTurnStartRightDistMM)) / 2.0f;
-
-    // Check completion: arc distance AND yaw both satisfied
-    float remainingArc = arcTurnTargetArcLengthMM - traveledArc;
-    float yawError = RobotUtils::wrapAngle180(arcTurnTargetYawDeg - sensors->getYaw());
-
-    static int logCounter = 0;
-    if (logCounter++ % 25 == 0)
-    {
-        LOG_DEBUG("ArcTurn | Traveled: " + std::to_string(traveledArc) +
-                  " / " + std::to_string(arcTurnTargetArcLengthMM) + " mm | " +
-                  "Yaw: " + std::to_string(sensors->getYaw()) +
-                  " / " + std::to_string(arcTurnTargetYawDeg) + " deg");
-    }
-
-    if (remainingArc <= ARC_TURN_DISTANCE_TOLERANCE_MM &&
-        std::fabs(yawError) <= ARC_TURN_YAW_TOLERANCE_DEG)
-    {
-        stop();
-        motionDone = true;
-        LOG_DEBUG("ArcTurn complete!");
-        return;
-    }
-
-    // Execute arc: commandBaseAndYaw() does BOTH forward motion AND turning!
-    // This is the magic - reuses existing dual PID control
-    commandBaseAndYaw(arcTurnBaseVelocityMMps, dt);
-    motionDone = false;
-}
-
-// ============================================================
-// Setters / Configuration
-// ============================================================
-
-void Robot::setYawGains(float kp, float ki, float kd)
-{
-    yawPID.setGains(kp, ki, kd);
-}
-
-void Robot::setWheelGains(float kp, float ki, float kd)
-{
-    leftWheelPID.setGains(kp, ki, kd);
-    rightWheelPID.setGains(kp, ki, kd);
-}
-
-void Robot::setMaxDuty(float maxDuty)
-{
-    // Clamp and apply to PID controllers
-    maxDuty = (maxDuty < 0.0f) ? 0.0f : ((maxDuty > 1.0f) ? 1.0f : maxDuty);
-    leftWheelPID.setOutputLimit(maxDuty);
-    rightWheelPID.setOutputLimit(maxDuty);
-}
-
-void Robot::setMaxDutySlewPerSec(float maxDutyChangePerSec)
-{
-    // This setter is deprecated - modify ROBOT_MAX_DUTY_SLEW_PER_SEC in Config.h instead
-    (void)maxDutyChangePerSec;
-}
-
-void Robot::setMaxWheelSpeedMMps(float maxWheelSpeedMMps)
-{
-    // This setter is deprecated - modify ROBOT_MAX_WHEEL_SPEED_MMPS in Config.h instead
-    (void)maxWheelSpeedMMps;
-}
-
-void Robot::setMaxYawDiffMMps(float maxYawDiffMMps)
-{
-    // Clamp and apply to yaw PID
-    maxYawDiffMMps = (maxYawDiffMMps < 0.0f) ? 0.0f : maxYawDiffMMps;
-    yawPID.setOutputLimit(maxYawDiffMMps);
-}
-
-void Robot::setYawToleranceDeg(float tolDeg)
-{
-    // This setter is deprecated - modify ROBOT_YAW_TOLERANCE_DEG in Config.h instead
-    (void)tolDeg;
-}
-
-void Robot::setSlowdownDistMM(float slowdownDistMM)
-{
-    // This setter is deprecated - legacy parameter no longer used
-    (void)slowdownDistMM;
-}
-
-void Robot::setMinSlowdownScale(float minScale)
-{
-    // This setter is deprecated - legacy parameter no longer used
-    (void)minScale;
+    // Wrapper for isMotionComplete
+    return isMotionComplete();
 }
