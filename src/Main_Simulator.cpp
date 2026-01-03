@@ -2,7 +2,7 @@
  * Main_Simulator.cpp - Micromouse Three-Phase Competition Simulator
  *
  * Simulates a competition run:
- *   1. Exploration: Frontier-based search to map maze
+ *   1. Exploration: Flood-fill search to map maze
  *   2. Return: A* without diagonals back to start
  *   3. Speed Run: A* with diagonals for optimal time
  */
@@ -13,8 +13,9 @@
 #include "Common/LogSystem.h"
 #include "Maze/InternalMouse.h"
 #include "Maze/MazeGraph.h"
-#include "Navigation/FrontierBasedSearchSolver.h"
+#include "Navigation/FloodFillSolver.h"
 #include "Navigation/PathUtils.h"
+#include "Platform/Pico/Config.h"
 #include "Platform/Simulator/API.h"
 
 int main()
@@ -25,15 +26,15 @@ int main()
     std::array<int, 2>              start = {0, 0};
     std::vector<std::array<int, 2>> goal  = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
 
-    MazeGraph     maze(16, 16);
+    MazeGraph     maze(MAZE_SIZE, MAZE_SIZE);
     InternalMouse mouse(start, "n", goal, &maze);
     API_SIMULATOR api(&mouse, true);
     api.setUp(start, goal);
 
-    // Phase 1: EXPLORATION - Map entire maze using frontier-based search
-    LOG_INFO("Phase 1: Exploration (Frontier-Based)");
+    // Phase 1: EXPLORATION - Map entire maze using flood-fill search
+    LOG_INFO("Phase 1: Exploration (Flood-Fill)");
     api.setPhaseColor('y'); // Yellow for exploration
-    FrontierBased::explore(mouse, api, false);
+    FloodFillSolver::explore(mouse, api, false);
     LOG_INFO("✓ Maze fully explored\n");
 
     // Phase 2: RETURN - Go back to start using discovered layout (no diagonals)

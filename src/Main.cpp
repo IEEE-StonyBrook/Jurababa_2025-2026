@@ -19,7 +19,7 @@
 #include "Maze/InternalMouse.h"
 #include "Maze/MazeGraph.h"
 #include "Navigation/AStarSolver.h"
-#include "Navigation/FrontierBasedSearchSolver.h"
+#include "Navigation/FloodFillSolver.h"
 #include "Navigation/PathUtils.h"
 #include "Platform/Pico/API.h"
 #include "Platform/Pico/CommandHub.h"
@@ -207,7 +207,7 @@ int main()
     // Initialize maze solving components
     std::array<int, 2>              startCell = {0, 0};
     std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
-    MazeGraph                       maze(16, 16);
+    MazeGraph                       maze(MAZE_SIZE, MAZE_SIZE);
     InternalMouse                   mouse(startCell, std::string("n"), goalCells, &maze);
     API                             api(&mouse);
 
@@ -215,9 +215,9 @@ int main()
     // Algorithm Execution - Modify this section for different solving modes
     // ========================================================================
 
-    // EXPLORATION MODE: Use frontier-based search to map unknown maze
+    // EXPLORATION MODE: Use flood-fill search to map unknown maze
     // Uncomment to enable:
-    // FrontierBasedSearchSolver frontierSolver(&mouse);
+    // FloodFillSolver::explore(mouse, api, false);
     // bool explorationComplete = traversePathIteratively(&api, &mouse, goalCells, false, false,
     // false); if (explorationComplete) {
     //     LOG_INFO("Maze exploration complete!");

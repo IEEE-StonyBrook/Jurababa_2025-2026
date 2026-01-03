@@ -1,6 +1,9 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// ================= Maze Constants ================= //
+#define MAZE_SIZE 16 // Maze dimensions (16x16 cells)
+
 // Control loop frequency and period.
 #define LOOP_FREQUENCY_HZ 100.0f                     // Control updates per second.
 #define LOOP_INTERVAL_S   (1.0f / LOOP_FREQUENCY_HZ) // Seconds per update.

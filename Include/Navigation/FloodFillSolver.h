@@ -1,5 +1,5 @@
-#ifndef FRONTIERBASED_H
-#define FRONTIERBASED_H
+#ifndef FLOODFILLSOLVER_H
+#define FLOODFILLSOLVER_H
 
 #include <queue>
 #include <vector>
@@ -8,19 +8,20 @@
 #include "Maze/InternalMouse.h"
 #include "Maze/MazeGraph.h"
 #include "Platform/IAPIInterface.h"
+#include "Platform/Pico/Config.h"
 
 /**
- * @class FrontierBased
+ * @class FloodFillSolver
  * @brief Implements Flood-Fill maze exploration algorithm.
  *
  * This class provides exploration logic for the micromouse using
  * flood-fill with distance gradient. This approach:
- * - Maintains a distance grid from goal cells
+ * - Maintains a distance grid from frontier cells (unexplored reachable cells)
  * - Follows the gradient to efficiently explore all cells
  * - Naturally handles backtracking through explored regions
  * - Avoids goal cells until exploration is complete
  */
-class FrontierBased {
+class FloodFillSolver {
  public:
   /**
    * @brief Explores the maze using Flood-Fill algorithm.
@@ -37,21 +38,21 @@ class FrontierBased {
   static void explore(InternalMouse& mouse, IAPIInterface& api, bool diagonalsAllowed);
 
  private:
-  // Distance grid for flood-fill (16x16 maze)
-  static int distanceGrid_[16][16];
+  // Distance grid for flood-fill
+  static int distanceGrid_[MAZE_SIZE][MAZE_SIZE];
   static const int INFINITY_DIST = 9999;
-  static const int MAZE_SIZE = 16;
 
   /**
-   * @brief Initializes the distance grid with infinity and goal cells at 0.
+   * @brief Initializes the distance grid with infinity.
    *
    * @param mouse Reference to the InternalMouse instance.
    */
   static void initializeDistanceGrid(InternalMouse& mouse);
 
   /**
-   * @brief Updates distances using wavefront propagation from goal cells.
+   * @brief Updates distances using wavefront propagation from frontier cells.
    *
+   * Frontier cells are unexplored cells reachable from explored cells.
    * Only propagates through accessible paths (no walls between cells).
    *
    * @param mouse Reference to the InternalMouse instance.
@@ -88,7 +89,8 @@ class FrontierBased {
   /**
    * @brief Cascades dead-end marking from a cell.
    *
-   * When a cell has 3 walls, it's marked as explored. This may cause
+   * When a cell has 3 walls, it's marked as explored (since the 4th
+   * direction is the entry path, making it a dead-end). This may cause
    * adjacent cells to become dead-ends, triggering a cascade.
    *
    * @param mouse Reference to the InternalMouse instance.
@@ -109,4 +111,4 @@ class FrontierBased {
   static void updateDistanceDisplay(IAPIInterface& api);
 };
 
-#endif  // FRONTIERBASED_H
+#endif  // FLOODFILLSOLVER_H

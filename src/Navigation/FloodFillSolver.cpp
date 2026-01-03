@@ -1,4 +1,4 @@
-#include "Navigation/FrontierBasedSearchSolver.h"
+#include "Navigation/FloodFillSolver.h"
 
 #include <algorithm>
 #include <unordered_set>
@@ -6,12 +6,12 @@
 #include "Navigation/PathUtils.h"
 
 // Static member definition
-int FrontierBased::distanceGrid_[16][16];
+int FloodFillSolver::distanceGrid_[MAZE_SIZE][MAZE_SIZE];
 
 /**
  * @brief Initializes the distance grid with infinity.
  */
-void FrontierBased::initializeDistanceGrid(InternalMouse& mouse)
+void FloodFillSolver::initializeDistanceGrid(InternalMouse& mouse)
 {
     (void)mouse;
     for (int x = 0; x < MAZE_SIZE; x++)
@@ -31,7 +31,7 @@ void FrontierBased::initializeDistanceGrid(InternalMouse& mouse)
  * from the nearest unexplored frontier. During backtracking, we follow the
  * gradient toward lower distances (toward unexplored cells).
  */
-void FrontierBased::updateDistances(InternalMouse& mouse, bool diagonalsAllowed)
+void FloodFillSolver::updateDistances(InternalMouse& mouse, bool diagonalsAllowed)
 {
     // Reset all cells to infinity
     for (int x = 0; x < MAZE_SIZE; x++)
@@ -119,7 +119,7 @@ void FrontierBased::updateDistances(InternalMouse& mouse, bool diagonalsAllowed)
  * Falls back to explored cells with lowest distance (toward nearest unexplored).
  * Returns nullptr if no frontiers remain (exploration complete).
  */
-MazeNode* FrontierBased::getBestNeighbor(InternalMouse& mouse, MazeNode* current,
+MazeNode* FloodFillSolver::getBestNeighbor(InternalMouse& mouse, MazeNode* current,
                                          bool diagonalsAllowed)
 {
     MazeNode* bestUnexplored   = nullptr;
@@ -176,7 +176,7 @@ MazeNode* FrontierBased::getBestNeighbor(InternalMouse& mouse, MazeNode* current
 /**
  * @brief Updates the distance text display for all cells.
  */
-void FrontierBased::updateDistanceDisplay(IAPIInterface& api)
+void FloodFillSolver::updateDistanceDisplay(IAPIInterface& api)
 {
     for (int x = 0; x < MAZE_SIZE; x++)
     {
@@ -198,7 +198,7 @@ void FrontierBased::updateDistanceDisplay(IAPIInterface& api)
 /**
  * @brief Explores the maze using Flood-Fill algorithm.
  */
-void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api, bool diagonalsAllowed)
+void FloodFillSolver::explore(InternalMouse& mouse, IAPIInterface& api, bool diagonalsAllowed)
 {
     initializeDistanceGrid(mouse);
 
@@ -220,7 +220,7 @@ void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api, bool diago
     {
         moveCount++;
 
-        // Mark dead-end neighbors (cells with 3 walls)
+        // Mark dead-end neighbors (cells with 3 walls are dead-ends)
         markDeadEndCascade(mouse, api, current, diagonalsAllowed);
 
         // Update distances (frontiers may have changed due to dead-end marking)
@@ -256,7 +256,7 @@ void FrontierBased::explore(InternalMouse& mouse, IAPIInterface& api, bool diago
 /**
  * @brief Moves directly to an adjacent cell without pathfinding.
  */
-void FrontierBased::moveDirectlyToAdjacent(IAPIInterface& api, InternalMouse& mouse,
+void FloodFillSolver::moveDirectlyToAdjacent(IAPIInterface& api, InternalMouse& mouse,
                                            MazeNode* target)
 {
     MazeNode* current = mouse.getCurrentRobotNode();
@@ -322,15 +322,18 @@ void FrontierBased::moveDirectlyToAdjacent(IAPIInterface& api, InternalMouse& mo
 
 /**
  * @brief Cascades dead-end marking from a cell.
+ *
+ * A cell with 3 walls is a dead-end because the 4th direction is the entry path.
  */
-void FrontierBased::markDeadEndCascade(InternalMouse& mouse, IAPIInterface& api, MazeNode* cell,
+void FloodFillSolver::markDeadEndCascade(InternalMouse& mouse, IAPIInterface& api, MazeNode* cell,
                                        bool diagonalsAllowed)
 {
     std::vector<MazeNode*> neighbors = mouse.getNodeNeighbors(cell, false);
 
     for (MazeNode* neighbor : neighbors)
     {
-        if (!neighbor->getCellIsExplored() && neighbor->getWallCount() == 3)
+        // 3 walls = dead-end (4th direction is entry, max walls on a cell is 4)
+        if (!neighbor->getCellIsExplored() && neighbor->getWallCount() >= 3)
         {
             neighbor->markAsExplored();
             api.setColor(neighbor->getCellXPos(), neighbor->getCellYPos(), api.getPhaseColor());
