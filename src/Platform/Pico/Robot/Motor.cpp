@@ -48,11 +48,15 @@ void Motor::applyDuty(float duty_cycle)
     pwm_set_chan_level(pwm_slice_number_, inactive_channel, 0);
 }
 
-void Motor::applyVoltage(float desired_volts)
+void Motor::applyVoltage(float desired_volts, float battery_volts)
 {
-    float battery_volts = DEFAULT_BATTERY_VOLTAGE;  // TODO: Read from ADC
-    if (battery_volts < 1.0f) return;
+    // Safety: Prevent division by zero or invalid voltage
+    if (battery_volts < 1.0f)
+    {
+        battery_volts = DEFAULT_BATTERY_VOLTAGE;
+    }
 
+    // Convert voltage to duty cycle: duty = V_desired / V_battery
     applyDuty(desired_volts / battery_volts);
 }
 

@@ -5,6 +5,9 @@
 #include <sstream>
 #include <string>
 
+// Forward declaration to avoid circular includes
+class BluetoothInterface;
+
 enum class LogPriority
 {
     DEBUG,
@@ -17,10 +20,39 @@ enum class LogPriority
 class LogSystem
 {
   public:
+    /**
+     * @brief Logs a message to console (and Bluetooth if enabled).
+     *
+     * @param logPriority Priority level of the message.
+     * @param logMessage The message to log.
+     */
     static void logMessage(LogPriority logPriority, std::string logMessage);
 
+    /**
+     * @brief Sets the Bluetooth interface for wireless logging.
+     *
+     * @param bt Pointer to BluetoothInterface instance (nullptr to disable).
+     */
+    static void setBluetoothInterface(BluetoothInterface* bt);
+
+    /**
+     * @brief Enables or disables Bluetooth logging.
+     *
+     * @param enabled True to enable Bluetooth output, false to disable.
+     */
+    static void setBluetoothEnabled(bool enabled);
+
+    /**
+     * @brief Checks if Bluetooth logging is currently enabled.
+     *
+     * @return true if Bluetooth logging is enabled and interface is set.
+     */
+    static bool isBluetoothEnabled();
+
   private:
-    static LogPriority printPriorityLevel;
+    static LogPriority         printPriorityLevel;
+    static BluetoothInterface* bluetooth_interface_;
+    static bool                bluetooth_enabled_;
 };
 
 // ---------------- Macros ----------------

@@ -55,6 +55,7 @@ class API : public IAPIInterface
     // Cell coloring and labels (override from IAPIInterface).
     void setColor(int x, int y, char color) override;
     void setPhaseColor(char color) override;
+    char getPhaseColor() override;
     void clearColor(int x, int y) override;
     void clearAllColor() override;
     void setText(int x, int y, const std::string& text) override;

@@ -5,6 +5,7 @@
 #include <string>
 
 #include "Common/LogSystem.h"
+#include "Platform/Pico/Robot/BatteryMonitor.h"
 #include "Platform/Pico/Robot/Encoder.h"
 #include "Platform/Pico/Robot/Motor.h"
 #include "Platform/Pico/Robot/RobotUtils.h"
@@ -25,9 +26,11 @@ class Drivetrain
      * @param right_motor Pointer to right motor controller
      * @param left_encoder Pointer to left wheel encoder
      * @param right_encoder Pointer to right wheel encoder
+     * @param battery_monitor Pointer to battery monitor for voltage-based control
      */
     Drivetrain(Motor* left_motor, Motor* right_motor,
-               Encoder* left_encoder, Encoder* right_encoder);
+               Encoder* left_encoder, Encoder* right_encoder,
+               BatteryMonitor* battery_monitor = nullptr);
 
     /**
      * @brief Resets encoder counts and velocity state
@@ -102,6 +105,25 @@ class Drivetrain
     void setDuty(float left_duty, float right_duty);
 
     /**
+     * @brief Sets motor voltages (scaled by current battery voltage)
+     *
+     * Converts desired motor voltages to duty cycles using current battery
+     * voltage reading. This provides consistent motor behavior as battery
+     * discharges: setVoltage(6.0, 6.0) produces the same motor speed whether
+     * battery is at 8.4V (duty=0.71) or 7.0V (duty=0.86).
+     *
+     * @param left_volts Left motor voltage (positive = forward)
+     * @param right_volts Right motor voltage (positive = forward)
+     */
+    void setVoltage(float left_volts, float right_volts);
+
+    /**
+     * @brief Returns current battery voltage reading
+     * @return Battery voltage in volts, or DEFAULT_BATTERY_VOLTAGE if no monitor
+     */
+    float getBatteryVoltage() const;
+
+    /**
      * @brief Immediately stops both motors
      */
     void stop();
@@ -114,6 +136,9 @@ class Drivetrain
     // Wheel encoders
     Encoder* left_encoder_;
     Encoder* right_encoder_;
+
+    // Battery monitor for voltage-based control
+    BatteryMonitor* battery_monitor_;
 
     // Previous encoder readings for velocity computation
     int32_t previous_left_ticks_ = 0;

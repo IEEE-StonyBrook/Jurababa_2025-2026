@@ -35,8 +35,9 @@ class Motor
     /**
      * @brief Applies voltage command to motor (scaled by battery voltage)
      * @param desired_volts Desired motor voltage
+     * @param battery_volts Current battery voltage for scaling
      */
-    void applyVoltage(float desired_volts);
+    void applyVoltage(float desired_volts, float battery_volts);
 
     /**
      * @brief Immediately stops motor by setting both PWM channels to zero

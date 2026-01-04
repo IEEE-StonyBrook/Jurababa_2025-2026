@@ -44,6 +44,8 @@ add_executable(Jurababa
     src/Platform/Pico/Robot/ToF.cpp
     src/Platform/Pico/Robot/Sensors.cpp
     src/Platform/Pico/Robot/Robot.cpp
+    src/Platform/Pico/Robot/BatteryMonitor.cpp
+    src/Platform/Pico/BluetoothInterface.cpp
     src/Common/PIDController.cpp
     src/Common/MotionProfile.cpp
     src/Common/LogSystem.cpp
@@ -52,10 +54,16 @@ add_executable(Jurababa
     src/Maze/MazeNode.cpp
     src/Navigation/AStarSolver.cpp
     src/Navigation/PathConverter.cpp
+    src/Navigation/FloodFillSolver.cpp
+    src/Navigation/PathUtils.cpp
+    src/Navigation/Diagonalizer.cpp
     src/Platform/Pico/API.cpp
     # src/Platform/Simulator/API.cpp
     src/Main.cpp
 )
+
+# Define PICO_BUILD for conditional compilation
+target_compile_definitions(Jurababa PRIVATE PICO_BUILD)
 
 pico_set_program_name(Jurababa "Jurababa")
 pico_set_program_version(Jurababa "0.1")

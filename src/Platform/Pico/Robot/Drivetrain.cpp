@@ -2,11 +2,13 @@
 #include "Platform/Pico/Config.h"
 
 Drivetrain::Drivetrain(Motor* left_motor, Motor* right_motor,
-                       Encoder* left_encoder, Encoder* right_encoder)
+                       Encoder* left_encoder, Encoder* right_encoder,
+                       BatteryMonitor* battery_monitor)
     : left_motor_(left_motor),
       right_motor_(right_motor),
       left_encoder_(left_encoder),
-      right_encoder_(right_encoder)
+      right_encoder_(right_encoder),
+      battery_monitor_(battery_monitor)
 {
 }
 
@@ -156,6 +158,22 @@ void Drivetrain::setDuty(float left_duty, float right_duty)
 {
     left_motor_->applyDuty(left_duty);
     right_motor_->applyDuty(right_duty);
+}
+
+void Drivetrain::setVoltage(float left_volts, float right_volts)
+{
+    float battery_volts = getBatteryVoltage();
+    left_motor_->applyVoltage(left_volts, battery_volts);
+    right_motor_->applyVoltage(right_volts, battery_volts);
+}
+
+float Drivetrain::getBatteryVoltage() const
+{
+    if (battery_monitor_ != nullptr)
+    {
+        return battery_monitor_->getVoltage();
+    }
+    return DEFAULT_BATTERY_VOLTAGE;
 }
 
 void Drivetrain::stop()

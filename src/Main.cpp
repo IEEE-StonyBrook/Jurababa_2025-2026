@@ -22,9 +22,11 @@
 #include "Navigation/FloodFillSolver.h"
 #include "Navigation/PathUtils.h"
 #include "Platform/Pico/API.h"
+#include "Platform/Pico/BluetoothInterface.h"
 #include "Platform/Pico/CommandHub.h"
 #include "Platform/Pico/Config.h"
 #include "Platform/Pico/MulticoreSensors.h"
+#include "Platform/Pico/Robot/BatteryMonitor.h"
 #include "Platform/Pico/Robot/Drivetrain.h"
 #include "Platform/Pico/Robot/Encoder.h"
 #include "Platform/Pico/Robot/IMU.h"
@@ -34,6 +36,13 @@
 #include "Platform/Pico/Robot/ToF.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
+
+// ============================================================================
+// Global Battery Monitor (shared between cores)
+// ============================================================================
+// Core 0 owns and updates this; Core 1 reads via pointer for voltage scaling.
+// Access is safe because reads are atomic for aligned floats on ARM Cortex-M0+.
+static BatteryMonitor* g_battery_monitor = nullptr;
 
 // ============================================================================
 // CORE 1: Real-Time Robot Control
@@ -136,8 +145,8 @@ void core1_RobotController()
     Motor   leftMotor(18, 19, true);
     Motor   rightMotor(6, 7, false);
 
-    // Initialize control stack
-    Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder);
+    // Initialize control stack (with battery monitor for voltage-based control)
+    Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder, g_battery_monitor);
     Sensors    sensors(&imu, &leftToF, &frontToF, &rightToF);
     Robot      robot(&drivetrain, &sensors);
 
@@ -196,6 +205,37 @@ int main()
     stdio_init_all();
     sleep_ms(3000);
 
+    // ========================================================================
+    // Battery Monitor Setup (ADC0 on GP26)
+    // ========================================================================
+    BatteryMonitor battery(26, 10000.0f, 5100.0f);  // R1=10k, R2=5.1k
+    battery.init();
+
+    // Take initial battery readings to fill the moving average buffer
+    for (int i = 0; i < 10; i++)
+    {
+        battery.update();
+        sleep_ms(10);
+    }
+    LOG_INFO("Battery voltage: " << battery.getVoltage() << "V");
+
+    if (battery.isLowBattery(6.0f))
+    {
+        LOG_WARNING("Low battery detected! Voltage: " << battery.getVoltage() << "V");
+    }
+
+    // Set global pointer for Core 1 access (before launching Core 1)
+    g_battery_monitor = &battery;
+
+    // ========================================================================
+    // Bluetooth Setup (UART0, GP0=TX, GP1=RX)
+    // ========================================================================
+    BluetoothInterface bluetooth(uart0, 9600, 0, 1);
+    bluetooth.init();
+    LogSystem::setBluetoothInterface(&bluetooth);
+    LogSystem::setBluetoothEnabled(true);
+    LOG_INFO("Bluetooth logging enabled");
+
     LOG_DEBUG("Core0: Initializing multicore communication");
     MulticoreSensorHub::init();
     multicore_launch_core1(core1_RobotController);
@@ -238,6 +278,9 @@ int main()
     // ========================================================================
     // Sensor monitoring loop - update maze state from real-time sensor data
     // ========================================================================
+    uint32_t last_battery_check_ms = 0;
+    const uint32_t BATTERY_CHECK_INTERVAL_MS = 5000;  // Check every 5 seconds
+
     while (true)
     {
         MulticoreSensorData sensors;
@@ -250,6 +293,52 @@ int main()
             mouse.setWallExistsLFR('F');
         if (sensors.tof_right_exist)
             mouse.setWallExistsLFR('R');
+
+        // Periodic battery voltage check (non-blocking)
+        uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+        if (now_ms - last_battery_check_ms >= BATTERY_CHECK_INTERVAL_MS)
+        {
+            battery.update();
+            last_battery_check_ms = now_ms;
+
+            // Log battery status periodically
+            LOG_DEBUG("Battery: " << battery.getVoltage() << "V (raw ADC: " << battery.getRawADC() << ")");
+
+            if (battery.isLowBattery(6.0f))
+            {
+                LOG_WARNING("Low battery! " << battery.getVoltage() << "V");
+            }
+        }
+
+        // ====================================================================
+        // Bluetooth Command Handling
+        // ====================================================================
+        if (bluetooth.hasCommand())
+        {
+            BluetoothInterface::Command cmd = bluetooth.getCommand();
+            switch (cmd)
+            {
+                case BluetoothInterface::Command::START:
+                    LOG_INFO("BT: Start command received");
+                    // Add start logic here
+                    break;
+                case BluetoothInterface::Command::HALT:
+                    LOG_INFO("BT: Halt command received");
+                    CommandHub::send(CommandType::STOP);
+                    break;
+                case BluetoothInterface::Command::RESET:
+                    LOG_INFO("BT: Reset command received");
+                    // Add reset logic here
+                    break;
+                case BluetoothInterface::Command::BATTERY:
+                    battery.update();
+                    bluetooth.write("Battery: " + std::to_string(battery.getVoltage()) + "V\r\n");
+                    break;
+                default:
+                    LOG_DEBUG("BT: Unknown command");
+                    break;
+            }
+        }
 
         sleep_ms(CORE_SLEEP_MS);
     }

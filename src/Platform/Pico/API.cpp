@@ -222,6 +222,11 @@ void API::setPhaseColor(char color)
     phaseColor_ = color;
 }
 
+char API::getPhaseColor()
+{
+    return phaseColor_;
+}
+
 void API::clearColor(int x, int y)
 {
     if (runOnSimulator)
