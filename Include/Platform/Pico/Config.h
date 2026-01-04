@@ -145,8 +145,9 @@
 #define ROBOT_TURN_STABILITY_DEGPS    3.0f  // Angular velocity threshold for turn stability (deg/s)
 
 // Control loop limits
-#define ROBOT_MAX_DUTY              1.0f  // Maximum PWM duty cycle
-#define ROBOT_MAX_DUTY_SLEW_PER_SEC 10.0f // Maximum duty cycle change per second
+#define ROBOT_MAX_DUTY              1.0f   // Maximum PWM duty cycle
+#define ROBOT_MAX_DUTY_SLEW_PER_SEC 10.0f  // Maximum duty cycle change per second
+#define ROBOT_MAX_VOLTS_SLEW_PER_SEC 60.0f // Maximum voltage change per second (10 duty/s * 6V)
 
 // ================= Drivetrain Constants ================= //
 #define DRIVETRAIN_MIN_DT           0.001f // Minimum valid time step for velocity calculation (s)

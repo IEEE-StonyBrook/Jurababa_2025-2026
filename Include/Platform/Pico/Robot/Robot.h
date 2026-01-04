@@ -264,8 +264,8 @@ class Robot
     // Runtime State
     // ============================================================
 
-    float prevLeftDuty_  = 0.0f;  // For slew rate limiting
-    float prevRightDuty_ = 0.0f;
+    float prev_left_volts_  = 0.0f;  // For slew rate limiting (voltage)
+    float prev_right_volts_ = 0.0f;
 
     bool motionDone_ = true;  // Motion completion flag
 };

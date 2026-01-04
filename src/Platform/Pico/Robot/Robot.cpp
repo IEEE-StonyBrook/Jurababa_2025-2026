@@ -47,8 +47,8 @@ void Robot::reset()
     targetForwardAccelerationMMps2_ = 0.0f;
     targetYawDeg_                   = 0.0f;
 
-    prevLeftDuty_  = 0.0f;
-    prevRightDuty_ = 0.0f;
+    prev_left_volts_  = 0.0f;
+    prev_right_volts_ = 0.0f;
 
     motionDone_ = true;
 }
@@ -154,8 +154,8 @@ void Robot::stop()
     prevRotationError_ = 0.0f;
 
     // Stop motors immediately
-    prevLeftDuty_  = 0.0f;
-    prevRightDuty_ = 0.0f;
+    prev_left_volts_  = 0.0f;
+    prev_right_volts_ = 0.0f;
     drivetrain_->stop();
 
     motionDone_ = true;
@@ -483,64 +483,64 @@ void Robot::checkStoppingCompletion()
 void Robot::runPositionControl(float dt)
 {
     // Step 1: Get encoder deltas (actual movement this cycle)
-    float leftDelta  = drivetrain_->getMotorDeltaMM(WheelSide::LEFT);
-    float rightDelta = drivetrain_->getMotorDeltaMM(WheelSide::RIGHT);
-    float forwardDelta = (leftDelta + rightDelta) / 2.0f;
+    float left_delta  = drivetrain_->getMotorDeltaMM(WheelSide::LEFT);
+    float right_delta = drivetrain_->getMotorDeltaMM(WheelSide::RIGHT);
+    float forward_delta = (left_delta + right_delta) / 2.0f;
 
     // Step 2: Get IMU delta (actual rotation this cycle)
-    float rotationDelta = sensors_->getYawDelta();
+    float rotation_delta = sensors_->getYawDelta();
 
     // Step 3: Update forward controller (incremental error accumulation)
-    float expectedForward = targetForwardVelocityMMps_ * dt;
-    forwardError_ += (expectedForward - forwardDelta);
+    float expected_forward = targetForwardVelocityMMps_ * dt;
+    forwardError_ += (expected_forward - forward_delta);
 
     // Step 4: Update rotation controller (incremental error accumulation)
-    float expectedRotation = targetAngularVelocityDegps_ * dt;
-    rotationError_ += (expectedRotation - rotationDelta);
+    float expected_rotation = targetAngularVelocityDegps_ * dt;
+    rotationError_ += (expected_rotation - rotation_delta);
 
     // TODO: Mazerunner-core adds steering correction here from wall sensors
     // rotationError_ += calculateSteeringCorrection();
 
-    // Step 5: Calculate PD control outputs
-    float forwardOutput  = forwardController_.calculateOutput(forwardError_, dt);
-    float rotationOutput = rotationController_.calculateOutput(rotationError_, dt);
+    // Step 5: Calculate PD control outputs (normalized to [-1, 1])
+    float forward_output  = forwardController_.calculateOutput(forwardError_, dt);
+    float rotation_output = rotationController_.calculateOutput(rotationError_, dt);
 
-    // Step 6: Combine for differential drive
-    float leftDuty  = forwardOutput - rotationOutput;
-    float rightDuty = forwardOutput + rotationOutput;
+    // Step 6: Combine for differential drive and scale to voltage
+    float left_volts  = (forward_output - rotation_output) * MAX_VOLTAGE;
+    float right_volts = (forward_output + rotation_output) * MAX_VOLTAGE;
 
     // Step 7: Calculate wheel velocities and accelerations for feedforward
-    float wheelbaseRadius = WHEEL_BASE_MM / 2.0f;
-    float tangentialVel   = targetAngularVelocityDegps_ * (M_PI / 180.0f) * wheelbaseRadius;
+    float wheelbase_radius = WHEEL_BASE_MM / 2.0f;
+    float tangential_vel   = targetAngularVelocityDegps_ * (M_PI / 180.0f) * wheelbase_radius;
 
-    float leftVel  = targetForwardVelocityMMps_ - tangentialVel;
-    float rightVel = targetForwardVelocityMMps_ + tangentialVel;
+    float left_vel  = targetForwardVelocityMMps_ - tangential_vel;
+    float right_vel = targetForwardVelocityMMps_ + tangential_vel;
 
     // Calculate accelerations (for Ka feedforward term)
-    static float prevLeftVel  = 0.0f;
-    static float prevRightVel = 0.0f;
-    float leftAccel  = (leftVel - prevLeftVel) / dt;
-    float rightAccel = (rightVel - prevRightVel) / dt;
-    prevLeftVel  = leftVel;
-    prevRightVel = rightVel;
+    static float prev_left_vel  = 0.0f;
+    static float prev_right_vel = 0.0f;
+    float left_accel  = (left_vel - prev_left_vel) / dt;
+    float right_accel = (right_vel - prev_right_vel) / dt;
+    prev_left_vel  = left_vel;
+    prev_right_vel = right_vel;
 
-    // Step 8: Add feedforward (Kv + Ks + Ka)
-    float ffLeft  = drivetrain_->getFeedforward(WheelSide::LEFT, leftVel, leftAccel);
-    float ffRight = drivetrain_->getFeedforward(WheelSide::RIGHT, rightVel, rightAccel);
+    // Step 8: Add feedforward (Kv + Ks + Ka) scaled to voltage
+    float ff_left  = drivetrain_->getFeedforward(WheelSide::LEFT, left_vel, left_accel) * MAX_VOLTAGE;
+    float ff_right = drivetrain_->getFeedforward(WheelSide::RIGHT, right_vel, right_accel) * MAX_VOLTAGE;
 
-    leftDuty  += ffLeft;
-    rightDuty += ffRight;
+    left_volts  += ff_left;
+    right_volts += ff_right;
 
-    // Step 9: Clamp to safe duty cycle limits
-    leftDuty  = RobotUtils::clampAbs(leftDuty, ROBOT_MAX_DUTY);
-    rightDuty = RobotUtils::clampAbs(rightDuty, ROBOT_MAX_DUTY);
+    // Step 9: Clamp to safe voltage limits (6V max)
+    left_volts  = RobotUtils::clampAbs(left_volts, MAX_VOLTAGE);
+    right_volts = RobotUtils::clampAbs(right_volts, MAX_VOLTAGE);
 
     // Step 10: Apply slew rate limiting to prevent sudden changes
-    leftDuty  = applySlew(leftDuty, prevLeftDuty_, dt);
-    rightDuty = applySlew(rightDuty, prevRightDuty_, dt);
+    left_volts  = applySlew(left_volts, prev_left_volts_, dt);
+    right_volts = applySlew(right_volts, prev_right_volts_, dt);
 
-    // Step 11: Send duty cycles to motors
-    drivetrain_->setDuty(leftDuty, rightDuty);
+    // Step 11: Send voltages to motors (scaled by battery voltage internally)
+    drivetrain_->setVoltage(left_volts, right_volts);
 
     // Step 12: Update previous errors for derivative calculation
     prevForwardError_  = forwardError_;
@@ -551,18 +551,18 @@ void Robot::runPositionControl(float dt)
 // Helper Methods
 // ============================================================
 
-float Robot::applySlew(float cmd, float& prevCmd, float dt)
+float Robot::applySlew(float cmd, float& prev_cmd, float dt)
 {
-    float maxDelta = ROBOT_MAX_DUTY_SLEW_PER_SEC * dt;
+    float max_delta = ROBOT_MAX_VOLTS_SLEW_PER_SEC * dt;
 
-    float delta = cmd - prevCmd;
-    if (delta > maxDelta)
-        delta = maxDelta;
-    if (delta < -maxDelta)
-        delta = -maxDelta;
+    float delta = cmd - prev_cmd;
+    if (delta > max_delta)
+        delta = max_delta;
+    if (delta < -max_delta)
+        delta = -max_delta;
 
-    prevCmd += delta;
-    return prevCmd;
+    prev_cmd += delta;
+    return prev_cmd;
 }
 
 std::string Robot::getStateName() const
