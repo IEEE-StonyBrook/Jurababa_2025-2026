@@ -5,8 +5,8 @@
 #include "Platform/Pico/Robot/Sensors.h"
 
 Robot::Robot(Drivetrain* drivetrain, Sensors* sensors)
-    : drivetrain(drivetrain),
-      sensors(sensors),
+    : drivetrain_(drivetrain),
+      sensors_(sensors),
       forwardController_(),
       rotationController_()
 {
@@ -27,8 +27,8 @@ Robot::Robot(Drivetrain* drivetrain, Sensors* sensors)
 
 void Robot::reset()
 {
-    drivetrain->reset();
-    sensors->resetYaw();
+    drivetrain_->reset();
+    sensors_->resetYaw();
 
     forwardController_.reset();
     rotationController_.reset();
@@ -62,15 +62,15 @@ void Robot::moveDistance(float distanceMM, float maxVelocityMMps, float accelera
     state_ = MotionState::MovingForward;
 
     // Get current position baseline
-    float currentPos = (drivetrain->getMotorDistanceMM(WheelSide::LEFT) +
-                       drivetrain->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
+    float currentPos = (drivetrain_->getMotorDistanceMM(WheelSide::LEFT) +
+                       drivetrain_->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
 
     // Start forward motion profile
     forwardProfile_.start(distanceMM, maxVelocityMMps, accelerationMMps2, currentPos);
     rotationProfile_.reset();
 
     // Snap to nearest 45-degree heading for maze alignment
-    targetYawDeg_ = RobotUtils::snapTo45Degrees(sensors->getYaw());
+    targetYawDeg_ = RobotUtils::snapTo45Degrees(sensors_->getYaw());
 
     // Reset controllers for clean start
     forwardController_.reset();
@@ -93,7 +93,7 @@ void Robot::turnInPlace(float degrees, float maxVelocityDegps, float acceleratio
     state_ = MotionState::TurningInPlace;
 
     // Get current angle baseline
-    float currentAngle = sensors->getYaw();
+    float currentAngle = sensors_->getYaw();
 
     // Start rotation profile
     rotationProfile_.start(degrees, maxVelocityDegps, accelerationDegps2, currentAngle);
@@ -156,7 +156,7 @@ void Robot::stop()
     // Stop motors immediately
     prevLeftDuty_  = 0.0f;
     prevRightDuty_ = 0.0f;
-    drivetrain->stop();
+    drivetrain_->stop();
 
     motionDone_ = true;
 }
@@ -202,9 +202,9 @@ void Robot::smoothTurn(float degrees, float radiusMM)
     float arcLengthMM = std::fabs(degrees) * (M_PI / 180.0f) * radiusMM;
 
     // Get current baselines
-    float currentPos   = (drivetrain->getMotorDistanceMM(WheelSide::LEFT) +
-                         drivetrain->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
-    float currentAngle = sensors->getYaw();
+    float currentPos   = (drivetrain_->getMotorDistanceMM(WheelSide::LEFT) +
+                         drivetrain_->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
+    float currentAngle = sensors_->getYaw();
 
     // Start both profiles simultaneously for coordinated motion
     forwardProfile_.start(arcLengthMM, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS,
@@ -237,8 +237,8 @@ void Robot::backToWall(float maxDistanceMM)
     state_ = MotionState::MovingForward;
 
     // Move backward slowly until wall detected or max distance reached
-    float currentPos = (drivetrain->getMotorDistanceMM(WheelSide::LEFT) +
-                       drivetrain->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
+    float currentPos = (drivetrain_->getMotorDistanceMM(WheelSide::LEFT) +
+                       drivetrain_->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
 
     // Negative distance for reverse motion
     forwardProfile_.start(-maxDistanceMM, ROBOT_BACKUP_SPEED_MMPS,
@@ -246,7 +246,7 @@ void Robot::backToWall(float maxDistanceMM)
     rotationProfile_.reset();
 
     // Snap to current heading
-    targetYawDeg_ = RobotUtils::snapTo45Degrees(sensors->getYaw());
+    targetYawDeg_ = RobotUtils::snapTo45Degrees(sensors_->getYaw());
 
     // Reset controllers
     forwardController_.reset();
@@ -271,8 +271,8 @@ void Robot::centerWithWalls()
     // Use ToF sensors to adjust lateral position for centering
     // This is a position adjustment, not continuous motion
 
-    float leftDistMM  = sensors->getLeftDistanceMM();
-    float rightDistMM = sensors->getRightDistanceMM();
+    float leftDistMM  = sensors_->getLeftDistanceMM();
+    float rightDistMM = sensors_->getRightDistanceMM();
 
     // Calculate centering offset
     float lateralErrorMM = (rightDistMM - leftDistMM) / 2.0f;
@@ -323,8 +323,8 @@ void Robot::updateControl(float dt)
         return;
 
     // Update sensor measurements
-    drivetrain->updateVelocities(dt);
-    sensors->update(dt);
+    drivetrain_->updateVelocities(dt);
+    sensors_->update(dt);
 
     // Periodic logging
     static int logCounter = 0;
@@ -333,7 +333,7 @@ void Robot::updateControl(float dt)
         LOG_DEBUG("Robot | State: " + getStateName() +
                   " | ForwardVel: " + std::to_string(targetForwardVelocityMMps_) +
                   " mm/s | AngularVel: " + std::to_string(targetAngularVelocityDegps_) +
-                  " deg/s | Yaw: " + std::to_string(sensors->getYaw()) + " deg");
+                  " deg/s | Yaw: " + std::to_string(sensors_->getYaw()) + " deg");
     }
 
     // Update motion profiles based on current state
@@ -379,8 +379,8 @@ void Robot::updateControl(float dt)
 void Robot::updateForwardProfile(float dt)
 {
     // Get current position from encoders
-    float currentPos = (drivetrain->getMotorDistanceMM(WheelSide::LEFT) +
-                       drivetrain->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
+    float currentPos = (drivetrain_->getMotorDistanceMM(WheelSide::LEFT) +
+                       drivetrain_->getMotorDistanceMM(WheelSide::RIGHT)) / 2.0f;
 
     // Update profile
     forwardProfile_.update(currentPos, dt);
@@ -393,7 +393,7 @@ void Robot::updateForwardProfile(float dt)
 void Robot::updateRotationProfile(float dt)
 {
     // Get current angle from IMU
-    float currentAngle = sensors->getYaw();
+    float currentAngle = sensors_->getYaw();
 
     // Update profile
     rotationProfile_.update(currentAngle, dt);
@@ -414,14 +414,14 @@ void Robot::checkForwardCompletion()
         if (state_ == MotionState::MovingForward && targetForwardVelocityMMps_ < 0.0f)
         {
             // Backing up - check for wall contact
-            float frontDistMM = sensors->getFrontDistanceMM();
+            float frontDistMM = sensors_->getFrontDistanceMM();
             if (frontDistMM < WALL_CONTACT_THRESHOLD_MM)
             {
                 stop();
                 motionDone_ = true;
 
                 // Reset odometry - we know we're BACK_WALL_TO_CENTER mm from center
-                sensors->resetPosition();
+                sensors_->resetPosition();
                 LOG_DEBUG("BackToWall | Wall contact detected, position reset");
                 return;
             }
@@ -438,7 +438,7 @@ void Robot::checkRotationCompletion()
     if (rotationProfile_.isFinished())
     {
         // Additional stability check - verify angular velocity is low
-        float angularVel = sensors->getAngularVelocityDegps();
+        float angularVel = sensors_->getAngularVelocityDegps();
 
         if (std::fabs(angularVel) <= ROBOT_TURN_STABILITY_DEGPS)
         {
@@ -461,11 +461,11 @@ void Robot::checkSmoothTurnCompletion()
 void Robot::checkStoppingCompletion()
 {
     // Check if robot has settled
-    float vLeft  = drivetrain->getMotorVelocityMMps(WheelSide::LEFT);
-    float vRight = drivetrain->getMotorVelocityMMps(WheelSide::RIGHT);
+    float vLeft  = drivetrain_->getMotorVelocityMMps(WheelSide::LEFT);
+    float vRight = drivetrain_->getMotorVelocityMMps(WheelSide::RIGHT);
     float vAvg   = (std::fabs(vLeft) + std::fabs(vRight)) / 2.0f;
 
-    float angularVel = sensors->getAngularVelocityDegps();
+    float angularVel = sensors_->getAngularVelocityDegps();
 
     // Both linear and angular velocity must be low
     if (vAvg < ROBOT_STOPPING_VELOCITY_MMPS &&
@@ -483,12 +483,12 @@ void Robot::checkStoppingCompletion()
 void Robot::runPositionControl(float dt)
 {
     // Step 1: Get encoder deltas (actual movement this cycle)
-    float leftDelta  = drivetrain->getMotorDeltaMM(WheelSide::LEFT);
-    float rightDelta = drivetrain->getMotorDeltaMM(WheelSide::RIGHT);
+    float leftDelta  = drivetrain_->getMotorDeltaMM(WheelSide::LEFT);
+    float rightDelta = drivetrain_->getMotorDeltaMM(WheelSide::RIGHT);
     float forwardDelta = (leftDelta + rightDelta) / 2.0f;
 
     // Step 2: Get IMU delta (actual rotation this cycle)
-    float rotationDelta = sensors->getYawDelta();
+    float rotationDelta = sensors_->getYawDelta();
 
     // Step 3: Update forward controller (incremental error accumulation)
     float expectedForward = targetForwardVelocityMMps_ * dt;
@@ -525,8 +525,8 @@ void Robot::runPositionControl(float dt)
     prevRightVel = rightVel;
 
     // Step 8: Add feedforward (Kv + Ks + Ka)
-    float ffLeft  = drivetrain->getFeedforward(WheelSide::LEFT, leftVel, leftAccel);
-    float ffRight = drivetrain->getFeedforward(WheelSide::RIGHT, rightVel, rightAccel);
+    float ffLeft  = drivetrain_->getFeedforward(WheelSide::LEFT, leftVel, leftAccel);
+    float ffRight = drivetrain_->getFeedforward(WheelSide::RIGHT, rightVel, rightAccel);
 
     leftDuty  += ffLeft;
     rightDuty += ffRight;
@@ -540,7 +540,7 @@ void Robot::runPositionControl(float dt)
     rightDuty = applySlew(rightDuty, prevRightDuty_, dt);
 
     // Step 11: Send duty cycles to motors
-    drivetrain->setDuty(leftDuty, rightDuty);
+    drivetrain_->setDuty(leftDuty, rightDuty);
 
     // Step 12: Update previous errors for derivative calculation
     prevForwardError_  = forwardError_;
@@ -611,7 +611,7 @@ void Robot::driveDistanceMM(float distanceMM, float forwardMMps)
 void Robot::turnToYawDeg(float targetYawDeg)
 {
     LOG_DEBUG("turnToYawDeg (deprecated) | Calling turnInPlace() instead");
-    float currentYaw = sensors->getYaw();
+    float currentYaw = sensors_->getYaw();
     float deltaDeg = RobotUtils::wrapAngle180(targetYawDeg - currentYaw);
     turnInPlace(deltaDeg, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
@@ -627,7 +627,7 @@ void Robot::turn45Degrees(std::string side, int times)
 void Robot::arcTurnToYawDeg(float targetYawDeg, float arcLengthMM, float baseVelocityMMps)
 {
     LOG_DEBUG("arcTurnToYawDeg (deprecated) | Calling smoothTurn() instead");
-    float currentYaw = sensors->getYaw();
+    float currentYaw = sensors_->getYaw();
     float deltaDeg = RobotUtils::wrapAngle180(targetYawDeg - currentYaw);
 
     // Estimate radius from arc length and angle

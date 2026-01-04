@@ -55,14 +55,14 @@ static BatteryMonitor* g_battery_monitor = nullptr;
 void processCommands(Robot* robot)
 {
     CommandPacket cmd;
-    bool          sawStop = false;
+    bool          saw_stop = false;
 
     // Drain all pending commands each tick
     while (CommandHub::receiveNonBlocking(cmd))
     {
         if (cmd.type == CommandType::STOP)
         {
-            sawStop = true;
+            saw_stop = true;
             continue; // Flush remaining commands behind STOP
         }
 
@@ -94,11 +94,11 @@ void processCommands(Robot* robot)
 
             case CommandType::TURN_ARBITRARY:
             {
-                float stepsOf45 = static_cast<float>(cmd.param) / 45.0f;
-                if (stepsOf45 > 0)
-                    robot->turn45Degrees("right", static_cast<int>(stepsOf45));
+                float steps_of_45 = static_cast<float>(cmd.param) / 45.0f;
+                if (steps_of_45 > 0)
+                    robot->turn45Degrees("right", static_cast<int>(steps_of_45));
                 else
-                    robot->turn45Degrees("left", static_cast<int>(-stepsOf45));
+                    robot->turn45Degrees("left", static_cast<int>(-steps_of_45));
                 break;
             }
 
@@ -125,7 +125,7 @@ void processCommands(Robot* robot)
         }
     }
 
-    if (sawStop)
+    if (saw_stop)
         robot->stop();
 }
 
@@ -136,18 +136,18 @@ void processCommands(Robot* robot)
 void core1_RobotController()
 {
     // Initialize hardware
-    Encoder leftEncoder(pio0, 20, true);
-    Encoder rightEncoder(pio0, 8, false);
-    ToF     leftToF(11, 'L');
-    ToF     frontToF(12, 'F');
-    ToF     rightToF(13, 'R');
+    Encoder left_encoder(pio0, 20, true);
+    Encoder right_encoder(pio0, 8, false);
+    ToF     left_tof(11, 'L');
+    ToF     front_tof(12, 'F');
+    ToF     right_tof(13, 'R');
     IMU     imu(5);
-    Motor   leftMotor(18, 19, true);
-    Motor   rightMotor(6, 7, false);
+    Motor   left_motor(18, 19, true);
+    Motor   right_motor(6, 7, false);
 
     // Initialize control stack (with battery monitor for voltage-based control)
-    Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder, g_battery_monitor);
-    Sensors    sensors(&imu, &leftToF, &frontToF, &rightToF);
+    Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, g_battery_monitor);
+    Sensors    sensors(&imu, &left_tof, &front_tof, &right_tof);
     Robot      robot(&drivetrain, &sensors);
 
     LOG_DEBUG("Core1: Hardware initialized");
@@ -158,15 +158,15 @@ void core1_RobotController()
 
     // Real-time control loop (100Hz = 10ms period)
     const int       CONTROL_PERIOD_MS = 10;
-    absolute_time_t nextTick          = make_timeout_time_ms(CONTROL_PERIOD_MS);
-    absolute_time_t lastTick          = get_absolute_time();
+    absolute_time_t next_tick         = make_timeout_time_ms(CONTROL_PERIOD_MS);
+    absolute_time_t last_tick         = get_absolute_time();
 
     while (true)
     {
         // Calculate delta time for control updates
         absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(lastTick, now) * 1e-6f;
-        lastTick            = now;
+        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
+        last_tick           = now;
 
         // Update robot control (PID, motion profiling, etc.)
         robot.update(dt);
@@ -175,19 +175,19 @@ void core1_RobotController()
         processCommands(&robot);
 
         // Publish sensor data to Core 0
-        MulticoreSensorData sensorData{};
-        sensorData.left_encoder_count  = leftEncoder.getTickCount();
-        sensorData.right_encoder_count = rightEncoder.getTickCount();
-        sensorData.tof_left_mm         = static_cast<int16_t>(leftToF.getToFDistanceFromWallMM());
-        sensorData.tof_front_mm        = static_cast<int16_t>(frontToF.getToFDistanceFromWallMM());
-        sensorData.tof_right_mm        = static_cast<int16_t>(rightToF.getToFDistanceFromWallMM());
-        sensorData.imu_yaw             = imu.getIMUYawDegreesNeg180ToPos180();
-        sensorData.timestamp_ms        = to_ms_since_boot(now);
-        MulticoreSensorHub::publish(sensorData);
+        MulticoreSensorData sensor_data{};
+        sensor_data.left_encoder_count  = left_encoder.getTickCount();
+        sensor_data.right_encoder_count = right_encoder.getTickCount();
+        sensor_data.tof_left_mm         = static_cast<int16_t>(left_tof.getToFDistanceFromWallMM());
+        sensor_data.tof_front_mm        = static_cast<int16_t>(front_tof.getToFDistanceFromWallMM());
+        sensor_data.tof_right_mm        = static_cast<int16_t>(right_tof.getToFDistanceFromWallMM());
+        sensor_data.imu_yaw             = imu.getIMUYawDegreesNeg180ToPos180();
+        sensor_data.timestamp_ms        = to_ms_since_boot(now);
+        MulticoreSensorHub::publish(sensor_data);
 
         // Sleep until next control tick
-        sleep_until(nextTick);
-        nextTick = delayed_by_ms(nextTick, CONTROL_PERIOD_MS);
+        sleep_until(next_tick);
+        next_tick = delayed_by_ms(next_tick, CONTROL_PERIOD_MS);
     }
 }
 
@@ -245,10 +245,10 @@ int main()
     LOG_DEBUG("Core0: Core1 ready, starting maze solver");
 
     // Initialize maze solving components
-    std::array<int, 2>              startCell = {0, 0};
-    std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
+    std::array<int, 2>              start_cell = {0, 0};
+    std::vector<std::array<int, 2>> goal_cells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
     MazeGraph                       maze(MAZE_SIZE, MAZE_SIZE);
-    InternalMouse                   mouse(startCell, std::string("n"), goalCells, &maze);
+    InternalMouse                   mouse(start_cell, std::string("n"), goal_cells, &maze);
     API                             api(&mouse);
 
     // ========================================================================
@@ -258,16 +258,16 @@ int main()
     // EXPLORATION MODE: Use flood-fill search to map unknown maze
     // Uncomment to enable:
     // FloodFillSolver::explore(mouse, api, false);
-    // bool explorationComplete = traversePathIteratively(&api, &mouse, goalCells, false, false,
-    // false); if (explorationComplete) {
+    // bool exploration_complete = traversePathIteratively(&api, &mouse, goal_cells, false, false,
+    // false); if (exploration_complete) {
     //     LOG_INFO("Maze exploration complete!");
     // }
 
     // SPEED RUN MODE: Use A* with known maze layout
     // Uncomment to enable:
     // setAllExplored(&mouse);  // Mark entire maze as explored
-    // bool speedRunComplete = traversePathIteratively(&api, &mouse, goalCells, true, true, false);
-    // if (speedRunComplete) {
+    // bool speed_run_complete = traversePathIteratively(&api, &mouse, goal_cells, true, true, false);
+    // if (speed_run_complete) {
     //     LOG_INFO("Speed run complete!");
     // }
 

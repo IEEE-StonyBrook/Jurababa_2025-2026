@@ -227,8 +227,8 @@ class Robot
     // Hardware Interfaces
     // ============================================================
 
-    Drivetrain* drivetrain;
-    Sensors*    sensors;
+    Drivetrain* drivetrain_;
+    Sensors*    sensors_;
 
     // ============================================================
     // Motion Profiles (Trapezoidal velocity generation)
