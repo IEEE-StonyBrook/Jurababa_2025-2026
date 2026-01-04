@@ -61,10 +61,19 @@ class FloodFillSolver {
   static void updateDistances(InternalMouse& mouse, bool diagonalsAllowed);
 
   /**
+   * @brief Calculates turn cost for cardinal directions only.
+   *
+   * @param mouse Reference to the InternalMouse instance.
+   * @param neighbor The neighbor cell to evaluate.
+   * @return 0 for straight, 1 for 90° turn, 2 for 180° turn.
+   */
+  static int getTurnCost(InternalMouse& mouse, MazeNode* neighbor);
+
+  /**
    * @brief Gets the best neighbor to move to.
    *
-   * Prioritizes unexplored cells, then picks lowest distance.
-   * Falls back to explored cells for backtracking.
+   * Prioritizes: 1) Unexplored with least turning, 2) Explored with lowest
+   * (distance + turn_cost) score. Falls back to explored cells for backtracking.
    *
    * @param mouse Reference to the InternalMouse instance.
    * @param current Current cell the robot is on.

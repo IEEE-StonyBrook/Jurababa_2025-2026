@@ -113,18 +113,45 @@ void FloodFillSolver::updateDistances(InternalMouse& mouse, bool diagonalsAllowe
 }
 
 /**
+ * @brief Calculates turn cost for cardinal directions only.
+ *
+ * @return 0 for straight, 1 for 90° turn, 2 for 180° turn.
+ */
+int FloodFillSolver::getTurnCost(InternalMouse& mouse, MazeNode* neighbor)
+{
+    MazeNode* current = mouse.getCurrentRobotNode();
+    int dx = neighbor->getCellXPos() - current->getCellXPos();
+    int dy = neighbor->getCellYPos() - current->getCellYPos();
+
+    std::array<int, 2> currentDir = mouse.getCurrentRobotDirArray();
+
+    // Dot product: 1 = same direction (0°), 0 = perpendicular (90°), -1 = opposite (180°)
+    int dot = currentDir[0] * dx + currentDir[1] * dy;
+
+    if (dot > 0)
+        return 0;  // Straight ahead
+    if (dot == 0)
+        return 1;  // 90° turn (left or right)
+    return 2;      // 180° turn
+}
+
+/**
  * @brief Gets the best neighbor to move to.
  *
- * Prioritizes unexplored cells (they have distance 0).
- * Falls back to explored cells with lowest distance (toward nearest unexplored).
+ * Prioritizes:
+ * 1) Unexplored neighbor with least turning required
+ * 2) Explored neighbor with lowest (distance + turn_cost) score
+ *
  * Returns nullptr if no frontiers remain (exploration complete).
  */
 MazeNode* FloodFillSolver::getBestNeighbor(InternalMouse& mouse, MazeNode* current,
                                          bool diagonalsAllowed)
 {
-    MazeNode* bestUnexplored   = nullptr;
-    MazeNode* bestExplored     = nullptr;
-    int       bestExploredDist = INFINITY_DIST + 1;
+    MazeNode* bestUnexplored     = nullptr;
+    int       bestUnexploredTurn = 3;  // Higher than max (2)
+
+    MazeNode* bestExplored      = nullptr;
+    int       bestExploredScore = INFINITY_DIST + 3;
 
     std::vector<MazeNode*> neighbors = mouse.getNodeNeighbors(current, diagonalsAllowed);
     for (MazeNode* neighbor : neighbors)
@@ -138,22 +165,29 @@ MazeNode* FloodFillSolver::getBestNeighbor(InternalMouse& mouse, MazeNode* curre
             continue;
         }
 
+        int turnCost = getTurnCost(mouse, neighbor);
+
         if (!neighbor->getCellIsExplored())
         {
-            // Found an unexplored neighbor - take it
-            bestUnexplored = neighbor;
-            break;  // Immediately prefer unexplored
+            // For unexplored cells, prefer least turning
+            if (turnCost < bestUnexploredTurn)
+            {
+                bestUnexploredTurn = turnCost;
+                bestUnexplored     = neighbor;
+            }
         }
         else
         {
-            // Track explored neighbor with lowest distance to frontier
-            int nx   = neighbor->getCellXPos();
-            int ny   = neighbor->getCellYPos();
-            int dist = distanceGrid_[nx][ny];
-            if (dist < bestExploredDist)
+            // For explored cells, use combined score: distance + turn_cost
+            int nx    = neighbor->getCellXPos();
+            int ny    = neighbor->getCellYPos();
+            int dist  = distanceGrid_[nx][ny];
+            int score = dist + turnCost;
+
+            if (score < bestExploredScore)
             {
-                bestExploredDist = dist;
-                bestExplored     = neighbor;
+                bestExploredScore = score;
+                bestExplored      = neighbor;
             }
         }
     }
@@ -164,8 +198,8 @@ MazeNode* FloodFillSolver::getBestNeighbor(InternalMouse& mouse, MazeNode* curre
         return bestUnexplored;
     }
 
-    // If best explored distance is still INFINITY, no frontiers exist - exploration done
-    if (bestExploredDist >= INFINITY_DIST)
+    // If best explored score is still very high, no frontiers exist
+    if (bestExploredScore >= INFINITY_DIST)
     {
         return nullptr;
     }
@@ -255,6 +289,8 @@ void FloodFillSolver::explore(InternalMouse& mouse, IAPIInterface& api, bool dia
 
 /**
  * @brief Moves directly to an adjacent cell without pathfinding.
+ *
+ * Only supports cardinal directions (N, E, S, W) during exploration.
  */
 void FloodFillSolver::moveDirectlyToAdjacent(IAPIInterface& api, InternalMouse& mouse,
                                            MazeNode* target)
@@ -265,57 +301,34 @@ void FloodFillSolver::moveDirectlyToAdjacent(IAPIInterface& api, InternalMouse& 
     int dy = target->getCellYPos() - current->getCellYPos();
 
     std::array<int, 2> currentDir = mouse.getCurrentRobotDirArray();
-    std::array<int, 2> targetDir  = {dx, dy};
 
-    if (currentDir == targetDir)
+    // Dot product: 1 = same direction, 0 = perpendicular, -1 = opposite
+    int dot   = currentDir[0] * dx + currentDir[1] * dy;
+    // Cross product: positive = target is left, negative = target is right
+    int cross = currentDir[0] * dy - currentDir[1] * dx;
+
+    if (dot > 0)
     {
+        // Straight ahead
+        api.moveForward();
+    }
+    else if (dot < 0)
+    {
+        // 180° turn
+        api.turnRight90();
+        api.turnRight90();
+        api.moveForward();
+    }
+    else if (cross > 0)
+    {
+        // 90° left
+        api.turnLeft90();
         api.moveForward();
     }
     else
     {
-        int cross = currentDir[0] * targetDir[1] - currentDir[1] * targetDir[0];
-        int dot   = currentDir[0] * targetDir[0] + currentDir[1] * targetDir[1];
-
-        if (cross > 0)
-        {
-            if (dot == 0)
-            {
-                api.turnLeft90();
-            }
-            else if (dot < 0)
-            {
-                api.turnLeft90();
-                api.turnLeft45();
-            }
-            else
-            {
-                api.turnLeft45();
-            }
-        }
-        else if (cross < 0)
-        {
-            if (dot == 0)
-            {
-                api.turnRight90();
-            }
-            else if (dot < 0)
-            {
-                api.turnRight90();
-                api.turnRight45();
-            }
-            else
-            {
-                api.turnRight45();
-            }
-        }
-        else
-        {
-            if (dot < 0)
-            {
-                api.turnRight90();
-                api.turnRight90();
-            }
-        }
+        // 90° right
+        api.turnRight90();
         api.moveForward();
     }
 }
