@@ -228,10 +228,15 @@ int main()
     g_battery_monitor = &battery;
 
     // ========================================================================
-    // Bluetooth Setup (UART0, GP0=TX, GP1=RX)
+    // Bluetooth Setup (UART0, GP16=TX, GP17=RX)
     // ========================================================================
-    BluetoothInterface bluetooth(uart0, 9600, 0, 1);
+    BluetoothInterface bluetooth(uart0, 9600, 16, 17);
     bluetooth.init();
+
+    // Direct Bluetooth test - bypasses LogSystem
+    bluetooth.write("=== HM-10 Bluetooth Test ===\r\n");
+    bluetooth.write("If you see this, Bluetooth TX is working!\r\n");
+
     LogSystem::setBluetoothInterface(&bluetooth);
     LogSystem::setBluetoothEnabled(true);
     LOG_INFO("Bluetooth logging enabled");
@@ -272,8 +277,9 @@ int main()
     // }
 
     // TEST MODE: Execute a simple test sequence
-    LOG_INFO("Test mode: Executing square pattern");
-    api.executeSequence("F#R#F#R#F#R#F#R");
+    // LOG_INFO("Test mode: Executing square pattern");
+    // api.executeSequence("F#R#F#R#F#R#F#R");
+    LOG_INFO("Entering sensor monitoring loop...");
 
     // ========================================================================
     // Sensor monitoring loop - update maze state from real-time sensor data
@@ -281,18 +287,22 @@ int main()
     uint32_t last_battery_check_ms = 0;
     const uint32_t BATTERY_CHECK_INTERVAL_MS = 5000;  // Check every 5 seconds
 
+    uint32_t last_bt_print_ms = 0;
+    const uint32_t BT_PRINT_INTERVAL_MS = 1000;  // Print status every 1 second
+    uint32_t bt_message_count = 0;
+
     while (true)
     {
         MulticoreSensorData sensors;
         MulticoreSensorHub::snapshot(sensors);
 
         // Update maze walls based on ToF sensor readings
-        if (sensors.tof_left_exist)
-            mouse.setWallExistsLFR('L');
-        if (sensors.tof_front_exist)
-            mouse.setWallExistsLFR('F');
-        if (sensors.tof_right_exist)
-            mouse.setWallExistsLFR('R');
+        // if (sensors.tof_left_exist)
+        //     mouse.setWallExistsLFR('L');
+        // if (sensors.tof_front_exist)
+        //     mouse.setWallExistsLFR('F');
+        // if (sensors.tof_right_exist)
+        //     mouse.setWallExistsLFR('R');
 
         // Periodic battery voltage check (non-blocking)
         uint32_t now_ms = to_ms_since_boot(get_absolute_time());
@@ -308,6 +318,23 @@ int main()
             {
                 LOG_WARNING("Low battery! " << battery.getVoltage() << "V");
             }
+        }
+
+        // ====================================================================
+        // Continuous Status Print (for testing serial + Bluetooth connection)
+        // ====================================================================
+        if (now_ms - last_bt_print_ms >= BT_PRINT_INTERVAL_MS)
+        {
+            last_bt_print_ms = now_ms;
+            bt_message_count++;
+
+            // Print status message with counter, battery, and sensor data
+            // LOG_INFO outputs to both USB serial and Bluetooth
+            LOG_INFO("[" << bt_message_count << "] "
+                     << "Bat:" << battery.getVoltage() << "V "
+                     << "L:" << sensors.tof_left_mm << " "
+                     << "F:" << sensors.tof_front_mm << " "
+                     << "R:" << sensors.tof_right_mm);
         }
 
         // ====================================================================

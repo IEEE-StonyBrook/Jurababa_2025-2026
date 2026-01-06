@@ -15,8 +15,8 @@
  *
  * Hardware config:
  *   - UART0 at 9600 baud
- *   - TX: GP0
- *   - RX: GP1
+ *   - TX: GP16
+ *   - RX: GP17
  *
  * Supported commands (single character):
  *   - 's': Start command

@@ -1,6 +1,7 @@
 #include "Platform/Pico/BluetoothInterface.h"
 
 #include <cstring>
+#include <stdio.h>
 
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
@@ -25,43 +26,73 @@ BluetoothInterface::BluetoothInterface(uart_inst_t* uart_instance,
 
 void BluetoothInterface::init()
 {
+    printf("[BT] Starting Bluetooth init...\n");
+    printf("[BT] UART instance: %s\n", (uart_ == uart0) ? "uart0" : "uart1");
+    printf("[BT] Baud rate: %lu\n", baud_rate_);
+    printf("[BT] TX pin: %d, RX pin: %d\n", tx_pin_, rx_pin_);
+
     // Initialize UART with specified baud rate
-    uart_init(uart_, baud_rate_);
+    printf("[BT] Step 1: Calling uart_init()...\n");
+    uint actual_baud = uart_init(uart_, baud_rate_);
+    printf("[BT] Step 1 done. Actual baud rate: %u\n", actual_baud);
 
     // Configure GPIO pins for UART function
+    printf("[BT] Step 2: Setting GPIO functions for TX/RX pins...\n");
     gpio_set_function(tx_pin_, GPIO_FUNC_UART);
     gpio_set_function(rx_pin_, GPIO_FUNC_UART);
+    printf("[BT] Step 2 done.\n");
 
     // Set UART format: 8 data bits, 1 stop bit, no parity
+    printf("[BT] Step 3: Setting UART format (8N1)...\n");
     uart_set_format(uart_, 8, 1, UART_PARITY_NONE);
+    printf("[BT] Step 3 done.\n");
 
     // Enable FIFO for better performance
+    printf("[BT] Step 4: Enabling FIFO...\n");
     uart_set_fifo_enabled(uart_, true);
+    printf("[BT] Step 4 done.\n");
 
     // Determine IRQ number based on UART instance
     int uart_irq = (uart_ == uart0) ? UART0_IRQ : UART1_IRQ;
+    printf("[BT] Step 5: Setting up IRQ %d...\n", uart_irq);
 
     // Set up interrupt handler
     irq_set_exclusive_handler(uart_irq, rxInterruptHandler);
     irq_set_enabled(uart_irq, true);
+    printf("[BT] Step 5 done. IRQ handler registered.\n");
 
     // Enable RX interrupt only (TX handled synchronously)
+    printf("[BT] Step 6: Enabling RX interrupt...\n");
     uart_set_irq_enables(uart_, true, false);
+    printf("[BT] Step 6 done.\n");
+
+    printf("[BT] Bluetooth init complete!\n");
+
+    // Test TX by sending directly
+    printf("[BT] Sending test message over UART TX...\n");
+    uart_puts(uart_, "BT_INIT_OK\r\n");
+    printf("[BT] Test message sent.\n");
 }
 
 void BluetoothInterface::write(const std::string& data)
 {
+    printf("[BT] write(string): \"%s\"\n", data.c_str());
     uart_puts(uart_, data.c_str());
+    printf("[BT] write(string) done.\n");
 }
 
 void BluetoothInterface::write(const char* data)
 {
+    printf("[BT] write(char*): \"%s\"\n", data);
     uart_puts(uart_, data);
+    printf("[BT] write(char*) done.\n");
 }
 
 void BluetoothInterface::writeBytes(const uint8_t* data, size_t length)
 {
+    printf("[BT] writeBytes: %zu bytes\n", length);
     uart_write_blocking(uart_, data, length);
+    printf("[BT] writeBytes done.\n");
 }
 
 bool BluetoothInterface::hasCommand() const
@@ -110,6 +141,9 @@ void BluetoothInterface::rxInterruptHandler()
 void BluetoothInterface::processReceivedChar(char c)
 {
     last_char_ = c;
+
+    // Echo received character back for debugging
+    uart_putc(uart_, c);
 
     // Parse single-character commands
     switch (c)
