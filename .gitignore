@@ -4,3 +4,4 @@ build
 .DS_Store
 CLAUDE.md
 bin
+.venv

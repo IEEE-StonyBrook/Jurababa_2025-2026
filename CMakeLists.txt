@@ -58,7 +58,10 @@ add_executable(Jurababa
     src/Navigation/PathUtils.cpp
     src/Navigation/Diagonalizer.cpp
     src/Platform/Pico/API.cpp
-    # src/Platform/Simulator/API.cpp
+    src/Platform/Pico/MotorLab/MotorLabSettings.cpp
+    src/Platform/Pico/MotorLab/MotorLabProfile.cpp
+    src/Platform/Pico/MotorLab/MotorLabReporter.cpp
+    src/Platform/Pico/MotorLab/MotorLab.cpp
     src/Main.cpp
 )
 
@@ -68,7 +71,15 @@ target_compile_definitions(Jurababa PRIVATE PICO_BUILD)
 pico_set_program_name(Jurababa "Jurababa")
 pico_set_program_version(Jurababa "0.1")
 
+# Configure UART stdio pins for HM-10 Bluetooth (GP16=TX, GP17=RX)
+target_compile_definitions(Jurababa PRIVATE
+    PICO_DEFAULT_UART=0
+    PICO_DEFAULT_UART_TX_PIN=16
+    PICO_DEFAULT_UART_RX_PIN=17
+)
+
 # Modify the below lines to enable/disable output over UART/USB
+# USB only - UART will be handled manually in MotorLab at 9600 baud
 pico_enable_stdio_uart(Jurababa 0)
 pico_enable_stdio_usb(Jurababa 1)
 
