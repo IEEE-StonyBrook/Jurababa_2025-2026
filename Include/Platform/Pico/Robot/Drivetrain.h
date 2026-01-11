@@ -1,74 +1,156 @@
-/******************************************************************************
- * Project: Micromouse Robot
- * File: Drivetrain.h
- * -----
- * High-level drivetrain control. Uses odometry feedback and feedforward
- * prediction to calculate motor voltages from velocity and steering targets.
- ******************************************************************************/
-
 #ifndef DRIVETRAIN_H
 #define DRIVETRAIN_H
 
-#include "../../../Include/Common/LogSystem.h"
-#include "../../../Include/Platform/Pico/Config.h"
-#include "IMU.h"
-#include "Motor.h"
-#include "Odometry.h"
-#include "ToF.h"
+#include <cstdint>
+#include <string>
 
+#include "Common/LogSystem.h"
+#include "Platform/Pico/Robot/BatteryMonitor.h"
+#include "Platform/Pico/Robot/Encoder.h"
+#include "Platform/Pico/Robot/Motor.h"
+#include "Platform/Pico/Robot/RobotUtils.h"
 
+/**
+ * @brief Differential drive system controller
+ *
+ * Manages two-wheeled differential drive system with integrated motor control,
+ * encoder feedback, and velocity estimation. Provides feedforward compensation
+ * for motor nonlinearities (friction, back-EMF).
+ */
 class Drivetrain
 {
   public:
-    Drivetrain(Motor* leftMotor, Motor* rightMotor, Encoder* leftEncoder, Encoder* rightEncoder,
-               IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF);
+    /**
+     * @brief Constructs drivetrain controller with hardware components
+     * @param left_motor Pointer to left motor controller
+     * @param right_motor Pointer to right motor controller
+     * @param left_encoder Pointer to left wheel encoder
+     * @param right_encoder Pointer to right wheel encoder
+     * @param battery_monitor Pointer to battery monitor for voltage-based control
+     */
+    Drivetrain(Motor* left_motor, Motor* right_motor,
+               Encoder* left_encoder, Encoder* right_encoder,
+               BatteryMonitor* battery_monitor = nullptr);
 
-    // Reset odometry and all controller states.
+    /**
+     * @brief Resets encoder counts and velocity state
+     */
     void reset();
 
-    // Run control loop: update odometry and apply new motor voltages.
-    void runControl(float forwardVelocityMMPerSec, float angularVelocityDegPerSec,
-                    float steeringCorrection);
+    // ============= Type-Safe API (Preferred) ============= //
 
-    // Immediately stop both motors.
+    /**
+     * @brief Returns total distance traveled by a wheel
+     * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
+     * @return Distance in millimeters
+     */
+    float getMotorDistanceMM(WheelSide side);
+
+    /**
+     * @brief Returns wheel velocity
+     * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
+     * @return Velocity in millimeters per second
+     */
+    float getMotorVelocityMMps(WheelSide side);
+
+    /**
+     * @brief Calculates feedforward duty cycle for target velocity and acceleration
+     *
+     * Uses empirically-tuned coefficients to compensate for motor nonlinearities:
+     * - Kv: Velocity gain (back-EMF compensation)
+     * - Ks: Static friction compensation
+     * - Ka: Acceleration gain (inertial compensation) [mazerunner-core enhancement]
+     *
+     * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
+     * @param wheel_speed_mm_per_second Target velocity in mm/s
+     * @param wheel_accel_mm_per_second2 Target acceleration in mm/s² (default 0)
+     * @return Feedforward duty cycle [-1.0, 1.0]
+     */
+    float getFeedforward(WheelSide side, float wheel_speed_mm_per_second,
+                        float wheel_accel_mm_per_second2 = 0.0f);
+
+    /**
+     * @brief Returns distance traveled since last call (incremental tracking)
+     *
+     * This method tracks position changes between calls, enabling incremental
+     * error accumulation pattern used in mazerunner-core position control.
+     *
+     * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
+     * @return Distance delta in millimeters since last call
+     */
+    float getMotorDeltaMM(WheelSide side);
+
+    // ============= Legacy String API (Deprecated) ============= //
+    // These overloads maintain backward compatibility
+    // TODO: Remove once all calling code is updated to use enum-based API
+
+    float getMotorDistanceMM(std::string side);
+    float getMotorVelocityMMps(std::string side);
+    float getFeedforward(std::string side, float wheel_speed_mm_per_second,
+                        float wheel_accel_mm_per_second2 = 0.0f);
+
+    // ============= Common Operations ============= //
+
+    /**
+     * @brief Updates velocity estimates from encoder readings
+     * @param time_delta Time step in seconds since last update
+     */
+    void updateVelocities(float time_delta);
+
+    /**
+     * @brief Sets motor duty cycles
+     * @param left_duty Left motor duty cycle [-1.0, 1.0]
+     * @param right_duty Right motor duty cycle [-1.0, 1.0]
+     */
+    void setDuty(float left_duty, float right_duty);
+
+    /**
+     * @brief Sets motor voltages (scaled by current battery voltage)
+     *
+     * Converts desired motor voltages to duty cycles using current battery
+     * voltage reading. This provides consistent motor behavior as battery
+     * discharges: setVoltage(6.0, 6.0) produces the same motor speed whether
+     * battery is at 8.4V (duty=0.71) or 7.0V (duty=0.86).
+     *
+     * @param left_volts Left motor voltage (positive = forward)
+     * @param right_volts Right motor voltage (positive = forward)
+     */
+    void setVoltage(float left_volts, float right_volts);
+
+    /**
+     * @brief Returns current battery voltage reading
+     * @return Battery voltage in volts, or DEFAULT_BATTERY_VOLTAGE if no monitor
+     */
+    float getBatteryVoltage() const;
+
+    /**
+     * @brief Immediately stops both motors
+     */
     void stop();
 
-    // Access odometry readings (distance, angle, velocity).
-    Odometry* getOdometry();
-
-    // Drive straight forward a set distance in mm at given velocity.
-    void driveForwardMM(float distanceMM, float velocityMMPerSec = 300.0f);
-
-    bool isWallLeft();
-    bool isWallFront();
-    bool isWallRight();
-
   private:
-    // Core controllers.
-    float forwardPD();
-    float rotationPD(float steeringCorrection);
+    // Motor controllers
+    Motor* left_motor_;
+    Motor* right_motor_;
 
-    // Feedforward helpers.
-    float feedforwardLeft(float wheelSpeed);
-    float feedforwardRight(float wheelSpeed);
+    // Wheel encoders
+    Encoder* left_encoder_;
+    Encoder* right_encoder_;
 
-    Motor*   leftMotor;
-    Motor*   rightMotor;
-    Odometry odometry;
+    // Battery monitor for voltage-based control
+    BatteryMonitor* battery_monitor_;
 
-    ToF* leftToF;
-    ToF* frontToF;
-    ToF* rightToF;
+    // Previous encoder readings for velocity computation
+    int32_t previous_left_ticks_ = 0;
+    int32_t previous_right_ticks_ = 0;
 
-    // Targets.
-    float targetForwardVel; // mm/s
-    float targetAngularVel; // deg/s
+    // Current velocity estimates in mm/s
+    float left_velocity_mm_per_second_ = 0.0f;
+    float right_velocity_mm_per_second_ = 0.0f;
 
-    // Errors for PD control.
-    float forwardError;
-    float rotationError;
-    float prevForwardError;
-    float prevRotationError;
+    // Previous positions for delta tracking (incremental error accumulation)
+    float last_left_position_mm_ = 0.0f;
+    float last_right_position_mm_ = 0.0f;
 };
 
-#endif // DRIVETRAIN_H
+#endif

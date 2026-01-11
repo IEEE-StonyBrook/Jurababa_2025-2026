@@ -2,4 +2,6 @@ build
 .fake
 .vscode
 .DS_Store
+CLAUDE.md
 bin
+.venv

@@ -11,6 +11,12 @@ class MazeNode
     bool getCellIsExplored();
     bool getIsWall(char NESWdirection);
 
+    /**
+     * @brief Counts the number of known walls around this cell.
+     * @return Number of walls (0-4).
+     */
+    int getWallCount();
+
     void markAsExplored();
     void setCellInDirection(MazeNode* node, char NESWdirection);
     void setWallInDirection(char NESWdirection);

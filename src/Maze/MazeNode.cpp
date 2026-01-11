@@ -1,8 +1,21 @@
-#include "../../Include/Maze/MazeNode.h"
+#include "Maze/MazeNode.h"
 
 #include <cctype>
 
-MazeNode::MazeNode(int mazeXPos, int mazeYPos) : mazeXPos(mazeXPos), mazeYPos(mazeYPos)
+MazeNode::MazeNode(int mazeXPos, int mazeYPos)
+    : parentNode(nullptr),
+      isProcessed(false),
+      mazeXPos(mazeXPos),
+      mazeYPos(mazeYPos),
+      NCell(nullptr),
+      ECell(nullptr),
+      SCell(nullptr),
+      WCell(nullptr),
+      isThereNWall(false),
+      isThereEWall(false),
+      isThereSWall(false),
+      isThereWWall(false),
+      cellIsExplored(false)
 {
 }
 
@@ -120,6 +133,17 @@ bool MazeNode::getCellIsExplored()
 {
     return cellIsExplored;
 }
+
+int MazeNode::getWallCount()
+{
+    int count = 0;
+    if (isThereNWall) count++;
+    if (isThereEWall) count++;
+    if (isThereSWall) count++;
+    if (isThereWWall) count++;
+    return count;
+}
+
 void MazeNode::markAsExplored()
 {
     cellIsExplored = true;

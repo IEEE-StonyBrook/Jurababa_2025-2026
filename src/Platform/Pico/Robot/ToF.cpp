@@ -1,112 +1,124 @@
-#include "../../../Include/Platform/Pico/Robot/ToF.h"
+#include "Platform/Pico/Robot/ToF.h"
 
 #include <cctype>
 
+#include "Platform/Pico/Config.h"
 #include "hardware/gpio.h"
 #include "pico/stdlib.h"
 #ifdef USE_MULTICORE_SENSORS
-#include "../../../Include/Platform/Pico/MulticoreSensors.h"
+#include "Platform/Pico/MulticoreSensors.h"
 #endif
 
-// Left (l), Front (F), Right (R)
-ToF::ToF(int xShutToFPin, char ToFPosition)
+ToF::ToF(int xshut_pin, char sensor_position)
+    : sensor_position_(sensor_position)
 {
-    setUpToFPin(xShutToFPin);
-    resetToFToZeroDegrees(xShutToFPin);
-    setUpToFSensor(xShutToFPin, ToFPosition);
-    this->ToFPosition = ToFPosition;
-    setUpToFContinuousSensing();
+    setupXSHUTPin(xshut_pin);
+    resetSensor(xshut_pin);
+    initializeSensor(xshut_pin, sensor_position);
+    setupContinuousRanging();
 }
 
-void ToF::setUpToFPin(int xShutToFPin)
+void ToF::setupXSHUTPin(int xshut_pin)
 {
-    gpio_init(xShutToFPin);
-    gpio_set_dir(xShutToFPin, GPIO_OUT);
+    gpio_init(xshut_pin);
+    gpio_set_dir(xshut_pin, GPIO_OUT);
     sleep_ms(10);
 }
 
-void ToF::resetToFToZeroDegrees(int xShutToFPin)
+void ToF::resetSensor(int xshut_pin)
 {
-    gpio_put(xShutToFPin, 0);
+    gpio_put(xshut_pin, 0);
 }
 
-void ToF::setUpToFSensor(int xShutToFPin, char ToFPosition)
+void ToF::initializeSensor(int xshut_pin, char sensor_position)
 {
-    gpio_put(xShutToFPin, 1);
+    gpio_put(xshut_pin, 1);
     sleep_ms(10);
-    ToFSensor.I2cDevAddr      = 0x29;
-    ToFSensor.comms_type      = 1;
-    ToFSensor.comms_speed_khz = 400;
-    VL53L0X_dev_i2c_default_initialise(&ToFSensor, VL53L0X_DEFAULT_MODE);
 
-    uint8_t ToFI2CAddress;
-    if (tolower(ToFPosition) == 'l')
-        ToFI2CAddress = 0x30;
-    else if (tolower(ToFPosition) == 'f')
-        ToFI2CAddress = 0x31;
-    else if (tolower(ToFPosition) == 'r')
-        ToFI2CAddress = 0x32;
+    sensor_device_.I2cDevAddr = 0x29;
+    sensor_device_.comms_type = 1;
+    sensor_device_.comms_speed_khz = 400;
+
+    VL53L0X_dev_i2c_default_initialise(&sensor_device_, VL53L0X_DEFAULT_MODE);
+
+    uint8_t new_address;
+    char pos = tolower(sensor_position);
+
+    if (pos == 'l')
+        new_address = 0x30;
+    else if (pos == 'f')
+        new_address = 0x31;
+    else if (pos == 'r')
+        new_address = 0x32;
     else
-        ToFI2CAddress = 0x33;
-    bool successfulSensorInstantiation = VL53L0X_SetDeviceAddress(&ToFSensor, ToFI2CAddress);
-    ToFSensor.I2cDevAddr               = ToFI2CAddress;
+        new_address = 0x33;
+
+    VL53L0X_SetDeviceAddress(&sensor_device_, new_address);
+    sensor_device_.I2cDevAddr = new_address;
 }
 
-void ToF::setUpToFContinuousSensing()
+void ToF::setupContinuousRanging()
 {
-    VL53L0X_WaitDeviceBooted(&ToFSensor);
-    VL53L0X_DataInit(&ToFSensor);
-    VL53L0X_StaticInit(&ToFSensor);
-    VL53L0X_PerformRefCalibration(&ToFSensor, nullptr, nullptr);
-
-    VL53L0X_SetDeviceMode(&ToFSensor, VL53L0X_DEVICEMODE_CONTINUOUS_RANGING);
-    VL53L0X_SetMeasurementTimingBudgetMicroSeconds(&ToFSensor, 20000);
-    VL53L0X_SetInterMeasurementPeriodMilliSeconds(&ToFSensor, 30);
-    VL53L0X_StartMeasurement(&ToFSensor);
+    VL53L0X_WaitDeviceBooted(&sensor_device_);
+    VL53L0X_DataInit(&sensor_device_);
+    VL53L0X_StaticInit(&sensor_device_);
+    VL53L0X_PerformRefCalibration(&sensor_device_, nullptr, nullptr);
+    VL53L0X_SetDeviceMode(&sensor_device_, VL53L0X_DEVICEMODE_CONTINUOUS_RANGING);
+    VL53L0X_SetMeasurementTimingBudgetMicroSeconds(&sensor_device_, TOF_TIMING_BUDGET_US);
+    VL53L0X_SetInterMeasurementPeriodMilliSeconds(&sensor_device_, TOF_MEASUREMENT_PERIOD_MS);
+    VL53L0X_StartMeasurement(&sensor_device_);
 }
 
 float ToF::getToFDistanceFromWallMM()
 {
-    VL53L0X_RangingMeasurementData_t distanceFromWall;
+    // Read latest ranging measurement from sensor
+    VL53L0X_RangingMeasurementData_t measurement_data;
+    VL53L0X_GetRangingMeasurementData(&sensor_device_, &measurement_data);
 
-    VL53L0X_GetRangingMeasurementData(&ToFSensor, &distanceFromWall);
-    VL53L0X_ClearInterruptMask(&ToFSensor, VL53L0X_REG_SYSTEM_INTERRUPT_GPIO_NEW_SAMPLE_READY);
+    // Clear interrupt to allow next measurement
+    VL53L0X_ClearInterruptMask(&sensor_device_,
+                               VL53L0X_REG_SYSTEM_INTERRUPT_GPIO_NEW_SAMPLE_READY);
 
-    float mm = distanceFromWall.RangeMilliMeter;
-    // If multicore is enabled and this is a consumer core, return the latest
-    // snapshot from the hub instead of publishing from here. If this code is
-    // running on the publisher core (core 1) we still publish so the hub has
-    // fresh data.
+    float distance_mm = measurement_data.RangeMilliMeter;
+
 #ifdef USE_MULTICORE_SENSORS
+    // If running on sensor core (core 1), publish data to hub
     if (multicore_get_core_num() == 1)
     {
-        MulticoreSensorData s = {};
-        if (tolower(ToFPosition) == 'l')
-            s.tof_left_mm = (int16_t)mm;
-        else if (tolower(ToFPosition) == 'f')
-            s.tof_front_mm = (int16_t)mm;
-        else if (tolower(ToFPosition) == 'r')
-            s.tof_right_mm = (int16_t)mm;
+        MulticoreSensorData sensor_data = {};
+        char position_lower = tolower(sensor_position_);
+
+        // Store measurement in appropriate field based on sensor position
+        if (position_lower == 'l')
+            sensor_data.tof_left_mm = (int16_t)distance_mm;
+        else if (position_lower == 'f')
+            sensor_data.tof_front_mm = (int16_t)distance_mm;
+        else if (position_lower == 'r')
+            sensor_data.tof_right_mm = (int16_t)distance_mm;
         else
-            s.tof_front_mm = (int16_t)mm;
+            sensor_data.tof_front_mm = (int16_t)distance_mm;  // Default to front
 
-        s.timestamp_ms = to_ms_since_boot(get_absolute_time());
-        MulticoreSensorHub::publish(s);
+        sensor_data.timestamp_ms = to_ms_since_boot(get_absolute_time());
+        MulticoreSensorHub::publish(sensor_data);
 
-        return mm;
+        return distance_mm;
     }
 
-    MulticoreSensorData s = {};
-    MulticoreSensorHub::snapshot(s);
-    if (tolower(ToFPosition) == 'l')
-        return (float)s.tof_left_mm;
-    else if (tolower(ToFPosition) == 'f')
-        return (float)s.tof_front_mm;
-    else if (tolower(ToFPosition) == 'r')
-        return (float)s.tof_right_mm;
+    // If running on consumer core (core 0), read from hub snapshot
+    MulticoreSensorData snapshot = {};
+    MulticoreSensorHub::snapshot(snapshot);
+
+    char position_lower = tolower(sensor_position_);
+    if (position_lower == 'l')
+        return (float)snapshot.tof_left_mm;
+    else if (position_lower == 'f')
+        return (float)snapshot.tof_front_mm;
+    else if (position_lower == 'r')
+        return (float)snapshot.tof_right_mm;
     else
-        return (float)s.tof_front_mm;
+        return (float)snapshot.tof_front_mm;  // Default to front
 #else
-    return mm;
+    // Multicore not enabled, return raw measurement
+    return distance_mm;
 #endif
 }

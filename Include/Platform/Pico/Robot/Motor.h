@@ -4,40 +4,68 @@
 #include <algorithm>
 #include <cmath>
 
-#include "../../../Include/Platform/Pico/Config.h"
-#include "../../../Include/Platform/Pico/Robot/Battery.h"
+#include "Platform/Pico/Config.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
 
+/**
+ * @brief DC Motor driver using PWM control
+ *
+ * Provides high-level interface for controlling a DC motor via two GPIO pins
+ * configured for PWM output. Supports bidirectional control with duty cycle
+ * or voltage-based commands.
+ */
 class Motor
 {
   public:
-    // Constructor sets up motor pins, PWM slice, and direction inversion.
-    Motor(int gpioMotorPinOne, int gpioMotorPinTwo, Battery* battery, bool invertDirection = false);
+    /**
+     * @brief Constructs motor controller with pin configuration
+     * @param gpio_pin_one First motor control pin (PWM capable)
+     * @param gpio_pin_two Second motor control pin (PWM capable)
+     * @param invert_direction If true, swaps forward/backward directions
+     */
+    Motor(int gpio_pin_one, int gpio_pin_two, bool invert_direction = false);
 
-    // Applies a duty cycle in range [-1.0, 1.0]. Positive = forward.
-    void applyPWM(float dutyCycle);
+    /**
+     * @brief Applies duty cycle command to motor
+     * @param duty_cycle Duty cycle in range [-1.0, 1.0] (positive = forward)
+     */
+    void applyDuty(float duty_cycle);
 
-    // Applies desired volts, automatically scaled to live battery voltage.
-    void applyVoltage(float desiredVolts);
+    /**
+     * @brief Applies voltage command to motor (scaled by battery voltage)
+     * @param desired_volts Desired motor voltage
+     * @param battery_volts Current battery voltage for scaling
+     */
+    void applyVoltage(float desired_volts, float battery_volts);
 
-    // Immediately stops the motor.
+    /**
+     * @brief Immediately stops motor by setting both PWM channels to zero
+     */
     void stopMotor();
 
   private:
-    // Configures motor pins for PWM functionality.
+    /**
+     * @brief Configures GPIO pins for PWM function
+     */
     void configureMotorPins();
 
-    // Configures PWM slice and channels.
+    /**
+     * @brief Initializes PWM slice and channel configuration
+     */
     void configureMotorPWM();
 
-    int      gpioMotorPinOne;
-    int      gpioMotorPinTwo;
-    int      pwmSliceNumber;
-    int      forwardChannel;
-    int      backwardChannel;
-    Battery* battery;
-    bool     invertDirection;
+    // GPIO pin assignments
+    int gpio_pin_one_;
+    int gpio_pin_two_;
+
+    // PWM hardware configuration
+    int pwm_slice_number_;
+    int forward_channel_;
+    int backward_channel_;
+
+    // Motor direction inversion flag
+    bool invert_direction_;
 };
 
 #endif

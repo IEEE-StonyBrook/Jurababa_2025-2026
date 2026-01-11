@@ -1,16 +1,14 @@
-#include "../../Include/Common/LogSystem.h"
+#include "Common/LogSystem.h"
 
-#include <iostream>
+// Only include BluetoothInterface on Pico platform
+#ifdef PICO_BUILD
+#include "Platform/Pico/BluetoothInterface.h"
+#endif
 
-#include "../../Include/Common/Bluetooth.h"
-
-LogPriority LogSystem::printPriorityLevel = LogPriority::DEBUG;
-Bluetooth*  LogSystem::btInterface        = nullptr;
-
-void LogSystem::attachBluetooth(Bluetooth* bt)
-{
-    btInterface = bt;
-}
+// Static member initialization
+LogPriority         LogSystem::printPriorityLevel   = LogPriority::INFO;
+BluetoothInterface* LogSystem::bluetooth_interface_ = nullptr;
+bool                LogSystem::bluetooth_enabled_   = false;
 
 void LogSystem::logMessage(LogPriority logPriority, std::string logMessage)
 {
@@ -39,12 +37,29 @@ void LogSystem::logMessage(LogPriority logPriority, std::string logMessage)
 
     std::string finalMessage = prefixForLogMessage + logMessage;
 
-    // Console log (original)
+    // Console log (USB serial or stdout)
     std::cout << finalMessage << '\n';
 
-    // Bluetooth log (new)
-    if (btInterface)
+    // Bluetooth log (if enabled and interface is set)
+#ifdef PICO_BUILD
+    if (bluetooth_enabled_ && bluetooth_interface_ != nullptr)
     {
-        btInterface->sendString(finalMessage + "\r\n");
+        bluetooth_interface_->write(finalMessage + "\r\n");
     }
+#endif
+}
+
+void LogSystem::setBluetoothInterface(BluetoothInterface* bt)
+{
+    bluetooth_interface_ = bt;
+}
+
+void LogSystem::setBluetoothEnabled(bool enabled)
+{
+    bluetooth_enabled_ = enabled;
+}
+
+bool LogSystem::isBluetoothEnabled()
+{
+    return bluetooth_enabled_ && (bluetooth_interface_ != nullptr);
 }

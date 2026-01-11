@@ -1,157 +1,183 @@
-#include "../../../Include/Platform/Pico/Robot/Drivetrain.h"
+#include "Platform/Pico/Robot/Drivetrain.h"
+#include "Platform/Pico/Config.h"
 
-Drivetrain::Drivetrain(Motor* leftMotor, Motor* rightMotor, Encoder* leftEncoder,
-                       Encoder* rightEncoder, IMU* imu, ToF* leftToF, ToF* frontToF, ToF* rightToF)
-    : leftMotor(leftMotor), rightMotor(rightMotor), odometry(leftEncoder, rightEncoder, imu),
-      targetForwardVel(0.0f), targetAngularVel(0.0f), forwardError(0.0f), rotationError(0.0f),
-      prevForwardError(0.0f), prevRotationError(0.0f)
+Drivetrain::Drivetrain(Motor* left_motor, Motor* right_motor,
+                       Encoder* left_encoder, Encoder* right_encoder,
+                       BatteryMonitor* battery_monitor)
+    : left_motor_(left_motor),
+      right_motor_(right_motor),
+      left_encoder_(left_encoder),
+      right_encoder_(right_encoder),
+      battery_monitor_(battery_monitor)
 {
 }
 
 void Drivetrain::reset()
 {
-    LOG_DEBUG("Resetting odometry...");
-    odometry.reset();
-    LOG_DEBUG("Stopping motors...");
-    stop();
-    LOG_DEBUG("Clearing controller states...");
-    forwardError = rotationError = 0.0f;
-    prevForwardError = prevRotationError = 0.0f;
-    targetForwardVel = targetAngularVel = 0.0f;
+    left_encoder_->reset();
+    right_encoder_->reset();
+
+    previous_left_ticks_ = left_encoder_->getTickCount();
+    previous_right_ticks_ = right_encoder_->getTickCount();
+
+    left_velocity_mm_per_second_ = 0.0f;
+    right_velocity_mm_per_second_ = 0.0f;
+
+    // Reset delta tracking for incremental error accumulation
+    last_left_position_mm_ = 0.0f;
+    last_right_position_mm_ = 0.0f;
 }
 
-// Forward PD controller integrates target velocity into position error.
-float Drivetrain::forwardPD()
+// ============================================================
+// Type-Safe API (Preferred)
+// ============================================================
+
+float Drivetrain::getMotorDistanceMM(WheelSide side)
 {
-    float expectedChange = targetForwardVel * LOOP_INTERVAL_S;
-    // Error between expected position change and actual change.
-    // Proportional term from accumulated error.
-    forwardError += expectedChange - odometry.getDeltaDistanceMM();
-    // Derivative term from change in error.
-    float errorRate  = forwardError - prevForwardError;
-    prevForwardError = forwardError;
-    return (FWD_KP * forwardError) + (FWD_KD * errorRate);
+    bool is_left = (side == WheelSide::LEFT);
+    int tick_count = is_left ? left_encoder_->getTickCount() : right_encoder_->getTickCount();
+    return tick_count * MM_PER_TICK;
 }
 
-// Rotation PD controller integrates angular velocity into rotation error.
-float Drivetrain::rotationPD(float steeringCorrection)
+float Drivetrain::getMotorVelocityMMps(WheelSide side)
 {
-    float expectedChange = targetAngularVel * LOOP_INTERVAL_S;
-    // Error between expected angle change and actual change.
-    // Proportional term from accumulated error.
-    rotationError += expectedChange - odometry.getDeltaAngleDeg();
-    rotationError += steeringCorrection; // Wall-following or trajectory adjust.
-    // Derivative term from change in error.
-    float errorRate   = rotationError - prevRotationError;
-    prevRotationError = rotationError;
-    return (ROT_KP * rotationError) + (ROT_KD * errorRate);
+    return (side == WheelSide::LEFT) ? left_velocity_mm_per_second_
+                                      : right_velocity_mm_per_second_;
 }
 
-// Predict left motor voltage from wheel speed and acceleration.
-float Drivetrain::feedforwardLeft(float wheelSpeed)
+float Drivetrain::getFeedforward(WheelSide side, float wheel_speed_mm_per_second,
+                                float wheel_accel_mm_per_second2)
 {
-    static float lastSpeed = 0.0f;
-    float        voltage   = 0.0f;
+    if (std::fabs(wheel_speed_mm_per_second) < DRIVETRAIN_FF_DEADZONE_MMPS)
+        return 0.0f;
 
-    if (wheelSpeed > 0)
+    bool is_left = (side == WheelSide::LEFT);
+
+    // TODO: Mazerunner-core has per-motor Ka tuning for better asymmetry compensation
+    if (wheel_speed_mm_per_second > 0.0f)
     {
-        // Forward: slope + static bias.
-        voltage = (SPEED_FFL * wheelSpeed) + BIAS_FFL;
+        float kv = is_left ? FORWARD_KVL : FORWARD_KVR;
+        float ks = is_left ? FORWARD_KSL : FORWARD_KSR;
+        float ka = is_left ? FORWARD_KAL : FORWARD_KAR;
+        return kv * wheel_speed_mm_per_second + ks + ka * wheel_accel_mm_per_second2;
     }
-    else if (wheelSpeed < 0)
+    else
     {
-        // Reverse: slope + static bias.
-        voltage = (SPEED_FBL * wheelSpeed) - BIAS_FBL;
+        float kv = is_left ? REVERSE_KVL : REVERSE_KVR;
+        float ks = is_left ? REVERSE_KSL : REVERSE_KSR;
+        float ka = is_left ? REVERSE_KAL : REVERSE_KAR;
+        return kv * wheel_speed_mm_per_second - ks + ka * wheel_accel_mm_per_second2;
     }
-
-    // Acceleration contribution.
-    float accel = (wheelSpeed - lastSpeed) * LOOP_FREQUENCY_HZ;
-    lastSpeed   = wheelSpeed;
-    voltage += (ACC_FFL * accel);
-
-    return voltage;
 }
 
-// Predict right motor voltage from wheel speed and acceleration.
-float Drivetrain::feedforwardRight(float wheelSpeed)
+float Drivetrain::getMotorDeltaMM(WheelSide side)
 {
-    static float lastSpeed = 0.0f;
-    float        voltage   = 0.0f;
+    // Get current position
+    float current_pos = getMotorDistanceMM(side);
 
-    if (wheelSpeed > 0)
+    // Get last position reference
+    float& last_pos = (side == WheelSide::LEFT) ? last_left_position_mm_
+                                                  : last_right_position_mm_;
+
+    // Calculate delta
+    float delta = current_pos - last_pos;
+
+    // Update last position for next call
+    last_pos = current_pos;
+
+    return delta;
+}
+
+// ============================================================
+// Legacy String API (Deprecated - for backward compatibility)
+// ============================================================
+
+float Drivetrain::getMotorDistanceMM(std::string side)
+{
+    if (side == "left")
+        return getMotorDistanceMM(WheelSide::LEFT);
+    if (side == "right")
+        return getMotorDistanceMM(WheelSide::RIGHT);
+
+    LOG_ERROR("Drivetrain::getMotorDistanceMM - Invalid side string: " + side);
+    return 0.0f;
+}
+
+float Drivetrain::getMotorVelocityMMps(std::string side)
+{
+    if (side == "left")
+        return getMotorVelocityMMps(WheelSide::LEFT);
+    if (side == "right")
+        return getMotorVelocityMMps(WheelSide::RIGHT);
+
+    LOG_ERROR("Drivetrain::getMotorVelocityMMps - Invalid side string: " + side);
+    return 0.0f;
+}
+
+float Drivetrain::getFeedforward(std::string side, float wheel_speed_mm_per_second,
+                                float wheel_accel_mm_per_second2)
+{
+    if (side == "left")
+        return getFeedforward(WheelSide::LEFT, wheel_speed_mm_per_second, wheel_accel_mm_per_second2);
+    if (side == "right")
+        return getFeedforward(WheelSide::RIGHT, wheel_speed_mm_per_second, wheel_accel_mm_per_second2);
+
+    LOG_ERROR("Drivetrain::getFeedforward - Invalid side string: " + side);
+    return 0.0f;
+}
+
+// ============================================================
+// Common Operations
+// ============================================================
+
+void Drivetrain::updateVelocities(float time_delta)
+{
+    if (time_delta < DRIVETRAIN_MIN_DT) return;
+
+    int32_t current_left_ticks = left_encoder_->getTickCount();
+    int32_t current_right_ticks = right_encoder_->getTickCount();
+
+    int32_t delta_left = current_left_ticks - previous_left_ticks_;
+    int32_t delta_right = current_right_ticks - previous_right_ticks_;
+
+    previous_left_ticks_ = current_left_ticks;
+    previous_right_ticks_ = current_right_ticks;
+
+    left_velocity_mm_per_second_ = (delta_left * MM_PER_TICK) / time_delta;
+    right_velocity_mm_per_second_ = (delta_right * MM_PER_TICK) / time_delta;
+
+    if (left_velocity_mm_per_second_ > DRIVETRAIN_MAX_VELOCITY_MMPS ||
+        right_velocity_mm_per_second_ > DRIVETRAIN_MAX_VELOCITY_MMPS)
     {
-        // Forward.
-        voltage = (SPEED_FFR * wheelSpeed) + BIAS_FFR;
+        LOG_ERROR("Velocity spike: L=" + std::to_string(left_velocity_mm_per_second_) +
+                  " R=" + std::to_string(right_velocity_mm_per_second_) + " mm/s");
     }
-    else if (wheelSpeed < 0)
+}
+
+void Drivetrain::setDuty(float left_duty, float right_duty)
+{
+    left_motor_->applyDuty(left_duty);
+    right_motor_->applyDuty(right_duty);
+}
+
+void Drivetrain::setVoltage(float left_volts, float right_volts)
+{
+    float battery_volts = getBatteryVoltage();
+    left_motor_->applyVoltage(left_volts, battery_volts);
+    right_motor_->applyVoltage(right_volts, battery_volts);
+}
+
+float Drivetrain::getBatteryVoltage() const
+{
+    if (battery_monitor_ != nullptr)
     {
-        // Reverse.
-        voltage = (SPEED_FBR * wheelSpeed) - BIAS_FBR;
+        return battery_monitor_->getVoltage();
     }
-
-    // Acceleration contribution.
-    float accel = (wheelSpeed - lastSpeed) * LOOP_FREQUENCY_HZ;
-    lastSpeed   = wheelSpeed;
-    voltage += (ACC_FFR * accel);
-
-    return voltage;
-}
-
-bool Drivetrain::isWallLeft()
-{
-    return leftToF->getToFDistanceFromWallMM() < TOF_LEFT_WALL_THRESHOLD_MM;
-}
-
-bool Drivetrain::isWallFront()
-{
-    return frontToF->getToFDistanceFromWallMM() < TOF_FRONT_WALL_THRESHOLD_MM;
-}
-
-bool Drivetrain::isWallRight()
-{
-    return rightToF->getToFDistanceFromWallMM() < TOF_RIGHT_WALL_THRESHOLD_MM;
-}
-
-// Main control loop: update odometry, compute voltages, and drive motors.
-void Drivetrain::runControl(float forwardVelocityMMPerSec, float angularVelocityDegPerSec,
-                            float steeringCorrection)
-{
-    targetForwardVel = forwardVelocityMMPerSec;
-    targetAngularVel = angularVelocityDegPerSec;
-
-    // LOG_DEBUG("Updating odometry...");
-    odometry.update();
-
-    // LOG_DEBUG("Calculating control outputs...");
-    float forwardOut  = forwardPD();
-    float rotationOut = -rotationPD(steeringCorrection);
-
-    // Combine forward and rotation control.
-    float leftOut  = forwardOut - rotationOut;
-    float rightOut = forwardOut + rotationOut;
-
-    // Calculate wheel speeds for feedforward terms.
-    float tangentSpeed    = (targetAngularVel * (M_PI / 180.0f)) * (WHEEL_BASE_MM / 2.0f);
-    float leftWheelSpeed  = targetForwardVel - tangentSpeed;
-    float rightWheelSpeed = targetForwardVel + tangentSpeed;
-
-    // Add feedforward predictions.
-    leftOut += feedforwardLeft(leftWheelSpeed);
-    rightOut += feedforwardRight(rightWheelSpeed);
-
-    // LOG_DEBUG("Applying voltage of " + std::to_string(leftOut) + " V to left motor.");
-    // LOG_DEBUG("Applying voltage of " + std::to_string(rightOut) + " V to right motor.");
-    leftMotor->applyVoltage(leftOut);
-    rightMotor->applyVoltage(rightOut);
+    return DEFAULT_BATTERY_VOLTAGE;
 }
 
 void Drivetrain::stop()
 {
-    leftMotor->stopMotor();
-    rightMotor->stopMotor();
-}
-
-Odometry* Drivetrain::getOdometry()
-{
-    return &odometry;
+    left_motor_->stopMotor();
+    right_motor_->stopMotor();
 }

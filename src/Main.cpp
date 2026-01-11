@@ -1,371 +1,535 @@
-#include <stdio.h>
+/**
+ * Main.cpp - Raspberry Pi Pico Micromouse Entry Point
+ *
+ * Architecture:
+ *   Core 0: High-level maze solving and path planning
+ *   Core 1: Real-time robot control and sensor management
+ *
+ * Communication:
+ *   - Core 0 → Core 1: Commands via CommandHub (non-blocking FIFO)
+ *   - Core 1 → Core 0: Sensor data via MulticoreSensorHub
+ *
+ * Build Modes:
+ *   - MOTORLAB_MODE: Enable UKMARS-style motor characterization interface
+ *   - Normal mode: Standard maze-solving operation
+ */
 
-#include "../Include/Common/Bluetooth.h"
-#include "../Include/Common/LogSystem.h"
-#include "../Include/Navigation/AStarSolver.h"
-#include "../Include/Platform/Pico/API.h"
-#include "../Include/Platform/Pico/Config.h"
-#include "../Include/Platform/Pico/MulticoreSensors.h"
-#include "../Include/Platform/Pico/Robot/Battery.h"
-#include "../Include/Platform/Pico/Robot/Drivetrain.h"
-#include "../Include/Platform/Pico/Robot/Encoder.h"
-#include "../Include/Platform/Pico/Robot/IMU.h"
-#include "../Include/Platform/Pico/Robot/Motion.h"
-#include "../Include/Platform/Pico/Robot/Motor.h"
-#include "../Include/Platform/Pico/Robot/ToF.h"
-#include "hardware/uart.h"
+// ============================================================================
+// BUILD MODE SELECTION
+// ============================================================================
+// Uncomment the following line to enable MotorLab mode for motor testing
+#define MOTORLAB_MODE
+// ============================================================================
+
+#include <array>
+#include <stdio.h>
+#include <string>
+#include <vector>
+
+#include "Common/LogSystem.h"
+#include "Maze/InternalMouse.h"
+#include "Maze/MazeGraph.h"
+#include "Navigation/AStarSolver.h"
+#include "Navigation/FloodFillSolver.h"
+#include "Navigation/PathUtils.h"
+#include "Platform/Pico/API.h"
+#include "Platform/Pico/BluetoothInterface.h"
+#include "Platform/Pico/CommandHub.h"
+#include "Platform/Pico/Config.h"
+#include "Platform/Pico/MulticoreSensors.h"
+#include "Platform/Pico/Robot/BatteryMonitor.h"
+#include "Platform/Pico/Robot/Drivetrain.h"
+#include "Platform/Pico/Robot/Encoder.h"
+#include "Platform/Pico/Robot/IMU.h"
+#include "Platform/Pico/Robot/Motor.h"
+#include "Platform/Pico/Robot/Robot.h"
+#include "Platform/Pico/Robot/Sensors.h"
+#include "Platform/Pico/Robot/ToF.h"
+#include "pico/multicore.h"
 #include "pico/stdlib.h"
 
-// #include "../Include/Platform/Simulator/API.h"
+#ifdef MOTORLAB_MODE
+#include "Platform/Pico/MotorLab/MotorLab.h"
+#include <stdarg.h>
 
-void interpretLFRPath(API* apiPtr, std::string lfrPath);
-
-void publishSensors(Encoder* leftEncoder, Encoder* rightEncoder, ToF* leftToF, ToF* frontToF,
-                    ToF* rightToF, IMU* imu)
-{
-    // Read Sensors
-    MulticoreSensorData local{};
-    local.left_encoder_count  = leftEncoder->getTickCount();
-    local.right_encoder_count = rightEncoder->getTickCount();
-    local.tof_left_mm         = static_cast<int16_t>(leftToF->getToFDistanceFromWallMM());
-    local.tof_front_mm        = static_cast<int16_t>(frontToF->getToFDistanceFromWallMM());
-    local.tof_right_mm        = static_cast<int16_t>(rightToF->getToFDistanceFromWallMM());
-    local.imu_yaw             = imu->getIMUYawDegreesNeg180ToPos180();
-    local.timestamp_ms        = to_ms_since_boot(get_absolute_time());
-
-    // Publish sensor snapshot to Core0
-    MulticoreSensorHub::publish(local);
-    // MulticoreSensorData test{};
-    // MulticoreSensorHub::snapshot(test);
-    // LOG_DEBUG("Left encoder CORE1: " +
-    // std::to_string(local.left_encoder_count)); LOG_DEBUG("Front ToF CORE1: " +
-    // std::to_string(local.tof_front_mm)); LOG_DEBUG("Left TEST encoder CORE1: "
-    // + std::to_string(test.left_encoder_count)); LOG_DEBUG("Front TEST ToF
-    // CORE1: " + std::to_string(test.tof_front_mm));
+// Helper to write string to UART for Bluetooth output
+static void uart_write_str(const char* str) {
+    while (*str) {
+        uart_putc_raw(uart0, *str++);
+    }
 }
 
-void processCommand(Motion* motion)
+// Override printf to send to both USB and Bluetooth UART
+extern "C" int printf(const char* format, ...) {
+    char buffer[256];
+    va_list args;
+    va_start(args, format);
+    int ret = vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    // Send to USB
+    fputs(buffer, stdout);
+    fflush(stdout);
+
+    // Send to UART (Bluetooth)
+    uart_write_str(buffer);
+
+    return ret;
+}
+#endif
+
+#ifndef MOTORLAB_MODE
+
+// ============================================================================
+// NORMAL MODE - Maze-solving operation with dual-core architecture
+// ============================================================================
+
+// ============================================================================
+// Global Battery Monitor (shared between cores)
+// ============================================================================
+// Core 0 owns and updates this; Core 1 reads via pointer for voltage scaling.
+// Access is safe because reads are atomic for aligned floats on ARM Cortex-M0+.
+static BatteryMonitor* g_battery_monitor = nullptr;
+
+// ============================================================================
+// CORE 1: Real-Time Robot Control
+// ============================================================================
+
+/**
+ * Processes motion commands from Core 0.
+ * Handles STOP immediately, queues other commands when robot is ready.
+ */
+void processCommands(Robot* robot)
 {
-    if (CommandHub::hasPendingCommands())
+    CommandPacket cmd;
+    bool          saw_stop = false;
+
+    // Drain all pending commands each tick
+    while (CommandHub::receiveNonBlocking(cmd))
     {
-        CommandPacket cmd = CommandHub::receiveBlocking();
+        if (cmd.type == CommandType::STOP)
+        {
+            saw_stop = true;
+            continue; // Flush remaining commands behind STOP
+        }
+
+        // Never start new motion while one is running
+        if (!robot->isMotionDone())
+            continue;
+
         switch (cmd.type)
         {
             case CommandType::MOVE_FWD_HALF:
-                motion->forward(HALF_CELL_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED,
-                                FORWARD_ACCEL, true);
-                break;
-            case CommandType::MOVE_FWD:
-                motion->forward(cmd.param * CELL_DISTANCE_MM, FORWARD_TOP_SPEED,
-                                FORWARD_FINAL_SPEED, FORWARD_ACCEL, true);
-                break;
-            case CommandType::TURN_LEFT:
-                motion->turn(-cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-                break;
-            case CommandType::TURN_RIGHT:
-                motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-                break;
-            case CommandType::STOP:
-                motion->stop();
-                break;
-            case CommandType::TURN_ARBITRARY:
-                motion->turn(cmd.param, TURN_TOP_SPEED, TURN_FINAL_SPEED, TURN_ACCEL, true);
-                break;
-            case CommandType::CENTER_FROM_EDGE:
-                motion->forward(TO_CENTER_DISTANCE_MM, FORWARD_TOP_SPEED, FORWARD_FINAL_SPEED,
-                                FORWARD_ACCEL, true);
+                robot->driveDistanceMM(HALF_CELL_DISTANCE_MM, 400.0f);
                 break;
 
+            case CommandType::MOVE_FWD:
+                robot->driveDistanceMM(cmd.param * CELL_DISTANCE_MM, 400.0f);
+                break;
+
+            case CommandType::CENTER_FROM_EDGE:
+                robot->driveDistanceMM(TO_CENTER_DISTANCE_MM, 400.0f);
+                break;
+
+            case CommandType::TURN_LEFT:
+                robot->turn45Degrees("left", cmd.param);
+                break;
+
+            case CommandType::TURN_RIGHT:
+                robot->turn45Degrees("right", cmd.param);
+                break;
+
+            case CommandType::TURN_ARBITRARY:
+            {
+                float steps_of_45 = static_cast<float>(cmd.param) / 45.0f;
+                if (steps_of_45 > 0)
+                    robot->turn45Degrees("right", static_cast<int>(steps_of_45));
+                else
+                    robot->turn45Degrees("left", static_cast<int>(-steps_of_45));
+                break;
+            }
+
+            case CommandType::ARC_TURN_LEFT_90:
+                robot->arcTurn90Degrees("left");
+                break;
+
+            case CommandType::ARC_TURN_RIGHT_90:
+                robot->arcTurn90Degrees("right");
+                break;
+
+            case CommandType::ARC_TURN_LEFT_45:
+                robot->arcTurn45Degrees("left");
+                break;
+
+            case CommandType::ARC_TURN_RIGHT_45:
+                robot->arcTurn45Degrees("right");
+                break;
+
+            case CommandType::SNAPSHOT:
+            case CommandType::NONE:
             default:
-                LOG_ERROR("Unknown command type received.");
                 break;
         }
     }
+
+    if (saw_stop)
+        robot->stop();
 }
 
-// Publisher for Core1: All robot specific logic
-static void core1_Publisher()
+/**
+ * Core 1 entry point: Runs real-time control loop at 100Hz.
+ * Manages sensors, motors, and executes motion commands from Core 0.
+ */
+void core1_RobotController()
 {
-    Bluetooth bt(uart0, 16, 17, 9600);
-    bt.init();
-
-    // Bluetooth
-    LogSystem::attachBluetooth(&bt);
-    LOG_INFO("System initialized");
-    LOG_DEBUG("Bluetooth logging enabled");
-
-    // Sensors
-    Encoder leftEncoder(pio0, 20, true);
-    Encoder rightEncoder(pio0, 8, false); // was 7
-    ToF     leftToF(11, 'L');
-    ToF     frontToF(12, 'F');
-    ToF     rightToF(13, 'R');
+    // Initialize hardware
+    Encoder left_encoder(pio0, 20, true);
+    Encoder right_encoder(pio0, 8, false);
+    ToF     left_tof(11, 'L');
+    ToF     front_tof(12, 'F');
+    ToF     right_tof(13, 'R');
     IMU     imu(5);
-    imu.resetIMUYawToZero();
+    Motor   left_motor(18, 19, true);
+    Motor   right_motor(6, 7, false);
 
-    // Motors
-    Motor      leftMotor(18, 19, nullptr, true);
-    Motor      rightMotor(6, 7, nullptr, false);
-    Drivetrain drivetrain(&leftMotor, &rightMotor, &leftEncoder, &rightEncoder, &imu, &leftToF,
-                          &frontToF, &rightToF);
-    Motion     motion(&drivetrain);
+    // Initialize control stack (with battery monitor for voltage-based control)
+    Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, g_battery_monitor);
+    Sensors    sensors(&imu, &left_tof, &front_tof, &right_tof);
+    Robot      robot(&drivetrain, &sensors);
 
-    LOG_DEBUG("Initialization complete.");
-    motion.resetDriveSystem();
+    LOG_DEBUG("Core1: Hardware initialized");
+    robot.reset();
 
-    multicore_fifo_push_blocking(1); // Signal Core0 that Core1 is ready
+    // Signal Core 0 that initialization is complete
+    multicore_fifo_push_blocking(1);
+
+    // Real-time control loop (100Hz = 10ms period)
+    const int       CONTROL_PERIOD_MS = 10;
+    absolute_time_t next_tick         = make_timeout_time_ms(CONTROL_PERIOD_MS);
+    absolute_time_t last_tick         = get_absolute_time();
 
     while (true)
     {
-        processCommand(&motion);
-        publishSensors(&leftEncoder, &rightEncoder, &leftToF, &frontToF, &rightToF, &imu);
+        // Calculate delta time for control updates
+        absolute_time_t now = get_absolute_time();
+        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
+        last_tick           = now;
 
-        sleep_ms(CORE_SLEEP_MS);
+        // Update robot control (PID, motion profiling, etc.)
+        robot.update(dt);
+
+        // Process any pending commands from Core 0
+        processCommands(&robot);
+
+        // Publish sensor data to Core 0
+        MulticoreSensorData sensor_data{};
+        sensor_data.left_encoder_count  = left_encoder.getTickCount();
+        sensor_data.right_encoder_count = right_encoder.getTickCount();
+        sensor_data.tof_left_mm         = static_cast<int16_t>(left_tof.getToFDistanceFromWallMM());
+        sensor_data.tof_front_mm        = static_cast<int16_t>(front_tof.getToFDistanceFromWallMM());
+        sensor_data.tof_right_mm        = static_cast<int16_t>(right_tof.getToFDistanceFromWallMM());
+        sensor_data.imu_yaw             = imu.getIMUYawDegreesNeg180ToPos180();
+        sensor_data.timestamp_ms        = to_ms_since_boot(now);
+        MulticoreSensorHub::publish(sensor_data);
+
+        // Sleep until next control tick
+        sleep_until(next_tick);
+        next_tick = delayed_by_ms(next_tick, CONTROL_PERIOD_MS);
     }
 }
 
+// ============================================================================
+// CORE 0: High-Level Maze Solving
+// ============================================================================
+
+/**
+ * Main entry point: Runs maze solving algorithms on Core 0.
+ * Sends motion commands to Core 1 via CommandHub.
+ */
 int main()
 {
+    // Initialize USB serial for debugging
     stdio_init_all();
     sleep_ms(3000);
 
+    // ========================================================================
+    // Battery Monitor Setup (ADC0 on GP26)
+    // ========================================================================
+    BatteryMonitor battery(26, 10000.0f, 5100.0f);  // R1=10k, R2=5.1k
+    battery.init();
+
+    // Take initial battery readings to fill the moving average buffer
+    for (int i = 0; i < 10; i++)
+    {
+        battery.update();
+        sleep_ms(10);
+    }
+    LOG_INFO("Battery voltage: " << battery.getVoltage() << "V");
+
+    if (battery.isLowBattery(6.0f))
+    {
+        LOG_WARNING("Low battery detected! Voltage: " << battery.getVoltage() << "V");
+    }
+
+    // Set global pointer for Core 1 access (before launching Core 1)
+    g_battery_monitor = &battery;
+
+    // ========================================================================
+    // Bluetooth Setup (UART0, GP16=TX, GP17=RX)
+    // ========================================================================
+    BluetoothInterface bluetooth(uart0, 9600, 16, 17);
+    bluetooth.init();
+
+    // Direct Bluetooth test - bypasses LogSystem
+    bluetooth.write("=== HM-10 Bluetooth Test ===\r\n");
+    bluetooth.write("If you see this, Bluetooth TX is working!\r\n");
+
+    LogSystem::setBluetoothInterface(&bluetooth);
+    LogSystem::setBluetoothEnabled(true);
+    LOG_INFO("Bluetooth logging enabled");
+
+    LOG_DEBUG("Core0: Initializing multicore communication");
     MulticoreSensorHub::init();
-    multicore_launch_core1(core1_Publisher);
+    multicore_launch_core1(core1_RobotController);
 
-    // Wait until Core1 signals it finished initializing its sensors
+    // Wait for Core 1 to complete hardware initialization
     multicore_fifo_pop_blocking();
+    LOG_DEBUG("Core0: Core1 ready, starting maze solver");
 
-    // Maze / planning objects
-    std::array<int, 2>              startCell = {0, 0};
-    std::vector<std::array<int, 2>> goalCells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
-    MazeGraph                       maze(16, 16);
-    InternalMouse                   mouse(startCell, std::string("n"), goalCells, &maze);
+    // Initialize maze solving components
+    std::array<int, 2>              start_cell = {0, 0};
+    std::vector<std::array<int, 2>> goal_cells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
+    MazeGraph                       maze(MAZE_SIZE, MAZE_SIZE);
+    InternalMouse                   mouse(start_cell, std::string("n"), goal_cells, &maze);
     API                             api(&mouse);
 
-    api.goToCenterFromEdge();
-    api.executeSequence("F#F#F#F#L#F#");
+    // ========================================================================
+    // Algorithm Execution - Modify this section for different solving modes
+    // ========================================================================
 
-    // std::string path = aStar.go(goalCells, true, true);
-    // LOG_DEBUG(path);
-    // interpretLFRPath(&api, path);
+    // EXPLORATION MODE: Use flood-fill search to map unknown maze
+    // Uncomment to enable:
+    // FloodFillSolver::explore(mouse, api, false);
+    // bool exploration_complete = traversePathIteratively(&api, &mouse, goal_cells, false, false,
+    // false); if (exploration_complete) {
+    //     LOG_INFO("Maze exploration complete!");
+    // }
 
-    // Main loop: high-level planning, sensor reads, etc.
+    // SPEED RUN MODE: Use A* with known maze layout
+    // Uncomment to enable:
+    // setAllExplored(&mouse);  // Mark entire maze as explored
+    // bool speed_run_complete = traversePathIteratively(&api, &mouse, goal_cells, true, true, false);
+    // if (speed_run_complete) {
+    //     LOG_INFO("Speed run complete!");
+    // }
+
+    // TEST MODE: Execute a simple test sequence
+    // LOG_INFO("Test mode: Executing square pattern");
+    // api.executeSequence("F#R#F#R#F#R#F#R");
+    LOG_INFO("Entering sensor monitoring loop...");
+
+    // ========================================================================
+    // Sensor monitoring loop - update maze state from real-time sensor data
+    // ========================================================================
+    uint32_t last_battery_check_ms = 0;
+    const uint32_t BATTERY_CHECK_INTERVAL_MS = 5000;  // Check every 5 seconds
+
+    uint32_t last_bt_print_ms = 0;
+    const uint32_t BT_PRINT_INTERVAL_MS = 1000;  // Print status every 1 second
+    uint32_t bt_message_count = 0;
+
     while (true)
     {
         MulticoreSensorData sensors;
-        MulticoreSensorHub::snapshot(sensors); // lock-free read
+        MulticoreSensorHub::snapshot(sensors);
 
-        if (CommandHub::hasPendingCommands())
+        // Update maze walls based on ToF sensor readings
+        // if (sensors.tof_left_exist)
+        //     mouse.setWallExistsLFR('L');
+        // if (sensors.tof_front_exist)
+        //     mouse.setWallExistsLFR('F');
+        // if (sensors.tof_right_exist)
+        //     mouse.setWallExistsLFR('R');
+
+        // Periodic battery voltage check (non-blocking)
+        uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+        if (now_ms - last_battery_check_ms >= BATTERY_CHECK_INTERVAL_MS)
         {
-            CommandPacket cmd = CommandHub::receiveBlocking();
-            if (cmd.type == CommandType::SNAPSHOT)
+            battery.update();
+            last_battery_check_ms = now_ms;
+
+            // Log battery status periodically
+            LOG_DEBUG("Battery: " << battery.getVoltage() << "V (raw ADC: " << battery.getRawADC() << ")");
+
+            if (battery.isLowBattery(6.0f))
             {
-                LOG_DEBUG(
-                    "Snapshot received with mask: " +
-                    std::to_string(static_cast<uint32_t>(static_cast<SensorMask>(cmd.param))));
-                if (sensors.tof_left_exist)
-                {
-                    mouse.setWallExistsLFR('L');
-                    LOG_DEBUG("Left ToF Detects Wall" + std::to_string(sensors.tof_left_exist));
-                }
-                if (sensors.tof_front_exist)
-                {
-                    mouse.setWallExistsLFR('F');
-                    LOG_DEBUG("Front ToF Detects Wall" + std::to_string(sensors.tof_front_exist));
-                }
-                if (sensors.tof_right_exist)
-                {
-                    mouse.setWallExistsLFR('R');
-                    LOG_DEBUG("Right ToF Detects Wall" + std::to_string(sensors.tof_right_exist));
-                }
+                LOG_WARNING("Low battery! " << battery.getVoltage() << "V");
             }
         }
 
-        // Example: print sensor values or feed into planner
-        // LOG_DEBUG("\nLeft encoder: " +
-        // std::to_string(sensors.left_encoder_count)); LOG_DEBUG("\nFront ToF: " +
-        // std::to_string(sensors.tof_front_mm)); LOG_DEBUG("\nIMU_YAW: " +
-        // std::to_string(sensors.imu_yaw));
+        // ====================================================================
+        // Continuous Status Print (for testing serial + Bluetooth connection)
+        // ====================================================================
+        if (now_ms - last_bt_print_ms >= BT_PRINT_INTERVAL_MS)
+        {
+            last_bt_print_ms = now_ms;
+            bt_message_count++;
+
+            // Print status message with counter, battery, and sensor data
+            // LOG_INFO outputs to both USB serial and Bluetooth
+            LOG_INFO("[" << bt_message_count << "] "
+                     << "Bat:" << battery.getVoltage() << "V "
+                     << "L:" << sensors.tof_left_mm << " "
+                     << "F:" << sensors.tof_front_mm << " "
+                     << "R:" << sensors.tof_right_mm);
+        }
+
+        // ====================================================================
+        // Bluetooth Command Handling
+        // ====================================================================
+        if (bluetooth.hasCommand())
+        {
+            BluetoothInterface::Command cmd = bluetooth.getCommand();
+            switch (cmd)
+            {
+                case BluetoothInterface::Command::START:
+                    LOG_INFO("BT: Start command received");
+                    // Add start logic here
+                    break;
+                case BluetoothInterface::Command::HALT:
+                    LOG_INFO("BT: Halt command received");
+                    CommandHub::send(CommandType::STOP);
+                    break;
+                case BluetoothInterface::Command::RESET:
+                    LOG_INFO("BT: Reset command received");
+                    // Add reset logic here
+                    break;
+                case BluetoothInterface::Command::BATTERY:
+                    battery.update();
+                    bluetooth.write("Battery: " + std::to_string(battery.getVoltage()) + "V\r\n");
+                    break;
+                default:
+                    LOG_DEBUG("BT: Unknown command");
+                    break;
+            }
+        }
 
         sleep_ms(CORE_SLEEP_MS);
     }
+
     return 0;
 }
 
-void interpretLFRPath(API* apiPtr, std::string lfrPath)
+#else  // MOTORLAB_MODE
+
+// ============================================================================
+// MOTORLAB MODE - Motor characterization and tuning interface
+// ============================================================================
+// This mode provides a UKMARS-style CLI for motor testing:
+//   - Open-loop voltage sweeps (for Km, bias_ff calibration)
+//   - Step response tests (for Tm tuning)
+//   - Closed-loop move trials (for validating feedforward + controller)
+//
+// Connect via USB serial (115200 baud) and use the Python dashboard:
+//   python tools/motorlab_dashboard.py
+// ============================================================================
+
+/**
+ * MotorLab main entry point
+ * Single-core operation for simplicity during calibration
+ */
+int main()
 {
-    std::stringstream ss(lfrPath);
-    std::string       token;
+    // Initialize USB stdio only
+    stdio_usb_init();
 
-    // Seperate into tokens.
-    std::vector<std::string> tokens;
-    while (std::getline(ss, token, '#'))
-    {
-        if (!token.empty())
-        {
-            tokens.push_back(token);
+    // Manually initialize UART0 at 9600 baud for HM-10 Bluetooth
+    uart_init(uart0, 9600);
+    gpio_set_function(16, GPIO_FUNC_UART);  // TX
+    gpio_set_function(17, GPIO_FUNC_UART);  // RX
+
+    // Enable UART RX and TX
+    uart_set_hw_flow(uart0, false, false);  // Disable hardware flow control
+    uart_set_format(uart0, 8, 1, UART_PARITY_NONE);  // 8N1
+    uart_set_fifo_enabled(uart0, true);  // Enable FIFO
+
+    sleep_ms(3000);  // Wait for connections
+
+    printf("\n\n");
+    printf("===========================================\n");
+    printf("  MOTORLAB MODE - Motor Characterization  \n");
+    printf("===========================================\n");
+    printf("Serial I/O: USB (115200) and UART0 (9600)\n");
+    printf("UART0 on GP16/GP17 for Bluetooth\n");
+    printf("UART TX/RX enabled, flow control disabled\n");
+    printf("Type 'ECHO ON' to enable character echo\n\n");
+
+    // ========================================================================
+    // Hardware Initialization
+    // ========================================================================
+
+    // Battery monitor (ADC0 on GP26)
+    BatteryMonitor battery(26, 10000.0f, 5100.0f);  // R1=10k, R2=5.1k
+    battery.init();
+
+    // Take initial battery readings
+    for (int i = 0; i < 10; i++) {
+        battery.update();
+        sleep_ms(10);
+    }
+    printf("Battery voltage: %.2f V\n", battery.getVoltage());
+
+    // Encoders (PIO-based quadrature)
+    Encoder left_encoder(pio0, 20, true);   // GPIO 20, inverted
+    Encoder right_encoder(pio0, 8, false);  // GPIO 8, normal
+
+    // Motors (PWM-based)
+    Motor left_motor(18, 19, true);   // GPIO 18/19, inverted
+    Motor right_motor(6, 7, false);   // GPIO 6/7, normal
+
+    // ========================================================================
+    // MotorLab Interface
+    // ========================================================================
+
+    MotorLab motorlab(&left_motor, &right_motor,
+                      &left_encoder, &right_encoder,
+                      &battery);
+    motorlab.init();
+
+    printf("\nHardware initialized. Ready for testing.\n");
+    printf("Type '?' for command help.\n\n");
+
+    // ========================================================================
+    // Main Loop - CLI processing and encoder updates
+    // ========================================================================
+
+    const uint32_t LOOP_PERIOD_MS = static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f);
+    absolute_time_t next_tick = make_timeout_time_ms(LOOP_PERIOD_MS);
+
+    uint32_t last_battery_update_ms = 0;
+    const uint32_t BATTERY_UPDATE_INTERVAL_MS = 1000;
+
+    while (true) {
+        uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+
+        // Update encoder velocities at control loop rate
+        motorlab.updateEncoders(LOOP_INTERVAL_S);
+
+        // Process serial commands (non-blocking)
+        motorlab.processSerial();
+
+        // Periodic battery update
+        if (now_ms - last_battery_update_ms >= BATTERY_UPDATE_INTERVAL_MS) {
+            battery.update();
+            last_battery_update_ms = now_ms;
         }
+
+        // Sleep until next tick
+        sleep_until(next_tick);
+        next_tick = delayed_by_ms(next_tick, LOOP_PERIOD_MS);
     }
 
-    // Go through each token and run movement.
-    for (std::string t : tokens)
-    {
-        if (t == "R")
-        {
-            apiPtr->turnRight90();
-        }
-        else if (t == "L")
-        {
-            apiPtr->turnLeft90();
-        }
-        else if (t == "F")
-        {
-            apiPtr->moveForward();
-        }
-        else if (t == "R45")
-        {
-            apiPtr->turnRight45();
-        }
-        else if (t == "L45")
-        {
-            apiPtr->turnLeft45();
-        }
-        else if (t == "FH")
-        {
-            apiPtr->moveForwardHalf();
-        }
-        else
-        {
-            LOG_ERROR("Main.cpp: Unknown token: " + t);
-        }
-    }
+    return 0;
 }
 
-// /**
-//  * Runs a PWM sweep on the given motor, applying PWM values from startPWM to
-//  * endPWM.
-//  *
-//  * @param motor Pointer to the motor to test.
-//  * @param startPWM Starting PWM value (e.g., 0.0f).
-//  * @param endPWM Ending PWM value (e.g., 1.0f or -1.0f).
-//  * @param stepPWM Step size for PWM (e.g., 0.05f). Automatically negated if
-//  * startPWM > endPWM.
-//  * @param settleTimeMs Time in milliseconds to wait at each PWM step for
-//  * velocity to stabilize.
-//  * @param controlTickPeriodMs Period in milliseconds to call
-//  * motor->controlTick() during settling.
-//  * @return Vector of FeedforwardSample containing applied PWM and measured
-//  * velocity.
-//  *
-//  * Use printed values and the following calculators:
-//  * https://www.desmos.com/calculator/qhiaubdod3 - kS and kV calculator
-//  * Do not include 0.0 velocity values!
-//  *
-//  * Note: Comment Motor::controlTick() applyPWM() call to run open-loop tests.
-//  */
-// std::vector<FeedforwardSample> runPWMSweep(Motor* motor, float startPWM,
-//                                            float endPWM, float stepPWM,
-//                                            int settleTimeMs,
-//                                            int controlTickPeriodMs) {
-//   if (startPWM > endPWM && stepPWM > 0) stepPWM = -stepPWM;
-
-//   std::vector<FeedforwardSample> sweepResults;
-
-//   // Sweep PWM from startPWM to endPWM in steps of stepPWM.
-//   for (float pwm = startPWM; (stepPWM > 0 ? pwm <= endPWM : pwm >= endPWM);
-//        pwm += stepPWM) {
-//     // Apply raw PWM to motor.
-//     motor->applyPWM(pwm);
-
-//     // Run control ticks during settle period so velocity updates.
-//     absolute_time_t settleStart = get_absolute_time();
-//     while (absolute_time_diff_us(settleStart, get_absolute_time()) <
-//            settleTimeMs * 1000) {
-//       motor->controlTick();
-//       sleep_ms(controlTickPeriodMs);
-//     }
-
-//     // Read steady-state velocity from motor.
-//     float velocity = motor->getWheelVelocityMMPerSec();
-
-//     sweepResults.push_back({pwm, velocity});
-//     LOG_DEBUG("PWM=" + std::to_string(pwm) +
-//               " | Velocity=" + std::to_string(velocity) + " mm/s.");
-//   }
-
-//   // Log all results in one go for Desmos.
-//   std::string pwmList, velList;
-//   for (size_t i = 0; i < sweepResults.size(); i++) {
-//     if (sweepResults[i].measuredVelMMps != 0.0f) {
-//       pwmList += std::to_string(sweepResults[i].appliedPWM);
-//       velList += std::to_string(sweepResults[i].measuredVelMMps);
-//       if (i != sweepResults.size() - 1) {
-//         pwmList += ", ";
-//         velList += ", ";
-//       }
-//     }
-//   }
-//   LOG_DEBUG("Velocity Values: x = [" + velList + "]");
-//   LOG_DEBUG("PWM Values: p = [" + pwmList + "]");
-
-//   motor->stopMotor();
-//   return sweepResults;
-// }
-// /* Example Usage:
-// LOG_DEBUG("Running right motor sweep...");
-// // Sweep from 0.0 to 1.0 in steps of 0.05.
-// runPWMSweep(&rightMotor, 0.0f, 1.0f, 0.05f, 10000, 25);
-// sleep_ms(2000);
-// LOG_DEBUG("Running right motor reverse sweep...");
-// // Sweep from 0.0 to -1.0 in steps of -0.05.
-// runPWMSweep(&rightMotor, 0.0f, -1.0f, -0.05f, 10000, 25);
-// sleep_ms(2000);
-
-// leftMotor.stopMotor();
-// rightMotor.stopMotor();
-// LOG_DEBUG("Motors stopped.");
-// */
-
-// /**
-//  * Run step-based velocity test on both motors at given loop frequency.
-//  * Useful for checking feedforward predictions against actual velocity
-//  response.
-//  * @param leftMotor Reference to left motor.
-//  * @param rightMotor Reference to right motor.
-//  * @param testVelocitiesMMps Vector of target velocities in mm/s to test.
-//  * @param holdDurationSec Duration in seconds to hold each target velocity.
-//  * @param loopPeriodMS Period in milliseconds to run control ticks and log
-//  data.
-//  *
-//  * Note: Motor::controlTick() must call applyPWM() to actually drive motors.
-//  */
-// void runVelocityStepTest(Motor& leftMotor, Motor& rightMotor,
-//                          const std::vector<float>& testVelocitiesMMps,
-//                          float holdDurationSec, float loopPeriodMS) {
-//   // Iterate through each test velocity.
-//   for (float targetVel : testVelocitiesMMps) {
-//     // Apply target velocity to both motors.
-//     leftMotor.setDesiredVelocityMMPerSec(targetVel);
-//     rightMotor.setDesiredVelocityMMPerSec(targetVel);
-
-//     absolute_time_t startTime = get_absolute_time();
-//     while (absolute_time_diff_us(startTime, get_absolute_time()) <
-//            static_cast<int64_t>(holdDurationSec * 1e6f)) {
-//       // Run control loop tick for both motors.
-//       leftMotor.controlTick();
-//       rightMotor.controlTick();
-
-//       // Log current results.
-//       LOG_DEBUG("TargetVel=" + std::to_string(targetVel) + " | LeftVel=" +
-//                 std::to_string(leftMotor.getWheelVelocityMMPerSec()) +
-//                 " | RightVel=" +
-//                 std::to_string(rightMotor.getWheelVelocityMMPerSec()));
-
-//       // Wait until next control cycle.
-//       sleep_ms(loopPeriodMS);
-//     }
-//   }
-
-//   // Stop motors at the end of the test.
-//   leftMotor.stopMotor();
-//   rightMotor.stopMotor();
+#endif  // MOTORLAB_MODE

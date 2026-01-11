@@ -1,8 +1,8 @@
 #ifndef PATHCONVERTER_H
 #define PATHCONVERTER_H
 
-#include "../Common/LogSystem.h"
-#include "../Maze/InternalMouse.h"
+#include "Common/LogSystem.h"
+#include "Maze/InternalMouse.h"
 
 class PathConverter
 {

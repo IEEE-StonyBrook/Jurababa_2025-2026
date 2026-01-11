@@ -1,0 +1,7 @@
+# MotorLab Dashboard dependencies
+# Install with: pip3 install -r requirements.txt
+
+pyserial>=3.5
+pyqtgraph>=0.13.0
+PyQt6>=6.5.0
+numpy>=1.21.0

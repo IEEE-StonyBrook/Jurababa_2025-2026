@@ -1,4 +1,4 @@
-#include "../../../Include/Platform/Pico/API.h"
+#include "Platform/Pico/API.h"
 
 API::API(InternalMouse* internalMouse) : internalMouse(internalMouse), runOnSimulator(false)
 {
@@ -56,6 +56,12 @@ void API::moveForward(int steps)
     internalMouse->moveIMForwardOneCell(steps);
 }
 
+void API::ghostMoveForward(int steps)
+{
+    // Ghost move only updates internal mouse position without sending commands.
+    internalMouse->moveIMForwardOneCell(steps);
+}
+
 void API::goToCenterFromEdge()
 {
     CommandHub::send(CommandType::CENTER_FROM_EDGE);
@@ -66,7 +72,8 @@ void API::turnLeft45()
     if (runOnSimulator)
         getSimulatorResponse("turnLeft45");
     else
-        CommandHub::send(CommandType::TURN_LEFT, 45);
+        LOG_DEBUG("API: Sending TURN_LEFT 45");
+    CommandHub::send(CommandType::TURN_LEFT, 1);
     internalMouse->turnIM45DegreeStepsRight(-1);
 }
 
@@ -75,7 +82,8 @@ void API::turnLeft90()
     if (runOnSimulator)
         getSimulatorResponse("turnLeft90");
     else
-        CommandHub::send(CommandType::TURN_LEFT, 90);
+        LOG_DEBUG("API: Sending TURN_LEFT 90");
+    CommandHub::send(CommandType::TURN_LEFT, 2);
     internalMouse->turnIM45DegreeStepsRight(-2);
 }
 
@@ -84,7 +92,8 @@ void API::turnRight45()
     if (runOnSimulator)
         getSimulatorResponse("turnRight45");
     else
-        CommandHub::send(CommandType::TURN_RIGHT, 45);
+        LOG_DEBUG("API: Sending TURN_RIGHT 45");
+    CommandHub::send(CommandType::TURN_RIGHT, 1);
     internalMouse->turnIM45DegreeStepsRight(1);
 }
 
@@ -93,7 +102,8 @@ void API::turnRight90()
     if (runOnSimulator)
         getSimulatorResponse("turnRight90");
     else
-        CommandHub::send(CommandType::TURN_RIGHT, 90);
+        LOG_DEBUG("API: Sending TURN_RIGHT 90");
+    CommandHub::send(CommandType::TURN_RIGHT, 2);
     internalMouse->turnIM45DegreeStepsRight(2);
 }
 
@@ -104,6 +114,48 @@ void API::turn(int degrees)
     else
         CommandHub::send(CommandType::TURN_ARBITRARY, degrees);
     internalMouse->turnIM45DegreeStepsRight(degrees / 45);
+}
+
+// ================== Arc Turns ================== //
+
+void API::arcTurnLeft90()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnLeft90");
+    else
+        LOG_DEBUG("API: Sending ARC_TURN_LEFT_90");
+    CommandHub::send(CommandType::ARC_TURN_LEFT_90);
+    internalMouse->turnIM45DegreeStepsRight(-2);
+}
+
+void API::arcTurnRight90()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnRight90");
+    else
+        LOG_DEBUG("API: Sending ARC_TURN_RIGHT_90");
+    CommandHub::send(CommandType::ARC_TURN_RIGHT_90);
+    internalMouse->turnIM45DegreeStepsRight(2);
+}
+
+void API::arcTurnLeft45()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnLeft45");
+    else
+        LOG_DEBUG("API: Sending ARC_TURN_LEFT_45");
+    CommandHub::send(CommandType::ARC_TURN_LEFT_45);
+    internalMouse->turnIM45DegreeStepsRight(-1);
+}
+
+void API::arcTurnRight45()
+{
+    if (runOnSimulator)
+        getSimulatorResponse("arcTurnRight45");
+    else
+        LOG_DEBUG("API: Sending ARC_TURN_RIGHT_45");
+    CommandHub::send(CommandType::ARC_TURN_RIGHT_45);
+    internalMouse->turnIM45DegreeStepsRight(1);
 }
 
 // ================== Sequence Execution ================== //
@@ -126,15 +178,15 @@ void API::executeSequence(const std::string& sequence)
         else if (cmd == 'L')
         {
             LOG_DEBUG("Turning left " + std::to_string(value > 0 ? value : 90) + " degrees");
-            turn(-(value > 0 ? value : 90));
+            turnLeft90();
         }
         else if (cmd == 'R')
         {
             LOG_DEBUG("Turning right " + std::to_string(value > 0 ? value : 90) + " degrees");
-            turn(value > 0 ? value : 90);
+            turnRight90();
         }
     }
-    CommandHub::send(CommandType::STOP); // Ensure stop at end
+    // CommandHub::send(CommandType::STOP); // Ensure stop at end
 }
 
 // ================== Maze State ================== //
@@ -159,6 +211,22 @@ void API::setColor(int x, int y, char color)
     if (runOnSimulator)
         std::cout << "setColor " << x << " " << y << " " << color << '\n';
 }
+
+void API::setPhaseColor(char color)
+{
+    // Store phase color for use during movement updates.
+    // This color will be applied to cells as the mouse moves.
+    // Note: In simulator mode, this is handled differently.
+    // Here we just store it for later use.
+    // In movement methods, we will color the current cell.
+    phaseColor_ = color;
+}
+
+char API::getPhaseColor()
+{
+    return phaseColor_;
+}
+
 void API::clearColor(int x, int y)
 {
     if (runOnSimulator)

@@ -6,8 +6,9 @@
 #include <limits>
 #include <queue>
 
-#include "../Common/LogSystem.h"
-#include "../Navigation/PathConverter.h"
+#include "Common/LogSystem.h"
+#include "Navigation/PathConverter.h"
+#include "Navigation/Diagonalizer.h"
 
 class AStarSolver
 {
@@ -16,6 +17,14 @@ class AStarSolver
 
     std::string go(std::vector<std::array<int, 2>> endCells, bool diagMovementAllowed = false,
                    bool passThroughGoalCells = false);
+
+    /**
+     * @brief Gets the cell-based path to the goal cells.
+     * @return Vector of MazeNode pointers representing the path cells.
+     */
+    std::vector<MazeNode*> getCellPath(std::vector<std::array<int, 2>> endCells,
+                                       bool diagMovementAllowed = false,
+                                       bool passThroughGoalCells = false);
 
   private:
     std::vector<MazeNode*> getBestPathToEndCell(std::vector<std::array<int, 2>> endCells,

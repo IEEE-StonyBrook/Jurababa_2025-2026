@@ -37,32 +37,49 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 # Add all cpp files here
 add_executable(Jurababa
-    Src/Platform/Pico/Robot/Drivetrain.cpp
-    Src/Platform/Pico/Robot/Motor.cpp
-    Src/Platform/Pico/Robot/Encoder.cpp
-    Src/Platform/Pico/Robot/IMU.cpp
-    Src/Platform/Pico/Robot/ToF.cpp
-    Src/Platform/Pico/Robot/Battery.cpp
-    Src/Platform/Pico/Robot/Odometry.cpp
-    Src/Platform/Pico/Robot/Motion.cpp
-    Src/Platform/Pico/Robot/Profile.cpp
-    Src/Common/PIDController.cpp
-    Src/Common/LogSystem.cpp
-    Src/Common/Bluetooth.cpp
-    Src/Maze/InternalMouse.cpp
-    Src/Maze/MazeGraph.cpp
-    Src/Maze/MazeNode.cpp
-    Src/Navigation/AStarSolver.cpp
-    Src/Navigation/PathConverter.cpp
-    Src/Platform/Pico/API.cpp
-    # Src/Platform/Simulator/API.cpp
-    Src/Main.cpp
+    src/Platform/Pico/Robot/Drivetrain.cpp
+    src/Platform/Pico/Robot/Motor.cpp
+    src/Platform/Pico/Robot/Encoder.cpp
+    src/Platform/Pico/Robot/IMU.cpp
+    src/Platform/Pico/Robot/ToF.cpp
+    src/Platform/Pico/Robot/Sensors.cpp
+    src/Platform/Pico/Robot/Robot.cpp
+    src/Platform/Pico/Robot/BatteryMonitor.cpp
+    src/Platform/Pico/BluetoothInterface.cpp
+    src/Common/PIDController.cpp
+    src/Common/MotionProfile.cpp
+    src/Common/LogSystem.cpp
+    src/Maze/InternalMouse.cpp
+    src/Maze/MazeGraph.cpp
+    src/Maze/MazeNode.cpp
+    src/Navigation/AStarSolver.cpp
+    src/Navigation/PathConverter.cpp
+    src/Navigation/FloodFillSolver.cpp
+    src/Navigation/PathUtils.cpp
+    src/Navigation/Diagonalizer.cpp
+    src/Platform/Pico/API.cpp
+    src/Platform/Pico/MotorLab/MotorLabSettings.cpp
+    src/Platform/Pico/MotorLab/MotorLabProfile.cpp
+    src/Platform/Pico/MotorLab/MotorLabReporter.cpp
+    src/Platform/Pico/MotorLab/MotorLab.cpp
+    src/Main.cpp
 )
+
+# Define PICO_BUILD for conditional compilation
+target_compile_definitions(Jurababa PRIVATE PICO_BUILD)
 
 pico_set_program_name(Jurababa "Jurababa")
 pico_set_program_version(Jurababa "0.1")
 
+# Configure UART stdio pins for HM-10 Bluetooth (GP16=TX, GP17=RX)
+target_compile_definitions(Jurababa PRIVATE
+    PICO_DEFAULT_UART=0
+    PICO_DEFAULT_UART_TX_PIN=16
+    PICO_DEFAULT_UART_RX_PIN=17
+)
+
 # Modify the below lines to enable/disable output over UART/USB
+# USB only - UART will be handled manually in MotorLab at 9600 baud
 pico_enable_stdio_uart(Jurababa 0)
 pico_enable_stdio_usb(Jurababa 1)
 
@@ -87,6 +104,8 @@ target_link_libraries(Jurababa
 # Add the standard include files to the build
 target_include_directories(Jurababa PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/Include
+        ${CMAKE_CURRENT_LIST_DIR}/External
 )
 
 pico_add_extra_outputs(Jurababa)
