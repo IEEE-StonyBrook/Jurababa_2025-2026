@@ -1,5 +1,7 @@
 #include "Platform/Pico/Robot/IMU.h"
 
+#include <math.h>
+
 #ifdef USE_MULTICORE_SENSORS
 #include "Platform/Pico/MulticoreSensors.h"
 #endif
@@ -109,11 +111,12 @@ void IMU::resetIMUYawToZero()
 
 float IMU::getNewYawAfterAddingDegrees(float degrees_to_add)
 {
-    float sign = (degrees_to_add == 0.0f) ? 0.0f : (degrees_to_add / fabs(degrees_to_add));
-    degrees_to_add = fmod(fabs(degrees_to_add), 360.0f) * sign;
+    // Normalize input to [-360, 360] range while preserving sign
+    degrees_to_add = fmodf(degrees_to_add, 360.0f);
 
     float new_yaw = getIMUYawDegreesNeg180ToPos180() + degrees_to_add;
 
+    // Wrap to [-180, 180] range
     if (new_yaw > 180.0f)
         new_yaw -= 360.0f;
     else if (new_yaw < -180.0f)

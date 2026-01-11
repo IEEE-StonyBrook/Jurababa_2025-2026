@@ -1,5 +1,23 @@
 #include "Platform/Pico/Robot/Sensors.h"
+
 #include "Platform/Pico/Config.h"
+
+namespace
+{
+    /**
+     * @brief Normalizes yaw delta to [-180, 180] range
+     *
+     * Handles wrap-around: turning from +179 to -179 should be +2, not -358.
+     */
+    float normalizeYawDelta(float delta)
+    {
+        if (delta > 180.0f)
+            return delta - 360.0f;
+        if (delta < -180.0f)
+            return delta + 360.0f;
+        return delta;
+    }
+}  // namespace
 
 Sensors::Sensors(IMU* imu, ToF* left_tof, ToF* front_tof, ToF* right_tof)
     : imu_(imu),
@@ -36,21 +54,9 @@ float Sensors::getAngularVelocityDegps()
 
 float Sensors::getYawDelta()
 {
-    // Get current yaw
     float current_yaw = getYaw();
-
-    // Calculate delta with wrap-around handling
-    float delta = current_yaw - last_yaw_for_delta_;
-
-    // Handle wrap-around: turning from +179° to -179° should be +2°, not -358°
-    if (delta > 180.0f)
-        delta -= 360.0f;
-    else if (delta < -180.0f)
-        delta += 360.0f;
-
-    // Update last yaw for next call
+    float delta = normalizeYawDelta(current_yaw - last_yaw_for_delta_);
     last_yaw_for_delta_ = current_yaw;
-
     return delta;
 }
 
@@ -88,20 +94,13 @@ void Sensors::update(float time_delta)
         return;
 
     float current_yaw = getYaw();
-    float delta_yaw = current_yaw - previous_yaw_;
-
-    // Handle wrap-around: turning from +179° to -179° should be +2°, not -358°
-    if (delta_yaw > 180.0f)
-        delta_yaw -= 360.0f;
-    else if (delta_yaw < -180.0f)
-        delta_yaw += 360.0f;
-
+    float delta_yaw = normalizeYawDelta(current_yaw - previous_yaw_);
     float raw_angular_velocity = delta_yaw / time_delta;
 
     // Low-pass filter to reduce noise
     float alpha = SENSORS_ANGULAR_VEL_FILTER_ALPHA;
     current_angular_velocity_deg_per_second_ =
-        (alpha * raw_angular_velocity) +
+        alpha * raw_angular_velocity +
         (1.0f - alpha) * current_angular_velocity_deg_per_second_;
 
     previous_yaw_ = current_yaw;

@@ -1,5 +1,6 @@
 #include "Platform/Simulator/API.h"
 
+#include <cmath>
 #include <iostream>
 #include <sstream>
 
@@ -105,19 +106,21 @@ void API_SIMULATOR::turnRight90()
 }
 void API_SIMULATOR::turn(int degreesDivisibleBy45)
 {
-    int turnsNeeded = (int)(degreesDivisibleBy45 / 45);
+    int turns_needed = degreesDivisibleBy45 / 45;
+
     if (runOnSimulator)
     {
-        for (int i = 0; i < abs(turnsNeeded); i++)
+        // Send individual 45-degree turn commands to simulator
+        for (int i = 0; i < std::abs(turns_needed); i++)
         {
-            if (degreesDivisibleBy45 > 0)
-                turnRight45();
+            if (turns_needed > 0)
+                getSimulatorResponse("turnRight45");
             else
-                turnLeft45();
+                getSimulatorResponse("turnLeft45");
         }
     }
 
-    internalMouse->turnIM45DegreeStepsRight(turnsNeeded);
+    internalMouse->turnIM45DegreeStepsRight(turns_needed);
 }
 
 void API_SIMULATOR::arcTurnLeft90()

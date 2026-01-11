@@ -145,41 +145,18 @@ void BluetoothInterface::processReceivedChar(char c)
     // Echo received character back for debugging
     uart_putc(uart_, c);
 
-    // Parse single-character commands
-    switch (c)
+    // Ignore line endings
+    if (c == '\n' || c == '\r')
+        return;
+
+    // Parse single-character commands (case-insensitive)
+    switch (c | 0x20)  // Convert to lowercase via bitwise OR
     {
-        case 's':
-        case 'S':
-            pending_command_ = Command::START;
-            command_ready_   = true;
-            break;
-
-        case 'h':
-        case 'H':
-            pending_command_ = Command::HALT;
-            command_ready_   = true;
-            break;
-
-        case 'r':
-        case 'R':
-            pending_command_ = Command::RESET;
-            command_ready_   = true;
-            break;
-
-        case 'b':
-        case 'B':
-            pending_command_ = Command::BATTERY;
-            command_ready_   = true;
-            break;
-
-        case '\n':
-        case '\r':
-            // Ignore line endings
-            break;
-
-        default:
-            pending_command_ = Command::UNKNOWN;
-            command_ready_   = true;
-            break;
+        case 's': pending_command_ = Command::START;   break;
+        case 'h': pending_command_ = Command::HALT;    break;
+        case 'r': pending_command_ = Command::RESET;   break;
+        case 'b': pending_command_ = Command::BATTERY; break;
+        default:  pending_command_ = Command::UNKNOWN; break;
     }
+    command_ready_ = true;
 }
