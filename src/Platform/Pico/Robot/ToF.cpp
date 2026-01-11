@@ -1,6 +1,6 @@
 #include "Platform/Pico/Robot/ToF.h"
 
-#include <cctype>
+#include <ctype.h>
 
 #include "Platform/Pico/Config.h"
 #include "hardware/gpio.h"
@@ -41,17 +41,15 @@ void ToF::initializeSensor(int xshut_pin, char sensor_position)
 
     VL53L0X_dev_i2c_default_initialise(&sensor_device_, VL53L0X_DEFAULT_MODE);
 
+    // Assign unique I2C address based on sensor position
     uint8_t new_address;
-    char pos = tolower(sensor_position);
-
-    if (pos == 'l')
-        new_address = 0x30;
-    else if (pos == 'f')
-        new_address = 0x31;
-    else if (pos == 'r')
-        new_address = 0x32;
-    else
-        new_address = 0x33;
+    switch (tolower(sensor_position))
+    {
+        case 'l': new_address = 0x30; break;
+        case 'f': new_address = 0x31; break;
+        case 'r': new_address = 0x32; break;
+        default:  new_address = 0x33; break;
+    }
 
     VL53L0X_SetDeviceAddress(&sensor_device_, new_address);
     sensor_device_.I2cDevAddr = new_address;
@@ -82,21 +80,20 @@ float ToF::getToFDistanceFromWallMM()
     float distance_mm = measurement_data.RangeMilliMeter;
 
 #ifdef USE_MULTICORE_SENSORS
+    char position_lower = tolower(sensor_position_);
+
     // If running on sensor core (core 1), publish data to hub
     if (multicore_get_core_num() == 1)
     {
         MulticoreSensorData sensor_data = {};
-        char position_lower = tolower(sensor_position_);
 
         // Store measurement in appropriate field based on sensor position
-        if (position_lower == 'l')
-            sensor_data.tof_left_mm = (int16_t)distance_mm;
-        else if (position_lower == 'f')
-            sensor_data.tof_front_mm = (int16_t)distance_mm;
-        else if (position_lower == 'r')
-            sensor_data.tof_right_mm = (int16_t)distance_mm;
-        else
-            sensor_data.tof_front_mm = (int16_t)distance_mm;  // Default to front
+        switch (position_lower)
+        {
+            case 'l': sensor_data.tof_left_mm = static_cast<int16_t>(distance_mm); break;
+            case 'r': sensor_data.tof_right_mm = static_cast<int16_t>(distance_mm); break;
+            default:  sensor_data.tof_front_mm = static_cast<int16_t>(distance_mm); break;
+        }
 
         sensor_data.timestamp_ms = to_ms_since_boot(get_absolute_time());
         MulticoreSensorHub::publish(sensor_data);
@@ -108,15 +105,12 @@ float ToF::getToFDistanceFromWallMM()
     MulticoreSensorData snapshot = {};
     MulticoreSensorHub::snapshot(snapshot);
 
-    char position_lower = tolower(sensor_position_);
-    if (position_lower == 'l')
-        return (float)snapshot.tof_left_mm;
-    else if (position_lower == 'f')
-        return (float)snapshot.tof_front_mm;
-    else if (position_lower == 'r')
-        return (float)snapshot.tof_right_mm;
-    else
-        return (float)snapshot.tof_front_mm;  // Default to front
+    switch (position_lower)
+    {
+        case 'l': return static_cast<float>(snapshot.tof_left_mm);
+        case 'r': return static_cast<float>(snapshot.tof_right_mm);
+        default:  return static_cast<float>(snapshot.tof_front_mm);
+    }
 #else
     // Multicore not enabled, return raw measurement
     return distance_mm;

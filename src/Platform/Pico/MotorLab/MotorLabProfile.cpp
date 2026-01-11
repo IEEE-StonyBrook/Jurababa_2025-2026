@@ -38,39 +38,34 @@ void MotorLabProfile::update(float dt) {
     // Calculate remaining distance
     float remaining = target_distance_ - position_;
 
-    // Magic number to ensure we actually stop (from UKMARS)
+    // Margin to ensure we actually stop (from UKMARS)
     const float STOP_MARGIN = 5.0f;
+    float braking_threshold = getBrakingDistance() + STOP_MARGIN;
 
     switch (state_) {
         case MotorLabProfileState::ACCELERATING:
-            // Increase speed toward top_speed
             speed_ += acceleration_ * dt;
             if (speed_ >= top_speed_) {
                 speed_ = top_speed_;
                 state_ = MotorLabProfileState::CRUISING;
             }
-            // Check if we need to start braking
-            if (remaining <= getBrakingDistance() + STOP_MARGIN) {
+            if (remaining <= braking_threshold) {
                 state_ = MotorLabProfileState::BRAKING;
             }
             break;
 
         case MotorLabProfileState::CRUISING:
-            // Maintain constant speed
             speed_ = top_speed_;
-            // Check if we need to start braking
-            if (remaining <= getBrakingDistance() + STOP_MARGIN) {
+            if (remaining <= braking_threshold) {
                 state_ = MotorLabProfileState::BRAKING;
             }
             break;
 
         case MotorLabProfileState::BRAKING:
-            // Decrease speed toward final_speed
             speed_ -= acceleration_ * dt;
             if (speed_ <= final_speed_) {
                 speed_ = final_speed_;
             }
-            // Check if we've reached target
             if (remaining <= 0.0f || (final_speed_ == 0.0f && speed_ <= 0.0f)) {
                 speed_ = final_speed_;
                 position_ = target_distance_;
@@ -80,8 +75,8 @@ void MotorLabProfile::update(float dt) {
 
         case MotorLabProfileState::IDLE:
         case MotorLabProfileState::FINISHED:
-            // Nothing to do
-            return;
+            // Already handled at function entry
+            break;
     }
 
     // Update position based on current speed

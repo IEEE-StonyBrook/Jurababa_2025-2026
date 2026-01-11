@@ -49,7 +49,7 @@ void BatteryMonitor::update()
     if (reading_index_ >= AVERAGE_SAMPLES)
     {
         reading_index_ = 0;
-        buffer_filled_ = true;
+        buffer_filled_ = true;  // All buffer slots now contain valid readings
     }
 }
 

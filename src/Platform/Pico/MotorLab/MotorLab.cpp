@@ -19,6 +19,28 @@
 static const char* MOTORLAB_VERSION = "MOTORLAB v1.0 (Jurababa)";
 
 // ============================================================================
+// Helper functions
+// ============================================================================
+
+/**
+ * @brief Clamp voltage to safe operating range
+ * @param volts Input voltage
+ * @return Voltage clamped to [-MAX_VOLTAGE, MAX_VOLTAGE]
+ */
+static float clampVoltage(float volts)
+{
+    if (volts > MAX_VOLTAGE)
+    {
+        return MAX_VOLTAGE;
+    }
+    if (volts < -MAX_VOLTAGE)
+    {
+        return -MAX_VOLTAGE;
+    }
+    return volts;
+}
+
+// ============================================================================
 // Constructor and Initialization
 // ============================================================================
 
@@ -230,10 +252,24 @@ void MotorLab::runStepTrial(float step_voltage, uint32_t duration_ms)
 
 void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration, int mode)
 {
+    const char* mode_name;
+    switch (mode)
+    {
+        case 0:
+            mode_name = "FF only";
+            break;
+        case 1:
+            mode_name = "PD only";
+            break;
+        default:
+            mode_name = "FF+PD";
+            break;
+    }
+
     printf("\n=== Move Trial ===\n");
     printf("Distance: %.1f deg, Speed: %.1f deg/s, Accel: %.1f deg/s^2\n", distance, top_speed,
            acceleration);
-    printf("Mode: %d (%s)\n", mode, mode == 0 ? "FF only" : (mode == 1 ? "PD only" : "FF+PD"));
+    printf("Mode: %d (%s)\n", mode, mode_name);
     printf("Battery: %.2f V\n\n", getBatteryVoltage());
 
     reporter_.begin();
@@ -243,6 +279,10 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
 
     // Start motion profile
     profile_.start(distance, top_speed, acceleration, 0.0f);
+
+    // Determine which control modes are active
+    bool use_feedforward = (mode == 0 || mode == 2);
+    bool use_controller  = (mode == 1 || mode == 2);
 
     // Initialize error accumulator for PD control
     float position_error = 0.0f;
@@ -273,7 +313,7 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
         float control_volts = 0.0f;
 
         // Feedforward (if enabled)
-        if (mode == 0 || mode == 2)
+        if (use_feedforward)
         {
             ff_volts = settings_.bias_ff;
             if (set_speed > 0.0f)
@@ -288,7 +328,7 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
         }
 
         // PD Controller (if enabled)
-        if (mode == 1 || mode == 2)
+        if (use_controller)
         {
             // Incremental error accumulation (mazerunner-core style)
             float expected_delta = set_speed * LOOP_INTERVAL_S;
@@ -301,14 +341,8 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
             prev_error       = position_error;
         }
 
-        // Total output
-        float total_volts = ff_volts + control_volts;
-
-        // Clamp to safe limits
-        if (total_volts > MAX_VOLTAGE)
-            total_volts = MAX_VOLTAGE;
-        if (total_volts < -MAX_VOLTAGE)
-            total_volts = -MAX_VOLTAGE;
+        // Total output (clamped to safe limits)
+        float total_volts = clampVoltage(ff_volts + control_volts);
 
         // Apply to motors
         setMotorVoltage(total_volts);
@@ -440,119 +474,129 @@ MotorLabArgs MotorLab::tokenize()
     return args;
 }
 
+/**
+ * @brief Check if command matches any of the given names
+ * @param cmd Command string to check
+ * @param name1 Primary command name
+ * @param name2 Optional alias (nullptr to skip)
+ * @return true if command matches either name
+ */
+static bool cmdMatches(const char* cmd, const char* name1, const char* name2 = nullptr)
+{
+    if (strcmp(cmd, name1) == 0)
+    {
+        return true;
+    }
+    if (name2 != nullptr && strcmp(cmd, name2) == 0)
+    {
+        return true;
+    }
+    return false;
+}
+
 void MotorLab::executeCommand(const MotorLabArgs& args)
 {
     const char* cmd = args.argv[0];
 
-    // Help
-    if (strcmp(cmd, "?") == 0 || strcmp(cmd, "HELP") == 0)
+    // Help and system commands
+    if (cmdMatches(cmd, "?", "HELP"))
     {
         cmdHelp();
     }
-    // Identification
-    else if (strcmp(cmd, "ID") == 0)
+    else if (cmdMatches(cmd, "ID"))
     {
         cmdId();
     }
-    // Settings
-    else if (strcmp(cmd, "SETTINGS") == 0 || strcmp(cmd, "S") == 0)
+    else if (cmdMatches(cmd, "SETTINGS", "S"))
     {
         cmdSettings();
     }
-    else if (strcmp(cmd, "INIT") == 0)
+    else if (cmdMatches(cmd, "INIT"))
     {
         cmdInitSettings();
     }
     // Motor model parameters
-    else if (strcmp(cmd, "KM") == 0)
+    else if (cmdMatches(cmd, "KM"))
     {
         cmdSetKm(args);
     }
-    else if (strcmp(cmd, "TM") == 0)
+    else if (cmdMatches(cmd, "TM"))
     {
         cmdSetTm(args);
     }
     // Controller parameters
-    else if (strcmp(cmd, "ZETA") == 0)
+    else if (cmdMatches(cmd, "ZETA"))
     {
         cmdSetZeta(args);
     }
-    else if (strcmp(cmd, "TD") == 0)
+    else if (cmdMatches(cmd, "TD"))
     {
         cmdSetTd(args);
     }
-    else if (strcmp(cmd, "KP") == 0)
+    else if (cmdMatches(cmd, "KP"))
     {
         cmdSetKp(args);
     }
-    else if (strcmp(cmd, "KD") == 0)
+    else if (cmdMatches(cmd, "KD"))
     {
         cmdSetKd(args);
     }
     // Feedforward parameters
-    else if (strcmp(cmd, "BIAS") == 0)
+    else if (cmdMatches(cmd, "BIAS"))
     {
         cmdSetBiasFF(args);
     }
-    else if (strcmp(cmd, "SPEEDFF") == 0)
+    else if (cmdMatches(cmd, "SPEEDFF"))
     {
         cmdSetSpeedFF(args);
     }
-    else if (strcmp(cmd, "ACCFF") == 0)
+    else if (cmdMatches(cmd, "ACCFF"))
     {
         cmdSetAccFF(args);
     }
     // Hardware queries
-    else if (strcmp(cmd, "BATTERY") == 0 || strcmp(cmd, "BAT") == 0)
+    else if (cmdMatches(cmd, "BATTERY", "BAT"))
     {
         cmdBattery();
     }
-    else if (strcmp(cmd, "ENCODERS") == 0 || strcmp(cmd, "ENC") == 0)
+    else if (cmdMatches(cmd, "ENCODERS", "ENC"))
     {
         cmdEncoders();
     }
     // Test commands
-    else if (strcmp(cmd, "OPENLOOP") == 0 || strcmp(cmd, "OL") == 0)
+    else if (cmdMatches(cmd, "OPENLOOP", "OL"))
     {
         cmdOpenLoop(args);
     }
-    else if (strcmp(cmd, "STEP") == 0)
+    else if (cmdMatches(cmd, "STEP"))
     {
         cmdStep(args);
     }
-    else if (strcmp(cmd, "MOVE") == 0)
+    else if (cmdMatches(cmd, "MOVE"))
     {
         cmdMove(args);
     }
-    else if (strcmp(cmd, "VOLTS") == 0 || strcmp(cmd, "V") == 0)
+    else if (cmdMatches(cmd, "VOLTS", "V"))
     {
         cmdVoltage(args);
     }
-    else if (strcmp(cmd, "VL") == 0)
+    else if (cmdMatches(cmd, "VL"))
     {
         cmdVoltageLeft(args);
     }
-    else if (strcmp(cmd, "VR") == 0)
+    else if (cmdMatches(cmd, "VR"))
     {
         cmdVoltageRight(args);
     }
-    else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "X") == 0)
+    else if (cmdMatches(cmd, "STOP", "X"))
     {
         cmdStop();
     }
     // Echo control
-    else if (strcmp(cmd, "ECHO") == 0)
+    else if (cmdMatches(cmd, "ECHO"))
     {
-        if (args.argc > 1 && strcmp(args.argv[1], "OFF") == 0)
-        {
-            echo_enabled_ = false;
-            printf("Echo disabled\n");
-        }
-        else
-        {
-            echo_enabled_ = true;
-            printf("Echo enabled\n");
-        }
+        echo_enabled_ = !(args.argc > 1 && strcmp(args.argv[1], "OFF") == 0);
+        printf("Echo %s\n", echo_enabled_ ? "enabled" : "disabled");
     }
     else
     {
@@ -858,12 +902,7 @@ void MotorLab::cmdVoltage(const MotorLabArgs& args)
         return;
     }
 
-    float volts = static_cast<float>(atof(args.argv[1]));
-    if (volts > MAX_VOLTAGE)
-        volts = MAX_VOLTAGE;
-    if (volts < -MAX_VOLTAGE)
-        volts = -MAX_VOLTAGE;
-
+    float volts = clampVoltage(static_cast<float>(atof(args.argv[1])));
     setMotorVoltage(volts);
     printf("Applied %.2f V to both motors\n", volts);
 }
@@ -876,12 +915,7 @@ void MotorLab::cmdVoltageLeft(const MotorLabArgs& args)
         return;
     }
 
-    float volts = static_cast<float>(atof(args.argv[1]));
-    if (volts > MAX_VOLTAGE)
-        volts = MAX_VOLTAGE;
-    if (volts < -MAX_VOLTAGE)
-        volts = -MAX_VOLTAGE;
-
+    float volts = clampVoltage(static_cast<float>(atof(args.argv[1])));
     setLeftMotorVoltage(volts);
     printf("Applied %.2f V to LEFT motor only\n", volts);
 }
@@ -894,12 +928,7 @@ void MotorLab::cmdVoltageRight(const MotorLabArgs& args)
         return;
     }
 
-    float volts = static_cast<float>(atof(args.argv[1]));
-    if (volts > MAX_VOLTAGE)
-        volts = MAX_VOLTAGE;
-    if (volts < -MAX_VOLTAGE)
-        volts = -MAX_VOLTAGE;
-
+    float volts = clampVoltage(static_cast<float>(atof(args.argv[1])));
     setRightMotorVoltage(volts);
     printf("Applied %.2f V to RIGHT motor only\n", volts);
 }
