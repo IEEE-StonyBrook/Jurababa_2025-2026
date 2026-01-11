@@ -8,6 +8,7 @@
  * @brief Motor calibration settings storage for UKMARS-style motor lab
  *
  * Stores tunable parameters for motor characterization and control tuning.
+ * All velocity units are in mm/s for consistency with the Robot class.
  * Parameters can be modified at runtime via CLI and persisted to flash.
  *
  * Based on UKMARS motorlab by Peter Harrison.
@@ -19,8 +20,8 @@
  * These parameters define the motor model and controller gains used
  * for feedforward and feedback control.
  *
- * Motor Model: V = Km * omega + bias
- *   - Km: Motor velocity constant (converts speed to voltage)
+ * Motor Model: V = (1/Km) * speed + bias
+ *   - Km: Motor velocity constant (mm/s per volt)
  *   - Tm: Motor time constant (mechanical lag)
  *   - bias: Static friction voltage
  *
@@ -30,14 +31,14 @@
  *   - Kp, Kd: Derived PD gains
  */
 struct MotorLabSettings {
-    // Motor model constants
-    float km;       // Motor velocity constant (deg/s per volt)
+    // Motor model constants (all velocities in mm/s)
+    float km;       // Motor velocity constant (mm/s per volt)
     float tm;       // Motor mechanical time constant (seconds)
 
     // Feedforward parameters
     float bias_ff;  // Static friction compensation (volts)
-    float speed_ff; // Speed feedforward (volts per deg/s) = 1/Km
-    float acc_ff;   // Acceleration feedforward (volts per deg/s²) = Tm/Km
+    float speed_ff; // Speed feedforward (volts per mm/s) = 1/Km
+    float acc_ff;   // Acceleration feedforward (volts per mm/s²) = Tm/Km
 
     // Controller tuning parameters
     float zeta;     // Damping ratio (typically 0.707 for critical damping)
@@ -48,20 +49,18 @@ struct MotorLabSettings {
     // Control flags
     uint8_t control_flags;  // Bit flags for control options
 
-    // Encoder calibration
-    float deg_per_count;    // Degrees per encoder count
-
     /**
      * @brief Initialize with default values
      */
     void initDefaults() {
-        // Default motor model (tune these for your specific motors)
-        km = 2064.7f;           // deg/s per volt (from UKMARS defaults)
+        // Default motor model in mm/s units
+        // Typical value for small DC motors with 39.8mm wheel: ~717 mm/s/V
+        km = 717.0f;            // mm/s per volt
         tm = 0.325f;            // seconds
 
         // Derived feedforward
-        speed_ff = 1.0f / km;   // volts per deg/s
-        acc_ff = tm / km;       // volts per deg/s²
+        speed_ff = 1.0f / km;   // volts per mm/s
+        acc_ff = tm / km;       // volts per mm/s²
         bias_ff = 0.145f;       // volts (static friction)
 
         // Controller design
@@ -76,9 +75,6 @@ struct MotorLabSettings {
 
         // Control flags
         control_flags = 0;
-
-        // Encoder (tune for your encoder resolution)
-        deg_per_count = 360.0f / 359.7222f;  // From Config.h TICKS_PER_REVOLUTION
     }
 
     /**
@@ -101,8 +97,6 @@ struct MotorLabSettings {
      * @brief Print settings to serial
      */
     void print() const;
-
-    // TODO: Add Flash persistence for settings (UKMARS motorlab uses EEPROM)
 };
 
 // Control flag bit definitions

@@ -3,11 +3,34 @@
 
 /**
  * @file MotorLabProfile.h
- * @brief Motion profile generator for motor lab trials
+ * @brief Time-based trapezoidal profile for motor lab trials
  *
- * Generates trapezoidal motion profiles for position control during
- * motor characterization trials. Simpler than the full MotionProfile
- * class, focused on motorlab-specific functionality.
+ * WHY THIS IS SEPARATE FROM MotionProfile:
+ * =========================================
+ *
+ * MotionProfile (Common/MotionProfile.h):
+ *   - Position-based: uses encoder feedback to determine current state
+ *   - update(currentPosition, dt) - relies on external position tracking
+ *   - Better for closed-loop control where actual position drives transitions
+ *   - Used by Robot class for real motion control
+ *
+ * MotorLabProfile (this class):
+ *   - Time-based: generates setpoints purely from elapsed time
+ *   - update(dt) - self-contained, no external feedback needed
+ *   - Better for open-loop testing where you want predictable waveforms
+ *   - Used by MotorLab for generating test profiles
+ *
+ * EXAMPLE USAGE:
+ *   MotorLabProfile profile;
+ *   profile.start(90.0f, 200.0f, 500.0f, 0.0f);  // 90mm at 200mm/s, 500mm/s^2
+ *
+ *   while (!profile.isFinished()) {
+ *       profile.update(dt);
+ *       float setpoint_pos   = profile.getPosition();      // mm
+ *       float setpoint_speed = profile.getSpeed();         // mm/s
+ *       float setpoint_accel = profile.getAcceleration();  // mm/s^2
+ *       // Apply feedforward: V = bias + speed_ff * speed + acc_ff * accel
+ *   }
  *
  * Based on UKMARS motorlab by Peter Harrison.
  */
@@ -24,10 +47,12 @@ enum class MotorLabProfileState {
 };
 
 /**
- * @brief Simple trapezoidal motion profile for motorlab
+ * @brief Time-based trapezoidal motion profile
  *
- * Generates position, velocity, and acceleration setpoints for
- * controlled motion during calibration trials.
+ * Generates position (mm), velocity (mm/s), and acceleration (mm/s²)
+ * setpoints for controlled motion during calibration trials.
+ *
+ * All units are in mm for consistency with Config.h constants.
  */
 class MotorLabProfile {
   public:

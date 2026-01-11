@@ -114,10 +114,10 @@ class Dashboard(QMainWindow):
 
         # Motion plot (speed)
         self.motion_plot = pg.PlotWidget()
-        self.motion_plot.setYRange(-100, 3900)
+        self.motion_plot.setYRange(-50, 500)
         self.motion_plot.setXRange(0, 1000)
         self.motion_plot.setTitle("<span style=\"color:cyan;\">Motion</span>")
-        self.motion_plot.setLabel('left', 'Speed (deg/s)', **styles)
+        self.motion_plot.setLabel('left', 'Speed (mm/s)', **styles)
         self.motion_plot.setLabel('bottom', 'time (ms)', **styles)
         self.motion_plot.showGrid(x=True, y=True)
         # Enable mouse interaction for zoom/pan
@@ -687,14 +687,36 @@ class Dashboard(QMainWindow):
         self.log_message('Read Settings')
         self.data = self.query("SETTINGS\n")
         self.log_data()
+
+        # Mapping from firmware key names to dashboard key names
+        key_mapping = {
+            'km': 'Km',
+            'tm': 'Tm',
+            'bias_ff': 'biasFF',
+            'speed_ff': 'speedFF',
+            'acc_ff': 'accFF',
+            'zeta': 'zeta',
+            'td': 'Td',
+            'kp': 'KP',
+            'kd': 'KD',
+        }
+
         # Parse settings response
         for line in self.data:
-            # Handle format: "key = value" or "key = value unit"
+            # Handle format: "key = value" or "key (description) = value unit"
             if '=' in line:
                 parts = line.split('=')
                 if len(parts) >= 2:
-                    key = parts[0].strip()
-                    val_str = parts[1].strip().split()[0]  # Get first word after =
+                    raw_key = parts[0].strip()
+                    # Strip parenthetical descriptions: "Km (velocity const)" -> "Km"
+                    if '(' in raw_key:
+                        raw_key = raw_key.split('(')[0].strip()
+                    # Normalize to lowercase for mapping lookup
+                    key_lower = raw_key.lower()
+                    # Map to dashboard key name, or use original if not in mapping
+                    key = key_mapping.get(key_lower, raw_key)
+                    # Get first word after = as the value
+                    val_str = parts[1].strip().split()[0]
                     try:
                         self.parameters[key] = float(val_str)
                     except ValueError:

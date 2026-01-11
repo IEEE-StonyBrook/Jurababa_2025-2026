@@ -49,13 +49,18 @@ struct MotorLabArgs
  * @brief Motor lab interface for characterization and tuning
  *
  * Provides serial CLI for running motor tests and adjusting parameters.
- * Designed to work with the existing Drivetrain and Motor classes.
+ * Supports two modes:
+ *   1. Standalone: Direct encoder/motor access (simple, no dependencies)
+ *   2. Integrated: Uses Drivetrain for velocity (shares code with Robot class)
+ *
+ * Standalone mode is useful for initial motor testing. Integrated mode
+ * ensures MotorLab uses the exact same velocity calculations as the Robot.
  */
 class MotorLab
 {
   public:
     /**
-     * @brief Construct motor lab with hardware references
+     * @brief Construct motor lab with hardware references (standalone mode)
      *
      * @param left_motor Pointer to left motor
      * @param right_motor Pointer to right motor
@@ -64,6 +69,20 @@ class MotorLab
      * @param battery_monitor Pointer to battery monitor
      */
     MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
+             BatteryMonitor* battery_monitor);
+
+    /**
+     * @brief Construct motor lab with Drivetrain (integrated mode)
+     *
+     * Uses Drivetrain for velocity calculations, ensuring consistency
+     * with Robot class. Drivetrain must be updated externally.
+     *
+     * @param drivetrain Pointer to initialized Drivetrain
+     * @param left_encoder Pointer to left encoder (for position/reset)
+     * @param right_encoder Pointer to right encoder (for position/reset)
+     * @param battery_monitor Pointer to battery monitor
+     */
+    MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right_encoder,
              BatteryMonitor* battery_monitor);
 
     /**
@@ -121,22 +140,23 @@ class MotorLab
     float getBatteryVoltage() const;
 
     /**
-     * @brief Get encoder position in degrees
+     * @brief Get encoder position in millimeters
      *
      * Uses average of both encoders for combined measurement.
      *
-     * @return Position in degrees
+     * @return Position in mm
      */
-    float getEncoderPositionDeg() const;
+    float getEncoderPositionMM() const;
 
     /**
-     * @brief Get encoder velocity in degrees/second
+     * @brief Get encoder velocity in millimeters/second
      *
      * Uses average of both encoders for combined measurement.
+     * This is the standard unit used by the Robot class.
      *
-     * @return Velocity in deg/s
+     * @return Velocity in mm/s
      */
-    float getEncoderVelocityDegps() const;
+    float getEncoderVelocityMMps() const;
 
     /**
      * @brief Reset encoder counts to zero
@@ -190,13 +210,13 @@ class MotorLab
      * Executes a profiled move with feedforward and/or PD control.
      * Use this to validate tuning and compare control modes.
      *
-     * @param distance Target distance in degrees
-     * @param top_speed Maximum speed in deg/s
-     * @param acceleration Acceleration in deg/s²
+     * @param distance Target distance in mm (default 90mm = half cell)
+     * @param top_speed Maximum speed in mm/s
+     * @param acceleration Acceleration in mm/s²
      * @param mode Control mode: 0=FF only, 1=PD only, 2=FF+PD
      */
-    void runMoveTrial(float distance = 360.0f, float top_speed = 500.0f,
-                      float acceleration = 1000.0f, int mode = 2);
+    void runMoveTrial(float distance = 90.0f, float top_speed = 200.0f,
+                      float acceleration = 500.0f, int mode = 2);
 
     // ========================================================================
     // CLI Commands (called by processSerial)
@@ -224,16 +244,18 @@ class MotorLab
     void cmdVoltageLeft(const MotorLabArgs& args);
     void cmdVoltageRight(const MotorLabArgs& args);
     void cmdStop();
-
-    // TODO: Add WRITE/READ commands for Flash persistence (UKMARS uses EEPROM.put/get)
+    void cmdExport();
 
   private:
-    // Hardware references
+    // Hardware references (standalone mode uses motors directly)
     Motor*          left_motor_;
     Motor*          right_motor_;
     Encoder*        left_encoder_;
     Encoder*        right_encoder_;
     BatteryMonitor* battery_monitor_;
+
+    // Optional Drivetrain integration (for velocity and motor control)
+    Drivetrain*     drivetrain_;
 
     // Settings and utilities
     MotorLabSettings settings_;
@@ -245,11 +267,11 @@ class MotorLab
     int  input_index_;
     bool echo_enabled_;
 
-    // Encoder velocity tracking
+    // Encoder velocity tracking (mm/s units)
     int32_t prev_left_ticks_;
     int32_t prev_right_ticks_;
-    float   left_velocity_degps_;
-    float   right_velocity_degps_;
+    float   left_velocity_mmps_;
+    float   right_velocity_mmps_;
 
     // CLI parsing helpers
     int          readSerialLine();
