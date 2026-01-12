@@ -139,6 +139,36 @@ maze/ → config/
 drivers/ → config/
 ```
 
+## Commit Message Guidelines
+
+Use imperative mood, present tense: "Add feature" not "Added feature"
+
+### Format
+```
+<Verb> <what changed>
+
+[Optional body explaining WHY]
+
+Co-Authored-By: Name <email>
+```
+
+### Common Verbs
+| Verb | Use For |
+|------|---------|
+| `Add` | New feature or file |
+| `Fix` | Bug fix |
+| `Update` | Enhance existing feature |
+| `Refactor` | Code restructure without behavior change |
+| `Remove` | Delete code/feature |
+| `Change` | Modify behavior |
+
+### Examples
+```
+Add bidirectional wall detection to mms simulator
+
+Fix FloodFill exploration loop caused by unidirectional walls
+```
+
 ## Key Files
 
 ### Configuration
