@@ -1,7 +1,44 @@
-build
-.fake
-.vscode
+# Build artifacts
+build/
+build-*/
+bin/
+*.elf
+*.uf2
+*.hex
+*.bin
+*.map
+*.dis
+
+# IDE and editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
 .DS_Store
-bin
-.venv
-.cache
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.env
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+*.cmake
+
+# Claude Code
+.claude/
+
+# Cache
+.cache/

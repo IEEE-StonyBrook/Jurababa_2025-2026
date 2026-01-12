@@ -1,4 +1,4 @@
-# Genejated Cmake Pico project file
+# Jurababa Micromouse - Root CMake Configuration
 
 cmake_minimum_required(VERSION 3.13)
 
@@ -6,18 +6,15 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Initialise pico_sdk from installed location
-# (note this can come from environment, CMake cache etc)
-
 # == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
 if(WIN32)
     set(USERHOME $ENV{USERPROFILE})
 else()
     set(USERHOME $ENV{HOME})
 endif()
-set(sdkVersion 2.1.1)
+set(sdkVersion 2.2.0)
 set(toolchainVersion 14_2_Rel1)
-set(picotoolVersion 2.1.1)
+set(picotoolVersion 2.2.0-a4)
 set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
 if (EXISTS ${picoVscode})
     include(${picoVscode})
@@ -26,7 +23,6 @@ endif()
 set(PICO_BOARD pico CACHE STRING "Board type")
 
 # Pull in Raspberry Pi Pico SDK (must be before project)
-# set(PICO_SDK_PATH "/Users/elvitigalalis/pico-sdk")
 include(pico_sdk_import.cmake)
 
 project(Jurababa C CXX ASM)
@@ -34,42 +30,68 @@ project(Jurababa C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
-# Add executable. Default name is the project name, version 0.1
-# Add all cpp files here
+# Source files organized by layer
+set(DRIVER_SOURCES
+    firmware/drivers/motor.cpp
+    firmware/drivers/encoder.cpp
+    firmware/drivers/imu.cpp
+    firmware/drivers/tof.cpp
+    firmware/drivers/battery.cpp
+)
+
+set(CONTROL_SOURCES
+    firmware/control/pid.cpp
+    firmware/control/profile.cpp
+    firmware/control/drivetrain.cpp
+    firmware/control/robot.cpp
+)
+
+set(MAZE_SOURCES
+    firmware/maze/maze.cpp
+    firmware/maze/mouse.cpp
+)
+
+set(NAVIGATION_SOURCES
+    firmware/navigation/a_star.cpp
+    firmware/navigation/flood_fill.cpp
+    firmware/navigation/path_converter.cpp
+    firmware/navigation/path_utils.cpp
+    firmware/navigation/diagonalizer.cpp
+)
+
+set(APP_SOURCES
+    firmware/app/bluetooth.cpp
+    firmware/app/api.cpp
+)
+
+set(MOTOR_LAB_SOURCES
+    firmware/motor_lab/motor_lab.cpp
+    firmware/motor_lab/profile.cpp
+    firmware/motor_lab/reporter.cpp
+    firmware/motor_lab/settings.cpp
+)
+
+set(COMMON_SOURCES
+    firmware/common/log.cpp
+)
+
+# Add executable with all sources
 add_executable(Jurababa
-    src/Platform/Pico/Robot/Drivetrain.cpp
-    src/Platform/Pico/Robot/Motor.cpp
-    src/Platform/Pico/Robot/Encoder.cpp
-    src/Platform/Pico/Robot/IMU.cpp
-    src/Platform/Pico/Robot/ToF.cpp
-    src/Platform/Pico/Robot/Sensors.cpp
-    src/Platform/Pico/Robot/Robot.cpp
-    src/Platform/Pico/Robot/BatteryMonitor.cpp
-    src/Platform/Pico/BluetoothInterface.cpp
-    src/Common/PIDController.cpp
-    src/Common/MotionProfile.cpp
-    src/Common/LogSystem.cpp
-    src/Maze/InternalMouse.cpp
-    src/Maze/MazeGraph.cpp
-    src/Maze/MazeNode.cpp
-    src/Navigation/AStarSolver.cpp
-    src/Navigation/PathConverter.cpp
-    src/Navigation/FloodFillSolver.cpp
-    src/Navigation/PathUtils.cpp
-    src/Navigation/Diagonalizer.cpp
-    src/Platform/Pico/API.cpp
-    src/Platform/Pico/MotorLab/MotorLabSettings.cpp
-    src/Platform/Pico/MotorLab/MotorLabProfile.cpp
-    src/Platform/Pico/MotorLab/MotorLabReporter.cpp
-    src/Platform/Pico/MotorLab/MotorLab.cpp
-    src/Main.cpp
+    ${DRIVER_SOURCES}
+    ${CONTROL_SOURCES}
+    ${MAZE_SOURCES}
+    ${NAVIGATION_SOURCES}
+    ${APP_SOURCES}
+    ${MOTOR_LAB_SOURCES}
+    ${COMMON_SOURCES}
+    firmware/main.cpp
 )
 
 # Define PICO_BUILD for conditional compilation
 target_compile_definitions(Jurababa PRIVATE PICO_BUILD)
 
 pico_set_program_name(Jurababa "Jurababa")
-pico_set_program_version(Jurababa "0.1")
+pico_set_program_version(Jurababa "1.0")
 
 # Configure UART stdio pins for HM-10 Bluetooth (GP16=TX, GP17=RX)
 target_compile_definitions(Jurababa PRIVATE
@@ -78,34 +100,32 @@ target_compile_definitions(Jurababa PRIVATE
     PICO_DEFAULT_UART_RX_PIN=17
 )
 
-# Modify the below lines to enable/disable output over UART/USB
 # USB only - UART will be handled manually in MotorLab at 9600 baud
 pico_enable_stdio_uart(Jurababa 0)
 pico_enable_stdio_usb(Jurababa 1)
 
 # Add the ToF library to the build
-add_subdirectory(External/vl53l0x_api_rp2040)
+add_subdirectory(third_party/vl53l0x_api_rp2040)
 
-# Add the standard library to the build
+# Link libraries
 target_link_libraries(Jurababa
-        pico_stdlib
-        hardware_gpio
-        hardware_pio
-        hardware_pwm
-        hardware_irq
-        hardware_uart
-        hardware_i2c
-        hardware_adc
-        hardware_spi
-        vl53l0x_api_rp2040
-        pico_multicore
-        )
+    pico_stdlib
+    hardware_gpio
+    hardware_pio
+    hardware_pwm
+    hardware_irq
+    hardware_uart
+    hardware_i2c
+    hardware_adc
+    hardware_spi
+    vl53l0x_api_rp2040
+    pico_multicore
+)
 
-# Add the standard include files to the build
+# Include directories
 target_include_directories(Jurababa PRIVATE
-        ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/Include
-        ${CMAKE_CURRENT_LIST_DIR}/External
+    ${CMAKE_CURRENT_LIST_DIR}/firmware
+    ${CMAKE_CURRENT_LIST_DIR}/third_party
 )
 
 pico_add_extra_outputs(Jurababa)
