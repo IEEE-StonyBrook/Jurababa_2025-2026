@@ -45,19 +45,19 @@ class IMU
     float yawAfterAdding(float degrees_to_add);
 
   private:
-    const int uart_rx_pin_;
+    const int    uart_rx_pin_;
     volatile int packet_buffer_index_;
-    uint8_t packet_buffer_[IMU_PACKET_LEN];
-    bool yaw_data_ready_;
-    float current_yaw_degrees_;
-    float yaw_reset_offset_;
+    uint8_t      packet_buffer_[IMU_PACKET_LEN];
+    bool         yaw_data_ready_;
+    float        current_yaw_degrees_;
+    float        yaw_reset_offset_;
 
     static IMU* imu_instance_;
 
-    void setupUART();
-    void setupInterrupt();
-    void processReceiveData();
-    void parsePacketAndExtractYaw();
+    void        setupUART();
+    void        setupInterrupt();
+    void        processReceiveData();
+    void        parsePacketAndExtractYaw();
     static void uartInterruptHandler();
 };
 

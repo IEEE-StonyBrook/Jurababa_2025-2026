@@ -22,8 +22,7 @@ class ToF;
 class Robot
 {
   public:
-    Robot(Drivetrain* drivetrain, IMU* imu,
-          ToF* left_tof, ToF* front_tof, ToF* right_tof);
+    Robot(Drivetrain* drivetrain, IMU* imu, ToF* left_tof, ToF* front_tof, ToF* right_tof);
 
     void reset();
 
@@ -33,10 +32,10 @@ class Robot
     bool wallRight();
 
     // === IMU Readings ===
-    float yaw();               // Current heading [-180, 180]
-    float omega();             // Angular velocity (deg/s)
-    float yawDelta();          // Change since last call
-    void resetYaw();
+    float yaw();      // Current heading [-180, 180]
+    float omega();    // Angular velocity (deg/s)
+    float yawDelta(); // Change since last call
+    void  resetYaw();
 
     // === ToF Distances ===
     float frontDistance();
@@ -61,7 +60,7 @@ class Robot
     void centerWithWalls();
 
     // === Status Queries ===
-    bool motionComplete() const;
+    bool  motionComplete() const;
     float remainingDistance() const;
     float remainingAngle() const;
 
@@ -97,16 +96,16 @@ class Robot
     void checkSmoothTurnCompletion();
     void checkStoppingCompletion();
 
-    void runPositionControl(float dt);
-    float applySlew(float cmd, float& prev_cmd, float dt);
+    void        runPositionControl(float dt);
+    float       applySlew(float cmd, float& prev_cmd, float dt);
     std::string stateName() const;
 
     // Hardware
     Drivetrain* drivetrain_;
-    IMU* imu_;
-    ToF* left_tof_;
-    ToF* front_tof_;
-    ToF* right_tof_;
+    IMU*        imu_;
+    ToF*        left_tof_;
+    ToF*        front_tof_;
+    ToF*        right_tof_;
 
     // Motion profiling
     Profile forward_profile_;
@@ -117,22 +116,22 @@ class Robot
     PID rotation_controller_;
 
     // Control state
-    float forward_error_ = 0.0f;
-    float rotation_error_ = 0.0f;
-    float prev_forward_error_ = 0.0f;
+    float forward_error_       = 0.0f;
+    float rotation_error_      = 0.0f;
+    float prev_forward_error_  = 0.0f;
     float prev_rotation_error_ = 0.0f;
 
-    float target_forward_vel_mmps_ = 0.0f;
-    float target_angular_vel_degps_ = 0.0f;
+    float target_forward_vel_mmps_    = 0.0f;
+    float target_angular_vel_degps_   = 0.0f;
     float target_forward_accel_mmps2_ = 0.0f;
-    float target_yaw_deg_ = 0.0f;
+    float target_yaw_deg_             = 0.0f;
 
-    float prev_left_volts_ = 0.0f;
+    float prev_left_volts_  = 0.0f;
     float prev_right_volts_ = 0.0f;
 
     // Sensor state (merged from Sensors class)
-    float prev_yaw_ = 0.0f;
-    float omega_degps_ = 0.0f;
+    float prev_yaw_           = 0.0f;
+    float omega_degps_        = 0.0f;
     float last_yaw_for_delta_ = 0.0f;
 
     bool motion_done_ = true;

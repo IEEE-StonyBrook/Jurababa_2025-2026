@@ -3,11 +3,11 @@
 
 #include <cstdint>
 
-#include "quadrature_encoder/QuadratureEncoder.h"
 #include "common/log.h"
 #include "config/config.h"
 #include "hardware/pio.h"
 #include "pico/stdlib.h"
+#include "quadrature_encoder/QuadratureEncoder.h"
 
 /**
  * @brief Quadrature encoder reader using PIO hardware
@@ -42,10 +42,10 @@ class Encoder
     void loadPIOProgram(PIO pio_instance);
 
     const PIO pio_instance_;
-    uint state_machine_;
-    int offset_ticks_;
-    bool invert_direction_;
-    int gpio_pin_;
+    uint      state_machine_;
+    int       offset_ticks_;
+    bool      invert_direction_;
+    int       gpio_pin_;
 };
 
 #endif

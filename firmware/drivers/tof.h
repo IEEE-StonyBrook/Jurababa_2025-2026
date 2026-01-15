@@ -35,7 +35,7 @@ class ToF
     void setupContinuousRanging();
 
     VL53L0X_Dev_t sensor_device_;
-    char sensor_position_;
+    char          sensor_position_;
 };
 
 #endif

@@ -24,12 +24,12 @@ int main()
     LOG_INFO("=== MICROMOUSE COMPETITION SIMULATOR ===\n");
 
     // Initialize 16x16 maze with center goal
-    std::array<int, 2> start = {0, 0};
+    std::array<int, 2>              start = {0, 0};
     std::vector<std::array<int, 2>> goals = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
 
-    Maze maze(MAZE_SIZE, MAZE_SIZE);
+    Maze  maze(MAZE_SIZE, MAZE_SIZE);
     Mouse mouse(start, "n", goals, &maze);
-    API api(&mouse);
+    API   api(&mouse);
     api.run_on_simulator = true;
     api.setUp(start, goals);
 

@@ -18,7 +18,7 @@ namespace PathUtils
 void executePath(API* api, const std::string& lfr_path)
 {
     std::stringstream ss(lfr_path);
-    std::string token;
+    std::string       token;
 
     std::vector<std::string> tokens;
     while (std::getline(ss, token, '#'))
@@ -62,8 +62,7 @@ void setAllExplored(Mouse* mouse)
     }
 }
 
-bool traversePath(API* api, Mouse* mouse,
-                  const std::vector<std::array<int, 2>>& goals,
+bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
                   bool diagonals, bool all_explored, bool avoid_goals)
 {
     Cell* current = mouse->currentCell();
@@ -97,8 +96,7 @@ bool traversePath(API* api, Mouse* mouse,
 
         // Get path from A*
         std::vector<Cell*> cell_path = a_star.cellPath(
-            const_cast<std::vector<std::array<int, 2>>&>(goals),
-            diagonals, !avoid_goals);
+            const_cast<std::vector<std::array<int, 2>>&>(goals), diagonals, !avoid_goals);
 
         if (cell_path.empty())
         {
@@ -109,10 +107,8 @@ bool traversePath(API* api, Mouse* mouse,
         colorPath(api, cell_path);
 
         // Convert to LFR format
-        std::string lfr = PathConverter::buildLFR(
-            mouse->currentCell(),
-            mouse->currentDirectionArray(),
-            cell_path);
+        std::string lfr = PathConverter::buildLFR(mouse->currentCell(),
+                                                  mouse->currentDirectionArray(), cell_path);
 
         LOG_INFO("A* LFR Path: " + lfr);
 
@@ -127,7 +123,7 @@ bool traversePath(API* api, Mouse* mouse,
 
         // Execute step-by-step, re-planning on unexplored cells
         std::stringstream ss(lfr);
-        std::string move;
+        std::string       move;
         while (std::getline(ss, move, '#'))
         {
             if (move.empty())
@@ -138,9 +134,8 @@ bool traversePath(API* api, Mouse* mouse,
 
             if (!current->explored())
             {
-                LOG_DEBUG("[RE-CALC] Hit unexplored cell at (" +
-                          std::to_string(current->x()) + "," +
-                          std::to_string(current->y()) + ")");
+                LOG_DEBUG("[RE-CALC] Hit unexplored cell at (" + std::to_string(current->x()) +
+                          "," + std::to_string(current->y()) + ")");
                 break;
             }
 
@@ -156,8 +151,8 @@ bool traversePath(API* api, Mouse* mouse,
 void detectWalls(API& api, Mouse& mouse)
 {
     Cell* cell = mouse.currentCell();
-    int x = cell->x();
-    int y = cell->y();
+    int   x    = cell->x();
+    int   y    = cell->y();
 
     if (api.wallFront())
     {
@@ -182,4 +177,4 @@ void colorPath(API* api, const std::vector<Cell*>& path)
     }
 }
 
-}  // namespace PathUtils
+} // namespace PathUtils

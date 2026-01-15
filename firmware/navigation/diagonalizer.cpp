@@ -10,8 +10,8 @@ namespace
 std::vector<std::string> splitPath(const std::string& path)
 {
     std::vector<std::string> result;
-    std::stringstream ss(path);
-    std::string token;
+    std::stringstream        ss(path);
+    std::string              token;
     while (std::getline(ss, token, '#'))
     {
         if (!token.empty())
@@ -22,17 +22,28 @@ std::vector<std::string> splitPath(const std::string& path)
 
 MovementBlock parseBlock(const std::string& seq)
 {
-    if (seq == "F") return MovementBlock::F;
-    if (seq == "R") return MovementBlock::R;
-    if (seq == "L") return MovementBlock::L;
-    if (seq == "RF") return MovementBlock::RF;
-    if (seq == "LF") return MovementBlock::LF;
-    if (seq == "FRF") return MovementBlock::FRF;
-    if (seq == "FLF") return MovementBlock::FLF;
-    if (seq == "RFRF") return MovementBlock::RFRF;
-    if (seq == "LFLF") return MovementBlock::LFLF;
-    if (seq == "RFLF") return MovementBlock::RFLF;
-    if (seq == "LFRF") return MovementBlock::LFRF;
+    if (seq == "F")
+        return MovementBlock::F;
+    if (seq == "R")
+        return MovementBlock::R;
+    if (seq == "L")
+        return MovementBlock::L;
+    if (seq == "RF")
+        return MovementBlock::RF;
+    if (seq == "LF")
+        return MovementBlock::LF;
+    if (seq == "FRF")
+        return MovementBlock::FRF;
+    if (seq == "FLF")
+        return MovementBlock::FLF;
+    if (seq == "RFRF")
+        return MovementBlock::RFRF;
+    if (seq == "LFLF")
+        return MovementBlock::LFLF;
+    if (seq == "RFLF")
+        return MovementBlock::RFLF;
+    if (seq == "LFRF")
+        return MovementBlock::LFRF;
     return MovementBlock::DEFAULT;
 }
 
@@ -43,13 +54,12 @@ void appendSequence(const std::string& seq, std::ostringstream& out)
         out << "#";
 }
 
-void executeMove(const std::vector<std::string>& moves, int& i,
-                 std::ostringstream& out, MovementBlock& prev_block,
-                 bool ignore_rflf = false)
+void executeMove(const std::vector<std::string>& moves, int& i, std::ostringstream& out,
+                 MovementBlock& prev_block, bool ignore_rflf = false)
 {
     MovementBlock three_block = MovementBlock::DEFAULT;
-    MovementBlock two_block = MovementBlock::DEFAULT;
-    MovementBlock next_block = MovementBlock::DEFAULT;
+    MovementBlock two_block   = MovementBlock::DEFAULT;
+    MovementBlock next_block  = MovementBlock::DEFAULT;
 
     if (i + 2 < static_cast<int>(moves.size()))
     {
@@ -137,15 +147,15 @@ void executeMove(const std::vector<std::string>& moves, int& i,
     prev_block = next_block;
 }
 
-}  // anonymous namespace
+} // anonymous namespace
 
 std::string Diagonalizer::diagonalize(const std::string& path)
 {
-    std::ostringstream out;
+    std::ostringstream       out;
     std::vector<std::string> moves = splitPath(path);
-    MovementBlock block_type;
-    MovementBlock prev_block = MovementBlock::DEFAULT;
-    int i = 0;
+    MovementBlock            block_type;
+    MovementBlock            prev_block = MovementBlock::DEFAULT;
+    int                      i          = 0;
 
     while (i < static_cast<int>(moves.size()))
     {
@@ -153,49 +163,42 @@ std::string Diagonalizer::diagonalize(const std::string& path)
         if (moves[i] == "F" && (i + 4 < static_cast<int>(moves.size())))
         {
             i++;
-            MovementBlock next = parseBlock(moves[i] + moves[i + 1] +
-                                            moves[i + 2] + moves[i + 3]);
+            MovementBlock next = parseBlock(moves[i] + moves[i + 1] + moves[i + 2] + moves[i + 3]);
 
             if (next == MovementBlock::RFRF || next == MovementBlock::LFLF ||
                 next == MovementBlock::RFLF || next == MovementBlock::LFRF)
             {
-                if (prev_block != MovementBlock::RFRF &&
-                    prev_block != MovementBlock::LFLF &&
-                    prev_block != MovementBlock::RFLF &&
-                    prev_block != MovementBlock::LFRF)
+                if (prev_block != MovementBlock::RFRF && prev_block != MovementBlock::LFLF &&
+                    prev_block != MovementBlock::RFLF && prev_block != MovementBlock::LFRF)
                 {
                     appendSequence("FH#GMF#", out);
                 }
                 else
                 {
-                    if (prev_block == MovementBlock::RFLF ||
-                        prev_block == MovementBlock::LFLF)
+                    if (prev_block == MovementBlock::RFLF || prev_block == MovementBlock::LFLF)
                         appendSequence("L45#F#", out);
-                    else if (prev_block == MovementBlock::LFRF ||
-                             prev_block == MovementBlock::RFRF)
+                    else if (prev_block == MovementBlock::LFRF || prev_block == MovementBlock::RFRF)
                         appendSequence("R45#F#", out);
                 }
                 prev_block = MovementBlock::F;
             }
             else
             {
-                i--;  // Not a forward combo
+                i--; // Not a forward combo
             }
         }
 
         // Try 4-move combo block
         if (i + 3 < static_cast<int>(moves.size()))
         {
-            block_type = parseBlock(moves[i] + moves[i + 1] +
-                                    moves[i + 2] + moves[i + 3]);
+            block_type = parseBlock(moves[i] + moves[i + 1] + moves[i + 2] + moves[i + 3]);
 
             switch (block_type)
             {
                 case MovementBlock::RFLF:
                     if (prev_block == block_type || prev_block == MovementBlock::LFLF)
                         appendSequence("F#", out);
-                    else if (prev_block == MovementBlock::LFRF ||
-                             prev_block == MovementBlock::RFRF)
+                    else if (prev_block == MovementBlock::LFRF || prev_block == MovementBlock::RFRF)
                         appendSequence("R#F#", out);
                     else if (prev_block == MovementBlock::F)
                         appendSequence("R45#F#", out);
@@ -207,8 +210,7 @@ std::string Diagonalizer::diagonalize(const std::string& path)
                 case MovementBlock::LFRF:
                     if (prev_block == block_type || prev_block == MovementBlock::RFRF)
                         appendSequence("F#", out);
-                    else if (prev_block == MovementBlock::RFLF ||
-                             prev_block == MovementBlock::LFLF)
+                    else if (prev_block == MovementBlock::RFLF || prev_block == MovementBlock::LFLF)
                         appendSequence("L#F#", out);
                     else if (prev_block == MovementBlock::F)
                         appendSequence("L45#F#", out);
@@ -220,8 +222,7 @@ std::string Diagonalizer::diagonalize(const std::string& path)
                 case MovementBlock::RFRF:
                     if (prev_block == block_type)
                         appendSequence("R#FH#R#FH#GMF#", out);
-                    else if (prev_block == MovementBlock::RFLF ||
-                             prev_block == MovementBlock::LFLF)
+                    else if (prev_block == MovementBlock::RFLF || prev_block == MovementBlock::LFLF)
                         appendSequence("FH#R#FH#GMF#", out);
                     else if (prev_block == MovementBlock::F)
                         appendSequence("R45#FH#R#FH#GMF#", out);
@@ -233,8 +234,7 @@ std::string Diagonalizer::diagonalize(const std::string& path)
                 case MovementBlock::LFLF:
                     if (prev_block == block_type)
                         appendSequence("L#FH#L#FH#GMF#", out);
-                    else if (prev_block == MovementBlock::LFRF ||
-                             prev_block == MovementBlock::RFRF)
+                    else if (prev_block == MovementBlock::LFRF || prev_block == MovementBlock::RFRF)
                         appendSequence("FH#L#FH#GMF#", out);
                     else if (prev_block == MovementBlock::F)
                         appendSequence("L45#FH#L#FH#GMF#", out);

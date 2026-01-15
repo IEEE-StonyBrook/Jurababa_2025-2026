@@ -12,8 +12,7 @@
 #include "maze/maze.h"
 #include "maze/mouse.h"
 
-API::API(Mouse* mouse)
-    : mouse_(mouse), run_on_simulator(false)
+API::API(Mouse* mouse) : mouse_(mouse), run_on_simulator(false)
 {
 }
 
@@ -197,15 +196,15 @@ void API::arcTurnRight45()
 void API::executeSequence(const std::string& sequence)
 {
     std::istringstream ss(sequence);
-    std::string token;
+    std::string        token;
 
     while (std::getline(ss, token, '#'))
     {
         if (token.empty())
             continue;
 
-        char cmd = std::toupper(token[0]);
-        int value = token.size() > 1 ? std::stoi(token.substr(1)) : 0;
+        char cmd   = std::toupper(token[0]);
+        int  value = token.size() > 1 ? std::stoi(token.substr(1)) : 0;
 
         if (cmd == 'F')
             moveForward(value > 0 ? value : 1);

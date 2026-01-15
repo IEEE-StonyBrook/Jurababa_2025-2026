@@ -56,15 +56,15 @@ class Battery
     bool isLow(float threshold_volts = 6.0f) const;
 
   private:
-    static constexpr int    AVERAGE_SAMPLES = 10;
-    static constexpr float  ADC_MAX         = 4095.0f;
-    static constexpr float  ADC_REF_VOLTAGE = 3.3f;
+    static constexpr int   AVERAGE_SAMPLES = 10;
+    static constexpr float ADC_MAX         = 4095.0f;
+    static constexpr float ADC_REF_VOLTAGE = 3.3f;
 
-    uint8_t  adc_pin_;
-    uint8_t  adc_channel_;
-    float    r1_ohms_;
-    float    r2_ohms_;
-    float    divider_ratio_;
+    uint8_t adc_pin_;
+    uint8_t adc_channel_;
+    float   r1_ohms_;
+    float   r2_ohms_;
+    float   divider_ratio_;
 
     uint16_t raw_readings_[AVERAGE_SAMPLES];
     uint8_t  reading_index_;

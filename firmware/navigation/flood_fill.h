@@ -30,16 +30,16 @@ class FloodFill
     static void explore(Mouse& mouse, API& api, bool diagonals);
 
   private:
-    static int distance_grid_[MAZE_SIZE][MAZE_SIZE];
+    static int       distance_grid_[MAZE_SIZE][MAZE_SIZE];
     static const int INF_DIST = 9999;
 
-    static void initDistanceGrid(Mouse& mouse);
-    static void updateDistances(Mouse& mouse, bool diagonals);
-    static int turnCost(Mouse& mouse, Cell* neighbor);
+    static void  initDistanceGrid(Mouse& mouse);
+    static void  updateDistances(Mouse& mouse, bool diagonals);
+    static int   turnCost(Mouse& mouse, Cell* neighbor);
     static Cell* bestNeighbor(Mouse& mouse, Cell* current, bool diagonals);
-    static void moveToAdjacent(API& api, Mouse& mouse, Cell* target);
-    static void markDeadEnds(Mouse& mouse, API& api, Cell* cell, bool diagonals);
-    static void updateDisplay(API& api);
+    static void  moveToAdjacent(API& api, Mouse& mouse, Cell* target);
+    static void  markDeadEnds(Mouse& mouse, API& api, Cell* cell, bool diagonals);
+    static void  updateDisplay(API& api);
 };
 
 #endif

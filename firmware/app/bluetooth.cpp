@@ -1,24 +1,16 @@
 #include "app/bluetooth.h"
 
-#include <cstring>
 #include <cstdio>
+#include <cstring>
 
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 
 Bluetooth* Bluetooth::instance_ = nullptr;
 
-Bluetooth::Bluetooth(uart_inst_t* uart,
-                     uint32_t baud_rate,
-                     uint8_t tx_pin,
-                     uint8_t rx_pin)
-    : uart_(uart),
-      baud_rate_(baud_rate),
-      tx_pin_(tx_pin),
-      rx_pin_(rx_pin),
-      pending_command_(Command::NONE),
-      last_char_(0),
-      command_ready_(false)
+Bluetooth::Bluetooth(uart_inst_t* uart, uint32_t baud_rate, uint8_t tx_pin, uint8_t rx_pin)
+    : uart_(uart), baud_rate_(baud_rate), tx_pin_(tx_pin), rx_pin_(rx_pin),
+      pending_command_(Command::NONE), last_char_(0), command_ready_(false)
 {
     instance_ = this;
 }
@@ -26,8 +18,8 @@ Bluetooth::Bluetooth(uart_inst_t* uart,
 void Bluetooth::init()
 {
     printf("[BT] Starting Bluetooth init...\n");
-    printf("[BT] UART: %s, Baud: %lu, TX: %d, RX: %d\n",
-           (uart_ == uart0) ? "uart0" : "uart1", baud_rate_, tx_pin_, rx_pin_);
+    printf("[BT] UART: %s, Baud: %lu, TX: %d, RX: %d\n", (uart_ == uart0) ? "uart0" : "uart1",
+           baud_rate_, tx_pin_, rx_pin_);
 
     uint actual_baud = uart_init(uart_, baud_rate_);
     printf("[BT] Actual baud rate: %u\n", actual_baud);
@@ -72,8 +64,8 @@ Bluetooth::Command Bluetooth::command()
     if (!command_ready_)
         return Command::NONE;
 
-    Command cmd = pending_command_;
-    command_ready_ = false;
+    Command cmd      = pending_command_;
+    command_ready_   = false;
     pending_command_ = Command::NONE;
     return cmd;
 }
@@ -103,7 +95,7 @@ void Bluetooth::rxInterruptHandler()
 void Bluetooth::processChar(char c)
 {
     last_char_ = c;
-    uart_putc(uart_, c);  // Echo
+    uart_putc(uart_, c); // Echo
 
     if (c == '\n' || c == '\r')
         return;
@@ -111,11 +103,21 @@ void Bluetooth::processChar(char c)
     // Parse single-character commands (case-insensitive)
     switch (c | 0x20)
     {
-        case 's': pending_command_ = Command::START;   break;
-        case 'h': pending_command_ = Command::HALT;    break;
-        case 'r': pending_command_ = Command::RESET;   break;
-        case 'b': pending_command_ = Command::BATTERY; break;
-        default:  pending_command_ = Command::UNKNOWN; break;
+        case 's':
+            pending_command_ = Command::START;
+            break;
+        case 'h':
+            pending_command_ = Command::HALT;
+            break;
+        case 'r':
+            pending_command_ = Command::RESET;
+            break;
+        case 'b':
+            pending_command_ = Command::BATTERY;
+            break;
+        default:
+            pending_command_ = Command::UNKNOWN;
+            break;
     }
     command_ready_ = true;
 }

@@ -30,7 +30,7 @@ enum class CommandType : uint8_t
 struct CommandPacket
 {
     CommandType type;
-    int32_t param;
+    int32_t     param;
 };
 
 /**
@@ -45,8 +45,7 @@ class CommandHub
     static inline void send(CommandType type, int32_t param = 0)
     {
         uint32_t packed =
-            (static_cast<uint32_t>(type) << 24) |
-            (static_cast<uint32_t>(param) & 0xFFFFFF);
+            (static_cast<uint32_t>(type) << 24) | (static_cast<uint32_t>(param) & 0xFFFFFF);
         multicore_fifo_push_blocking(packed);
     }
 
@@ -61,7 +60,7 @@ class CommandHub
         if (multicore_fifo_rvalid())
         {
             uint32_t packed = multicore_fifo_pop_blocking();
-            out = unpack(packed);
+            out             = unpack(packed);
             return true;
         }
         return false;
@@ -74,7 +73,7 @@ class CommandHub
     static inline CommandPacket unpack(uint32_t packed)
     {
         CommandPacket cmd;
-        cmd.type = static_cast<CommandType>((packed >> 24) & 0xFF);
+        cmd.type    = static_cast<CommandType>((packed >> 24) & 0xFF);
         int32_t raw = static_cast<int32_t>(packed & 0xFFFFFF);
         // Sign-extend 24-bit to 32-bit
         if (raw & 0x800000)

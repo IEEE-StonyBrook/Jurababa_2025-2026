@@ -35,9 +35,7 @@ class Bluetooth
         UNKNOWN
     };
 
-    Bluetooth(uart_inst_t* uart = uart0,
-              uint32_t baud_rate = 9600,
-              uint8_t tx_pin = 0,
+    Bluetooth(uart_inst_t* uart = uart0, uint32_t baud_rate = 9600, uint8_t tx_pin = 0,
               uint8_t rx_pin = 1);
 
     void init();
@@ -46,25 +44,25 @@ class Bluetooth
     void write(const char* data);
     void writeBytes(const uint8_t* data, size_t length);
 
-    bool hasCommand() const;
+    bool    hasCommand() const;
     Command command();
-    char lastChar() const;
-    bool txReady() const;
+    char    lastChar() const;
+    bool    txReady() const;
 
     static Bluetooth* instance_;
 
   private:
     static void rxInterruptHandler();
-    void processChar(char c);
+    void        processChar(char c);
 
     uart_inst_t* uart_;
-    uint32_t baud_rate_;
-    uint8_t tx_pin_;
-    uint8_t rx_pin_;
+    uint32_t     baud_rate_;
+    uint8_t      tx_pin_;
+    uint8_t      rx_pin_;
 
     volatile Command pending_command_;
-    volatile char last_char_;
-    volatile bool command_ready_;
+    volatile char    last_char_;
+    volatile bool    command_ready_;
 };
 
 #endif

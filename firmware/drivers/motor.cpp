@@ -1,9 +1,7 @@
 #include "drivers/motor.h"
 
 Motor::Motor(int gpio_pin_one, int gpio_pin_two, bool invert_direction)
-    : gpio_pin_one_(gpio_pin_one),
-      gpio_pin_two_(gpio_pin_two),
-      invert_direction_(invert_direction)
+    : gpio_pin_one_(gpio_pin_one), gpio_pin_two_(gpio_pin_two), invert_direction_(invert_direction)
 {
     configurePins();
     configurePWM();
@@ -18,7 +16,7 @@ void Motor::configurePins()
 void Motor::configurePWM()
 {
     pwm_slice_number_ = pwm_gpio_to_slice_num(gpio_pin_one_);
-    forward_channel_ = pwm_gpio_to_channel(gpio_pin_one_);
+    forward_channel_  = pwm_gpio_to_channel(gpio_pin_one_);
     backward_channel_ = pwm_gpio_to_channel(gpio_pin_two_);
 
     if (invert_direction_)
@@ -35,13 +33,13 @@ void Motor::configurePWM()
 
 void Motor::applyDuty(float duty_cycle)
 {
-    duty_cycle = std::clamp(duty_cycle, -1.0f, 1.0f);
+    duty_cycle      = std::clamp(duty_cycle, -1.0f, 1.0f);
     bool is_forward = (duty_cycle >= 0.0f);
 
     float pwm_level = std::fabs(duty_cycle) * PWM_WRAP;
-    pwm_level = std::clamp(pwm_level, 0.0f, static_cast<float>(PWM_WRAP));
+    pwm_level       = std::clamp(pwm_level, 0.0f, static_cast<float>(PWM_WRAP));
 
-    int active_channel = is_forward ? forward_channel_ : backward_channel_;
+    int active_channel   = is_forward ? forward_channel_ : backward_channel_;
     int inactive_channel = is_forward ? backward_channel_ : forward_channel_;
 
     pwm_set_chan_level(pwm_slice_number_, active_channel, static_cast<uint16_t>(pwm_level));

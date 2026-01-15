@@ -50,10 +50,14 @@ bool Mouse::canMoveBetween(Cell* from, Cell* to, bool diagonals)
     int dy = to->y() - from->y();
 
     // Cardinal directions
-    if (dx == 0 && dy == 1)  return !from->hasWall('N');
-    if (dx == 1 && dy == 0)  return !from->hasWall('E');
-    if (dx == 0 && dy == -1) return !from->hasWall('S');
-    if (dx == -1 && dy == 0) return !from->hasWall('W');
+    if (dx == 0 && dy == 1)
+        return !from->hasWall('N');
+    if (dx == 1 && dy == 0)
+        return !from->hasWall('E');
+    if (dx == 0 && dy == -1)
+        return !from->hasWall('S');
+    if (dx == -1 && dy == 0)
+        return !from->hasWall('W');
 
     // Diagonals
     if (diagonals)
@@ -93,8 +97,8 @@ std::vector<std::array<int, 2>> Mouse::possibleDirections()
 
 std::string Mouse::directionAsString(const std::array<int, 2>& dir) const
 {
-    const std::vector<std::array<int, 2>> offsets = {
-        {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
+    const std::vector<std::array<int, 2>> offsets = {{0, 1},  {1, 1},   {1, 0},  {1, -1},
+                                                     {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
     for (size_t i = 0; i < offsets.size(); ++i)
     {
         if (offsets[i][0] == dir[0] && offsets[i][1] == dir[1])
@@ -108,7 +112,11 @@ std::string Mouse::directionLeft() const
     int idx = 0;
     for (size_t i = 0; i < dir_names_.size(); i++)
     {
-        if (dir_names_[i] == direction_) { idx = i; break; }
+        if (dir_names_[i] == direction_)
+        {
+            idx = i;
+            break;
+        }
     }
     int left_idx = (idx + 6) % 8;
     return dir_names_[left_idx];
@@ -119,7 +127,11 @@ std::string Mouse::directionRight() const
     int idx = 0;
     for (size_t i = 0; i < dir_names_.size(); i++)
     {
-        if (dir_names_[i] == direction_) { idx = i; break; }
+        if (dir_names_[i] == direction_)
+        {
+            idx = i;
+            break;
+        }
     }
     int right_idx = (idx + 2) % 8;
     return dir_names_[right_idx];
@@ -141,19 +153,25 @@ int Mouse::findDirectionIndex(const std::string& dir) const
 
 void Mouse::setWallLFR(char direction)
 {
-    int half_steps = 0;
-    char lower = tolower(direction);
-    if (lower == 'l') half_steps = -2;
-    if (lower == 'r') half_steps = 2;
+    int  half_steps = 0;
+    char lower      = tolower(direction);
+    if (lower == 'l')
+        half_steps = -2;
+    if (lower == 'r')
+        half_steps = 2;
 
-    std::string dir_str = directionAfterTurn(half_steps);
-    std::array<int, 2> offset = dir_offsets_.at(dir_str);
-    Cell* cell = currentCell();
+    std::string        dir_str = directionAfterTurn(half_steps);
+    std::array<int, 2> offset  = dir_offsets_.at(dir_str);
+    Cell*              cell    = currentCell();
 
-    if (offset[1] == 1)  cell->setWall('N');
-    if (offset[0] == 1)  cell->setWall('E');
-    if (offset[1] == -1) cell->setWall('S');
-    if (offset[0] == -1) cell->setWall('W');
+    if (offset[1] == 1)
+        cell->setWall('N');
+    if (offset[0] == 1)
+        cell->setWall('E');
+    if (offset[1] == -1)
+        cell->setWall('S');
+    if (offset[0] == -1)
+        cell->setWall('W');
 }
 
 void Mouse::setWallNESW(Cell* cell, char direction)
@@ -255,7 +273,7 @@ std::string Mouse::directionAfterTurn(int half_steps)
     if (half_steps == 0)
         return direction_;
 
-    int idx = directionIndex(direction_);
+    int idx     = directionIndex(direction_);
     int new_idx = ((idx + half_steps) % 8 + 8) % 8;
     return dir_names_[new_idx];
 }

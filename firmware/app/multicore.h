@@ -32,17 +32,17 @@ enum class SensorMask : uint32_t
  */
 struct SensorData
 {
-    int32_t left_encoder = 0;
-    int32_t right_encoder = 0;
-    int16_t tof_left_mm = 0;
-    int16_t tof_front_mm = 0;
-    int16_t tof_right_mm = 0;
-    bool wall_left = false;
-    bool wall_front = false;
-    bool wall_right = false;
-    float imu_yaw = 0.0f;
-    uint64_t timestamp_ms = 0;
-    SensorMask valid = SensorMask::ALL;
+    int32_t    left_encoder  = 0;
+    int32_t    right_encoder = 0;
+    int16_t    tof_left_mm   = 0;
+    int16_t    tof_front_mm  = 0;
+    int16_t    tof_right_mm  = 0;
+    bool       wall_left     = false;
+    bool       wall_front    = false;
+    bool       wall_right    = false;
+    float      imu_yaw       = 0.0f;
+    uint64_t   timestamp_ms  = 0;
+    SensorMask valid         = SensorMask::ALL;
 };
 
 /**
@@ -61,7 +61,7 @@ class SensorHub
         mutex_enter_blocking(&mutex());
 
         SensorData& back = buffers_[backIndex()];
-        back = buffers_[active_];  // Start from current for partial updates
+        back             = buffers_[active_]; // Start from current for partial updates
 
         SensorMask mask = data.valid;
         if (mask == SensorMask::ALL)
@@ -91,7 +91,7 @@ class SensorHub
         }
 
         back.timestamp_ms = data.timestamp_ms;
-        back.valid = mask;
+        back.valid        = mask;
         flipBuffers();
 
         mutex_exit(&mutex());
@@ -99,16 +99,16 @@ class SensorHub
 
     static inline void snapshot(SensorData& out)
     {
-        uint8_t idx = active_;  // Atomic on RP2040
-        out = buffers_[idx];
+        uint8_t idx = active_; // Atomic on RP2040
+        out         = buffers_[idx];
     }
 
   private:
-    static inline SensorData buffers_[2] = {};
-    static inline volatile uint8_t active_ = 0;
+    static inline SensorData       buffers_[2] = {};
+    static inline volatile uint8_t active_     = 0;
 
     static inline uint8_t backIndex() { return active_ ^ 1; }
-    static inline void flipBuffers() { active_ ^= 1; }
+    static inline void    flipBuffers() { active_ ^= 1; }
 
     static inline mutex_t& mutex()
     {

@@ -15,11 +15,11 @@ class Cell
   public:
     Cell(int x, int y);
 
-    int x() const;
-    int y() const;
+    int  x() const;
+    int  y() const;
     bool explored() const;
-    bool hasWall(char direction) const;  // 'N', 'E', 'S', 'W'
-    int wallCount() const;
+    bool hasWall(char direction) const; // 'N', 'E', 'S', 'W'
+    int  wallCount() const;
 
     void markExplored();
     void setNeighbor(Cell* cell, char direction);
@@ -29,19 +29,19 @@ class Cell
 
     // Pathfinding state (used by flood fill, A*)
     Cell* parent;
-    bool processed;
-    void clearPathfindingState();
+    bool  processed;
+    void  clearPathfindingState();
 
   private:
     void addWall(char direction);
 
-    int x_, y_;
+    int   x_, y_;
     Cell* north_;
     Cell* east_;
     Cell* south_;
     Cell* west_;
-    bool wall_north_, wall_east_, wall_south_, wall_west_;
-    bool explored_;
+    bool  wall_north_, wall_east_, wall_south_, wall_west_;
+    bool  explored_;
 };
 
 /**
@@ -53,11 +53,11 @@ class Maze
     Maze(int rows, int cols);
     ~Maze();
 
-    Cell* cell(int x, int y);
+    Cell*              cell(int x, int y);
     std::vector<Cell*> neighbors(Cell* cell, bool include_diagonal = false);
 
-    int width() const;
-    int height() const;
+    int  width() const;
+    int  height() const;
     void printASCII();
 
   private:

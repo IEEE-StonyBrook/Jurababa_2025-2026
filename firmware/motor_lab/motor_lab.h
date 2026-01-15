@@ -14,11 +14,11 @@ class Motor;
 class Battery;
 
 constexpr int MOTORLAB_INPUT_BUFFER_SIZE = 64;
-constexpr int MOTORLAB_MAX_ARGC = 8;
+constexpr int MOTORLAB_MAX_ARGC          = 8;
 
 struct MotorLabArgs
 {
-    int argc;
+    int   argc;
     char* argv[MOTORLAB_MAX_ARGC];
 };
 
@@ -34,13 +34,11 @@ class MotorLab
 {
   public:
     // Standalone mode: direct motor/encoder access
-    MotorLab(Motor* left_motor, Motor* right_motor,
-             Encoder* left_encoder, Encoder* right_encoder,
+    MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
              Battery* battery);
 
     // Integrated mode: use Drivetrain
-    MotorLab(Drivetrain* drivetrain,
-             Encoder* left_encoder, Encoder* right_encoder,
+    MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right_encoder,
              Battery* battery);
 
     void init();
@@ -57,15 +55,15 @@ class MotorLab
     float batteryVoltage() const;
     float encoderPositionMM() const;
     float encoderVelocityMMps() const;
-    void resetEncoders();
-    void updateEncoders(float dt);
+    void  resetEncoders();
+    void  updateEncoders(float dt);
 
     // Test routines
     void runOpenLoopTrial(float max_voltage = 6.0f, float step_voltage = 0.5f,
                           uint32_t settle_time_ms = 500);
     void runStepTrial(float step_voltage = 3.0f, uint32_t duration_ms = 1000);
-    void runMoveTrial(float distance = 90.0f, float top_speed = 200.0f,
-                      float acceleration = 500.0f, int mode = 2);
+    void runMoveTrial(float distance = 90.0f, float top_speed = 200.0f, float acceleration = 500.0f,
+                      int mode = 2);
 
     // CLI commands
     void cmdHelp();
@@ -93,33 +91,33 @@ class MotorLab
     void cmdExport();
 
   private:
-    Motor* left_motor_;
-    Motor* right_motor_;
-    Encoder* left_encoder_;
-    Encoder* right_encoder_;
-    Battery* battery_;
+    Motor*      left_motor_;
+    Motor*      right_motor_;
+    Encoder*    left_encoder_;
+    Encoder*    right_encoder_;
+    Battery*    battery_;
     Drivetrain* drivetrain_;
 
     MotorLabSettings settings_;
-    MotorLabProfile profile_;
+    MotorLabProfile  profile_;
     MotorLabReporter reporter_;
 
     char input_buffer_[MOTORLAB_INPUT_BUFFER_SIZE];
-    int input_index_;
+    int  input_index_;
     bool echo_enabled_;
 
     int32_t prev_left_ticks_;
     int32_t prev_right_ticks_;
-    float left_velocity_mmps_;
-    float right_velocity_mmps_;
+    float   left_velocity_mmps_;
+    float   right_velocity_mmps_;
 
-    int readSerialLine();
+    int          readSerialLine();
     MotorLabArgs tokenize();
-    void executeCommand(const MotorLabArgs& args);
-    void clearInput();
-    void printPrompt();
-    bool parseFloat(const MotorLabArgs& args, int index,
-                    float min_val, float max_val, float& result);
+    void         executeCommand(const MotorLabArgs& args);
+    void         clearInput();
+    void         printPrompt();
+    bool         parseFloat(const MotorLabArgs& args, int index, float min_val, float max_val,
+                            float& result);
 };
 
 #endif

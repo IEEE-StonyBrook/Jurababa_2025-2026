@@ -32,8 +32,7 @@ void executePath(API* api, const std::string& lfr_path);
  * @param avoid_goals Don't pass through goal cells
  * @return True if goal reached successfully
  */
-bool traversePath(API* api, Mouse* mouse,
-                  const std::vector<std::array<int, 2>>& goals,
+bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
                   bool diagonals, bool all_explored, bool avoid_goals);
 
 /**
@@ -56,6 +55,6 @@ void detectWalls(API& api, Mouse& mouse);
  */
 void colorPath(API* api, const std::vector<Cell*>& path);
 
-}  // namespace PathUtils
+} // namespace PathUtils
 
 #endif

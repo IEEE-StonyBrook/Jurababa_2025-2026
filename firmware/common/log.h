@@ -25,44 +25,44 @@ class Log
     static bool isBluetoothEnabled();
 
   private:
-    static LogPriority  print_priority_level_;
-    static Bluetooth*   bluetooth_;
-    static bool         bluetooth_enabled_;
+    static LogPriority print_priority_level_;
+    static Bluetooth*  bluetooth_;
+    static bool        bluetooth_enabled_;
 };
 
-#define LOG_DEBUG(msg)                                                         \
-    {                                                                          \
-        std::ostringstream ss;                                                 \
-        ss << msg;                                                             \
-        Log::message(LogPriority::DEBUG, ss.str());                            \
+#define LOG_DEBUG(msg)                                                                             \
+    {                                                                                              \
+        std::ostringstream ss;                                                                     \
+        ss << msg;                                                                                 \
+        Log::message(LogPriority::DEBUG, ss.str());                                                \
     }
 
-#define LOG_INFO(msg)                                                          \
-    {                                                                          \
-        std::ostringstream ss;                                                 \
-        ss << msg;                                                             \
-        Log::message(LogPriority::INFO, ss.str());                             \
+#define LOG_INFO(msg)                                                                              \
+    {                                                                                              \
+        std::ostringstream ss;                                                                     \
+        ss << msg;                                                                                 \
+        Log::message(LogPriority::INFO, ss.str());                                                 \
     }
 
-#define LOG_WARNING(msg)                                                       \
-    {                                                                          \
-        std::ostringstream ss;                                                 \
-        ss << msg;                                                             \
-        Log::message(LogPriority::WARN, ss.str());                             \
+#define LOG_WARNING(msg)                                                                           \
+    {                                                                                              \
+        std::ostringstream ss;                                                                     \
+        ss << msg;                                                                                 \
+        Log::message(LogPriority::WARN, ss.str());                                                 \
     }
 
-#define LOG_ERROR(msg)                                                         \
-    {                                                                          \
-        std::ostringstream ss;                                                 \
-        ss << msg;                                                             \
-        Log::message(LogPriority::ERROR, ss.str());                            \
+#define LOG_ERROR(msg)                                                                             \
+    {                                                                                              \
+        std::ostringstream ss;                                                                     \
+        ss << msg;                                                                                 \
+        Log::message(LogPriority::ERROR, ss.str());                                                \
     }
 
-#define LOG_FATAL(msg)                                                         \
-    {                                                                          \
-        std::ostringstream ss;                                                 \
-        ss << msg;                                                             \
-        Log::message(LogPriority::FATAL, ss.str());                            \
+#define LOG_FATAL(msg)                                                                             \
+    {                                                                                              \
+        std::ostringstream ss;                                                                     \
+        ss << msg;                                                                                 \
+        Log::message(LogPriority::FATAL, ss.str());                                                \
     }
 
 #endif

@@ -3,26 +3,23 @@
 #include "common/log.h"
 #include "maze/maze.h"
 
-Cell* PathConverter::current_cell_ = nullptr;
+Cell*              PathConverter::current_cell_    = nullptr;
 std::array<int, 2> PathConverter::current_heading_ = {0, 1};
 
-std::string PathConverter::buildLFR(Cell* start_cell,
-                                    std::array<int, 2> start_heading,
+std::string PathConverter::buildLFR(Cell* start_cell, std::array<int, 2> start_heading,
                                     const std::vector<Cell*>& path)
 {
     std::string lfr;
     if (path.empty())
         return lfr;
 
-    current_cell_ = start_cell;
+    current_cell_    = start_cell;
     current_heading_ = start_heading;
 
     for (Cell* next : path)
     {
-        std::array<int, 2> needed = {
-            next->x() - current_cell_->x(),
-            next->y() - current_cell_->y()
-        };
+        std::array<int, 2> needed = {next->x() - current_cell_->x(),
+                                     next->y() - current_cell_->y()};
         lfr += movesForHeadingChange(current_heading_, needed);
         current_cell_ = next;
     }
@@ -30,8 +27,7 @@ std::string PathConverter::buildLFR(Cell* start_cell,
     return lfr;
 }
 
-std::string PathConverter::movesForHeadingChange(std::array<int, 2> from,
-                                                 std::array<int, 2> to)
+std::string PathConverter::movesForHeadingChange(std::array<int, 2> from, std::array<int, 2> to)
 {
     // Cardinal only - no diagonal starting position
     if (from[0] != 0 && from[1] != 0)
@@ -59,24 +55,23 @@ std::string PathConverter::movesForHeadingChange(std::array<int, 2> from,
     }
 
     // Diagonal target - decompose into vertical then horizontal
-    std::array<int, 2> vertical = {0, to[1]};
+    std::array<int, 2> vertical   = {0, to[1]};
     std::array<int, 2> horizontal = {to[0], 0};
-    std::string moves;
+    std::string        moves;
     moves += cardinalMoves(from, vertical);
     moves += cardinalMoves(vertical, horizontal);
     current_heading_ = horizontal;
     return moves;
 }
 
-std::string PathConverter::cardinalMoves(std::array<int, 2> from,
-                                         std::array<int, 2> to)
+std::string PathConverter::cardinalMoves(std::array<int, 2> from, std::array<int, 2> to)
 {
     const std::vector<std::array<int, 2>> dirs = {
-        {0, 1}, {1, 0}, {0, -1}, {-1, 0}  // N, E, S, W
+        {0, 1}, {1, 0}, {0, -1}, {-1, 0} // N, E, S, W
     };
 
     int from_idx = findDirectionIndex(dirs, from);
-    int to_idx = findDirectionIndex(dirs, to);
+    int to_idx   = findDirectionIndex(dirs, to);
 
     if (from_idx == -1 || to_idx == -1)
     {
@@ -89,17 +84,21 @@ std::string PathConverter::cardinalMoves(std::array<int, 2> from,
 
     switch (turns)
     {
-        case 0: return "F#";
-        case 1: return "R#F#";
-        case 2: return "R#R#F#";
-        case 3: return "L#F#";
+        case 0:
+            return "F#";
+        case 1:
+            return "R#F#";
+        case 2:
+            return "R#R#F#";
+        case 3:
+            return "L#F#";
     }
 
     return "";
 }
 
 int PathConverter::findDirectionIndex(const std::vector<std::array<int, 2>>& dirs,
-                                      std::array<int, 2> dir)
+                                      std::array<int, 2>                     dir)
 {
     for (size_t i = 0; i < dirs.size(); i++)
     {

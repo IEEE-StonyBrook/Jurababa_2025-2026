@@ -3,29 +3,23 @@
 #include <cmath>
 
 MotorLabProfile::MotorLabProfile()
-    : state_(MotorLabProfileState::IDLE),
-      target_distance_(0.0f),
-      top_speed_(0.0f),
-      final_speed_(0.0f),
-      acceleration_(0.0f),
-      position_(0.0f),
-      speed_(0.0f),
-      direction_(1.0f)
+    : state_(MotorLabProfileState::IDLE), target_distance_(0.0f), top_speed_(0.0f),
+      final_speed_(0.0f), acceleration_(0.0f), position_(0.0f), speed_(0.0f), direction_(1.0f)
 {
 }
 
 void MotorLabProfile::start(float distance, float top_speed, float acceleration, float final_speed)
 {
     // Determine direction
-    direction_ = (distance >= 0.0f) ? 1.0f : -1.0f;
+    direction_       = (distance >= 0.0f) ? 1.0f : -1.0f;
     target_distance_ = std::fabs(distance);
-    top_speed_ = std::fabs(top_speed);
-    final_speed_ = std::fabs(final_speed);
-    acceleration_ = std::fabs(acceleration);
+    top_speed_       = std::fabs(top_speed);
+    final_speed_     = std::fabs(final_speed);
+    acceleration_    = std::fabs(acceleration);
 
     // Reset runtime state
     position_ = 0.0f;
-    speed_ = 0.0f;
+    speed_    = 0.0f;
 
     // Start accelerating
     state_ = MotorLabProfileState::ACCELERATING;
@@ -43,8 +37,8 @@ void MotorLabProfile::update(float dt)
     float remaining = target_distance_ - position_;
 
     // Margin to ensure we actually stop (from UKMARS)
-    const float STOP_MARGIN = 5.0f;
-    float braking_threshold = brakingDistance() + STOP_MARGIN;
+    const float STOP_MARGIN       = 5.0f;
+    float       braking_threshold = brakingDistance() + STOP_MARGIN;
 
     switch (state_)
     {
@@ -77,9 +71,9 @@ void MotorLabProfile::update(float dt)
             }
             if (remaining <= 0.0f || (final_speed_ == 0.0f && speed_ <= 0.0f))
             {
-                speed_ = final_speed_;
+                speed_    = final_speed_;
                 position_ = target_distance_;
-                state_ = MotorLabProfileState::FINISHED;
+                state_    = MotorLabProfileState::FINISHED;
             }
             break;
 
@@ -131,8 +125,8 @@ float MotorLabProfile::acceleration() const
 
 void MotorLabProfile::reset()
 {
-    state_ = MotorLabProfileState::IDLE;
-    position_ = 0.0f;
-    speed_ = 0.0f;
+    state_           = MotorLabProfileState::IDLE;
+    position_        = 0.0f;
+    speed_           = 0.0f;
     target_distance_ = 0.0f;
 }

@@ -28,7 +28,8 @@ class Profile
      * @param acceleration Acceleration/deceleration rate
      * @param initial_position Starting position
      */
-    void start(float target_distance, float max_velocity, float acceleration, float initial_position);
+    void start(float target_distance, float max_velocity, float acceleration,
+               float initial_position);
 
     /**
      * @brief Update profile based on current position

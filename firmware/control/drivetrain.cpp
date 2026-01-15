@@ -5,14 +5,10 @@
 
 #include "config/config.h"
 
-Drivetrain::Drivetrain(Motor* left_motor, Motor* right_motor,
-                       Encoder* left_encoder, Encoder* right_encoder,
-                       Battery* battery)
-    : left_motor_(left_motor),
-      right_motor_(right_motor),
-      left_encoder_(left_encoder),
-      right_encoder_(right_encoder),
-      battery_(battery)
+Drivetrain::Drivetrain(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
+                       Encoder* right_encoder, Battery* battery)
+    : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
+      right_encoder_(right_encoder), battery_(battery)
 {
 }
 
@@ -21,20 +17,20 @@ void Drivetrain::reset()
     left_encoder_->reset();
     right_encoder_->reset();
 
-    prev_left_ticks_ = left_encoder_->ticks();
+    prev_left_ticks_  = left_encoder_->ticks();
     prev_right_ticks_ = right_encoder_->ticks();
 
-    left_velocity_mmps_ = 0.0f;
+    left_velocity_mmps_  = 0.0f;
     right_velocity_mmps_ = 0.0f;
 
-    last_left_pos_mm_ = 0.0f;
+    last_left_pos_mm_  = 0.0f;
     last_right_pos_mm_ = 0.0f;
 }
 
 float Drivetrain::position(WheelSide side)
 {
-    bool is_left = (side == WheelSide::LEFT);
-    int tick_count = is_left ? left_encoder_->ticks() : right_encoder_->ticks();
+    bool is_left    = (side == WheelSide::LEFT);
+    int  tick_count = is_left ? left_encoder_->ticks() : right_encoder_->ticks();
     return tick_count * MM_PER_TICK;
 }
 
@@ -45,10 +41,10 @@ float Drivetrain::velocity(WheelSide side)
 
 float Drivetrain::delta(WheelSide side)
 {
-    float current_pos = position(side);
-    float& last_pos = (side == WheelSide::LEFT) ? last_left_pos_mm_ : last_right_pos_mm_;
-    float d = current_pos - last_pos;
-    last_pos = current_pos;
+    float  current_pos = position(side);
+    float& last_pos    = (side == WheelSide::LEFT) ? last_left_pos_mm_ : last_right_pos_mm_;
+    float  d           = current_pos - last_pos;
+    last_pos           = current_pos;
     return d;
 }
 
@@ -77,18 +73,19 @@ float Drivetrain::feedforward(WheelSide side, float speed_mmps, float accel_mmps
 
 void Drivetrain::update(float dt)
 {
-    if (dt < DRIVETRAIN_MIN_DT) return;
+    if (dt < DRIVETRAIN_MIN_DT)
+        return;
 
-    int32_t curr_left = left_encoder_->ticks();
+    int32_t curr_left  = left_encoder_->ticks();
     int32_t curr_right = right_encoder_->ticks();
 
-    int32_t d_left = curr_left - prev_left_ticks_;
+    int32_t d_left  = curr_left - prev_left_ticks_;
     int32_t d_right = curr_right - prev_right_ticks_;
 
-    prev_left_ticks_ = curr_left;
+    prev_left_ticks_  = curr_left;
     prev_right_ticks_ = curr_right;
 
-    left_velocity_mmps_ = (d_left * MM_PER_TICK) / dt;
+    left_velocity_mmps_  = (d_left * MM_PER_TICK) / dt;
     right_velocity_mmps_ = (d_right * MM_PER_TICK) / dt;
 
     if (left_velocity_mmps_ > DRIVETRAIN_MAX_VELOCITY_MMPS ||

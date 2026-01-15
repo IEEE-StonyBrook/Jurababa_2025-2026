@@ -31,18 +31,18 @@ class MotorLabProfile
     float acceleration() const;
     float brakingDistance() const;
 
-    bool finished() const { return state_ == MotorLabProfileState::FINISHED; }
+    bool                 finished() const { return state_ == MotorLabProfileState::FINISHED; }
     MotorLabProfileState state() const { return state_; }
 
   private:
     MotorLabProfileState state_;
-    float target_distance_;
-    float top_speed_;
-    float final_speed_;
-    float acceleration_;
-    float position_;
-    float speed_;
-    float direction_;
+    float                target_distance_;
+    float                top_speed_;
+    float                final_speed_;
+    float                acceleration_;
+    float                position_;
+    float                speed_;
+    float                direction_;
 };
 
 #endif

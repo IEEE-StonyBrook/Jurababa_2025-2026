@@ -1,7 +1,6 @@
 #include "control/pid.h"
 
-PID::PID(float kp, float ki, float kd)
-    : kp_(kp), ki_(ki), kd_(kd)
+PID::PID(float kp, float ki, float kd) : kp_(kp), ki_(ki), kd_(kd)
 {
 }
 
@@ -17,7 +16,7 @@ float PID::compute(float error, float dt)
 
     if (!has_prev_error_)
     {
-        prev_error_ = error;
+        prev_error_     = error;
         has_prev_error_ = true;
     }
 
@@ -30,15 +29,15 @@ float PID::compute(float error, float dt)
     float p_term = kp_ * error;
 
     integral_ += error * dt;
-    integral_ = clampAbs(integral_, integral_limit_);
+    integral_    = clampAbs(integral_, integral_limit_);
     float i_term = ki_ * integral_;
 
     float derivative = (error - prev_error_) / dt;
-    prev_error_ = error;
+    prev_error_      = error;
 
     derivative = clampAbs(derivative, derivative_limit_);
-    filtered_derivative_ = derivative_alpha_ * filtered_derivative_ +
-                          (1.0f - derivative_alpha_) * derivative;
+    filtered_derivative_ =
+        derivative_alpha_ * filtered_derivative_ + (1.0f - derivative_alpha_) * derivative;
     float d_term = kd_ * filtered_derivative_;
 
     return clampAbs(p_term + i_term + d_term, output_limit_);
@@ -59,7 +58,7 @@ void PID::setDeadband(float threshold)
 void PID::setIntegralLimit(float limit)
 {
     integral_limit_ = (limit < 0.0f) ? 0.0f : limit;
-    integral_ = clampAbs(integral_, integral_limit_);
+    integral_       = clampAbs(integral_, integral_limit_);
 }
 
 void PID::setOutputLimit(float limit)
@@ -78,9 +77,9 @@ void PID::setDerivativeFilterAlpha(float alpha)
 
 void PID::reset()
 {
-    integral_ = 0.0f;
-    prev_error_ = 0.0f;
-    has_prev_error_ = false;
+    integral_            = 0.0f;
+    prev_error_          = 0.0f;
+    has_prev_error_      = false;
     filtered_derivative_ = 0.0f;
 }
 

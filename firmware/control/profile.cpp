@@ -5,17 +5,9 @@ static constexpr float DEFAULT_POSITION_TOLERANCE = 2.0f;
 static constexpr float DEFAULT_VELOCITY_TOLERANCE = 30.0f;
 
 Profile::Profile()
-    : state_(State::Idle),
-      target_distance_(0.0f),
-      max_velocity_(0.0f),
-      acceleration_(0.0f),
-      initial_position_(0.0f),
-      current_velocity_(0.0f),
-      current_acceleration_(0.0f),
-      accel_distance_(0.0f),
-      decel_distance_(0.0f),
-      cruise_distance_(0.0f),
-      cruise_velocity_(0.0f),
+    : state_(State::Idle), target_distance_(0.0f), max_velocity_(0.0f), acceleration_(0.0f),
+      initial_position_(0.0f), current_velocity_(0.0f), current_acceleration_(0.0f),
+      accel_distance_(0.0f), decel_distance_(0.0f), cruise_distance_(0.0f), cruise_velocity_(0.0f),
       position_tolerance_(DEFAULT_POSITION_TOLERANCE),
       velocity_tolerance_(DEFAULT_VELOCITY_TOLERANCE)
 {
@@ -36,7 +28,7 @@ void Profile::start(float target_distance, float max_velocity, float acceleratio
 
     if (target_distance_ > position_tolerance_)
     {
-        state_               = State::Accelerating;
+        state_                = State::Accelerating;
         current_acceleration_ = acceleration_;
     }
     else
@@ -51,8 +43,8 @@ void Profile::calculateProfileParameters()
 
     if (2.0f * dist_to_max_vel <= target_distance_)
     {
-        accel_distance_ = dist_to_max_vel;
-        decel_distance_ = dist_to_max_vel;
+        accel_distance_  = dist_to_max_vel;
+        decel_distance_  = dist_to_max_vel;
         cruise_distance_ = target_distance_ - (accel_distance_ + decel_distance_);
         cruise_velocity_ = max_velocity_;
     }
@@ -169,10 +161,10 @@ Profile::State Profile::state() const
 
 void Profile::reset()
 {
-    state_               = State::Idle;
+    state_                = State::Idle;
     target_distance_      = 0.0f;
     max_velocity_         = 0.0f;
-    acceleration_        = 0.0f;
+    acceleration_         = 0.0f;
     initial_position_     = 0.0f;
     current_velocity_     = 0.0f;
     current_acceleration_ = 0.0f;

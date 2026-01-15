@@ -30,7 +30,7 @@ void FloodFill::updateDistances(Mouse& mouse, bool diagonals)
         }
     }
 
-    std::queue<Cell*> queue;
+    std::queue<Cell*>         queue;
     std::unordered_set<Cell*> in_queue;
 
     // Find frontier cells (unexplored non-goal cells reachable from explored)
@@ -49,8 +49,7 @@ void FloodFill::updateDistances(Mouse& mouse, bool diagonals)
 
             for (Cell* neighbor : mouse.cellNeighbors(cell, diagonals))
             {
-                if (neighbor->explored() &&
-                    mouse.canMoveBetween(neighbor, cell, diagonals))
+                if (neighbor->explored() && mouse.canMoveBetween(neighbor, cell, diagonals))
                 {
                     distance_grid_[x][y] = 0;
                     queue.push(cell);
@@ -66,8 +65,8 @@ void FloodFill::updateDistances(Mouse& mouse, bool diagonals)
     {
         Cell* cell = queue.front();
         queue.pop();
-        int x = cell->x();
-        int y = cell->y();
+        int x    = cell->x();
+        int y    = cell->y();
         int dist = distance_grid_[x][y];
 
         for (Cell* neighbor : mouse.cellNeighbors(cell, diagonals))
@@ -79,8 +78,8 @@ void FloodFill::updateDistances(Mouse& mouse, bool diagonals)
             if (!neighbor->explored())
                 continue;
 
-            int nx = neighbor->x();
-            int ny = neighbor->y();
+            int nx       = neighbor->x();
+            int ny       = neighbor->y();
             int new_dist = dist + 1;
 
             if (new_dist < distance_grid_[nx][ny])
@@ -96,24 +95,26 @@ void FloodFill::updateDistances(Mouse& mouse, bool diagonals)
 int FloodFill::turnCost(Mouse& mouse, Cell* neighbor)
 {
     Cell* current = mouse.currentCell();
-    int dx = neighbor->x() - current->x();
-    int dy = neighbor->y() - current->y();
+    int   dx      = neighbor->x() - current->x();
+    int   dy      = neighbor->y() - current->y();
 
     std::array<int, 2> dir = mouse.currentDirectionArray();
-    int dot = dir[0] * dx + dir[1] * dy;
+    int                dot = dir[0] * dx + dir[1] * dy;
 
-    if (dot > 0) return 0;  // Straight
-    if (dot == 0) return 1; // 90 turn
-    return 2;               // 180 turn
+    if (dot > 0)
+        return 0; // Straight
+    if (dot == 0)
+        return 1; // 90 turn
+    return 2;     // 180 turn
 }
 
 Cell* FloodFill::bestNeighbor(Mouse& mouse, Cell* current, bool diagonals)
 {
-    Cell* best_unexplored = nullptr;
-    int best_unexplored_turn = 3;
+    Cell* best_unexplored      = nullptr;
+    int   best_unexplored_turn = 3;
 
-    Cell* best_explored = nullptr;
-    int best_explored_score = INF_DIST + 3;
+    Cell* best_explored       = nullptr;
+    int   best_explored_score = INF_DIST + 3;
 
     for (Cell* neighbor : mouse.cellNeighbors(current, diagonals))
     {
@@ -131,20 +132,20 @@ Cell* FloodFill::bestNeighbor(Mouse& mouse, Cell* current, bool diagonals)
             if (turn < best_unexplored_turn)
             {
                 best_unexplored_turn = turn;
-                best_unexplored = neighbor;
+                best_unexplored      = neighbor;
             }
         }
         else
         {
-            int nx = neighbor->x();
-            int ny = neighbor->y();
-            int dist = distance_grid_[nx][ny];
+            int nx    = neighbor->x();
+            int ny    = neighbor->y();
+            int dist  = distance_grid_[nx][ny];
             int score = dist + turn;
 
             if (score < best_explored_score)
             {
                 best_explored_score = score;
-                best_explored = neighbor;
+                best_explored       = neighbor;
             }
         }
     }
@@ -162,12 +163,12 @@ Cell* FloodFill::bestNeighbor(Mouse& mouse, Cell* current, bool diagonals)
 void FloodFill::moveToAdjacent(API& api, Mouse& mouse, Cell* target)
 {
     Cell* current = mouse.currentCell();
-    int dx = target->x() - current->x();
-    int dy = target->y() - current->y();
+    int   dx      = target->x() - current->x();
+    int   dy      = target->y() - current->y();
 
-    std::array<int, 2> dir = mouse.currentDirectionArray();
-    int dot = dir[0] * dx + dir[1] * dy;
-    int cross = dir[0] * dy - dir[1] * dx;
+    std::array<int, 2> dir   = mouse.currentDirectionArray();
+    int                dot   = dir[0] * dx + dir[1] * dy;
+    int                cross = dir[0] * dy - dir[1] * dx;
 
     if (dot > 0)
     {
@@ -237,7 +238,7 @@ void FloodFill::explore(Mouse& mouse, API& api, bool diagonals)
     updateDistances(mouse, diagonals);
     updateDisplay(api);
 
-    int moves = 0;
+    int       moves     = 0;
     const int MAX_MOVES = 1000;
 
     while (moves < MAX_MOVES)

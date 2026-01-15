@@ -1,13 +1,13 @@
 #include "motor_lab/motor_lab.h"
 
 #include "config/config.h"
+#include "control/drivetrain.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
 #include "drivers/motor.h"
-#include "control/drivetrain.h"
 
-#include "pico/stdlib.h"
 #include "hardware/uart.h"
+#include "pico/stdlib.h"
 
 #include <cctype>
 #include <cmath>
@@ -28,9 +28,8 @@ static const char* MOTORLAB_VERSION = "MOTORLAB v1.0 (Jurababa)";
 MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                    Encoder* right_encoder, Battery* battery)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
-      right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr),
-      reporter_(10), input_index_(0), echo_enabled_(true),
-      prev_left_ticks_(0), prev_right_ticks_(0),
+      right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
+      input_index_(0), echo_enabled_(true), prev_left_ticks_(0), prev_right_ticks_(0),
       left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f)
 {
     clearInput();
@@ -40,9 +39,8 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
 MotorLab::MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right_encoder,
                    Battery* battery)
     : left_motor_(nullptr), right_motor_(nullptr), left_encoder_(left_encoder),
-      right_encoder_(right_encoder), battery_(battery), drivetrain_(drivetrain),
-      reporter_(10), input_index_(0), echo_enabled_(true),
-      prev_left_ticks_(0), prev_right_ticks_(0),
+      right_encoder_(right_encoder), battery_(battery), drivetrain_(drivetrain), reporter_(10),
+      input_index_(0), echo_enabled_(true), prev_left_ticks_(0), prev_right_ticks_(0),
       left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f)
 {
     clearInput();
@@ -289,8 +287,7 @@ void MotorLab::runStepTrial(float step_voltage, uint32_t duration_ms)
 
         if (reporter_.isTimeToReport(now))
         {
-            reporter_.reportStep(now, step_voltage, encoderVelocityMMps(),
-                                 encoderPositionMM());
+            reporter_.reportStep(now, step_voltage, encoderVelocityMMps(), encoderPositionMM());
         }
 
         sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
@@ -436,13 +433,13 @@ int MotorLab::readSerialLine()
     while (true)
     {
         // Check both USB and UART for input
-        int c = getchar_timeout_us(0);  // Check USB
+        int  c         = getchar_timeout_us(0); // Check USB
         bool from_uart = false;
 
         // Also check UART directly (for Bluetooth input)
         if (c == PICO_ERROR_TIMEOUT && uart_is_readable(uart0))
         {
-            c = uart_getc(uart0);
+            c         = uart_getc(uart0);
             from_uart = true;
             // Debug what we're receiving
             printf("<U:0x%02X>", c);
@@ -456,7 +453,8 @@ int MotorLab::readSerialLine()
         char ch = static_cast<char>(c);
 
         // Debug all characters
-        if (from_uart) {
+        if (from_uart)
+        {
             printf("[%c]", (ch >= 32 && ch < 127) ? ch : '?');
         }
 
@@ -866,8 +864,7 @@ void MotorLab::cmdBattery()
 {
     if (battery_ != nullptr)
     {
-        printf("Battery: %.2f V (ADC: %u)\n", battery_->voltage(),
-               battery_->rawADC());
+        printf("Battery: %.2f V (ADC: %u)\n", battery_->voltage(), battery_->rawADC());
     }
     else
     {
@@ -877,14 +874,12 @@ void MotorLab::cmdBattery()
 
 void MotorLab::cmdEncoders()
 {
-    float left_mm = left_encoder_->ticks() * MM_PER_TICK;
+    float left_mm  = left_encoder_->ticks() * MM_PER_TICK;
     float right_mm = right_encoder_->ticks() * MM_PER_TICK;
 
     printf("Position:\n");
-    printf("  Left:  %ld ticks = %.1f mm\n",
-           static_cast<long>(left_encoder_->ticks()), left_mm);
-    printf("  Right: %ld ticks = %.1f mm\n",
-           static_cast<long>(right_encoder_->ticks()), right_mm);
+    printf("  Left:  %ld ticks = %.1f mm\n", static_cast<long>(left_encoder_->ticks()), left_mm);
+    printf("  Right: %ld ticks = %.1f mm\n", static_cast<long>(right_encoder_->ticks()), right_mm);
 
     printf("Velocity:\n");
     printf("  Avg: %.1f mm/s\n", encoderVelocityMMps());
@@ -923,9 +918,9 @@ void MotorLab::cmdStep(const MotorLabArgs& args)
 void MotorLab::cmdMove(const MotorLabArgs& args)
 {
     // Default values in mm units (half cell = 90mm, typical micromouse speeds)
-    float dist  = 90.0f;   // mm (half cell)
-    float speed = 200.0f;  // mm/s
-    float accel = 500.0f;  // mm/s^2
+    float dist  = 90.0f;  // mm (half cell)
+    float speed = 200.0f; // mm/s
+    float accel = 500.0f; // mm/s^2
     int   mode  = 2;
 
     if (args.argc > 1)

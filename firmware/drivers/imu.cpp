@@ -11,11 +11,8 @@
 IMU* IMU::imu_instance_ = nullptr;
 
 IMU::IMU(int uart_rx_pin)
-    : uart_rx_pin_(uart_rx_pin),
-      packet_buffer_index_(0),
-      yaw_data_ready_(false),
-      current_yaw_degrees_(0.0f),
-      yaw_reset_offset_(0.0f)
+    : uart_rx_pin_(uart_rx_pin), packet_buffer_index_(0), yaw_data_ready_(false),
+      current_yaw_degrees_(0.0f), yaw_reset_offset_(0.0f)
 {
     setupUART();
     setupInterrupt();
@@ -80,10 +77,10 @@ void IMU::parsePacketAndExtractYaw()
 
     if (checksum == packet_buffer_[IMU_IDX_CHECKSUM])
     {
-        int16_t raw_yaw = (packet_buffer_[IMU_IDX_YAW_H] << 8) | packet_buffer_[IMU_IDX_YAW_L];
-        float yaw_degrees = static_cast<float>(raw_yaw) / IMU_RAW_TO_DEGREES_DIVISOR;
+        int16_t raw_yaw      = (packet_buffer_[IMU_IDX_YAW_H] << 8) | packet_buffer_[IMU_IDX_YAW_L];
+        float   yaw_degrees  = static_cast<float>(raw_yaw) / IMU_RAW_TO_DEGREES_DIVISOR;
         current_yaw_degrees_ = fmodf(yaw_degrees + 180.0f, 360.0f) - 180.0f;
-        yaw_data_ready_ = true;
+        yaw_data_ready_      = true;
     }
 }
 
@@ -111,7 +108,7 @@ void IMU::resetYaw()
 float IMU::yawAfterAdding(float degrees_to_add)
 {
     degrees_to_add = fmodf(degrees_to_add, 360.0f);
-    float new_yaw = yaw() + degrees_to_add;
+    float new_yaw  = yaw() + degrees_to_add;
 
     if (new_yaw > 180.0f)
         new_yaw -= 360.0f;

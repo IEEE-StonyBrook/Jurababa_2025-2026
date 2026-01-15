@@ -48,11 +48,11 @@ class Motor
     void configurePins();
     void configurePWM();
 
-    int gpio_pin_one_;
-    int gpio_pin_two_;
-    int pwm_slice_number_;
-    int forward_channel_;
-    int backward_channel_;
+    int  gpio_pin_one_;
+    int  gpio_pin_two_;
+    int  pwm_slice_number_;
+    int  forward_channel_;
+    int  backward_channel_;
     bool invert_direction_;
 };
 

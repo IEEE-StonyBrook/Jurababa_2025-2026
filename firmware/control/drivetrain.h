@@ -22,8 +22,7 @@ class Drivetrain
     /**
      * @brief Constructs drivetrain controller with hardware components
      */
-    Drivetrain(Motor* left_motor, Motor* right_motor,
-               Encoder* left_encoder, Encoder* right_encoder,
+    Drivetrain(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
                Battery* battery = nullptr);
 
     void reset();
@@ -78,19 +77,19 @@ class Drivetrain
     void stop();
 
   private:
-    Motor* left_motor_;
-    Motor* right_motor_;
+    Motor*   left_motor_;
+    Motor*   right_motor_;
     Encoder* left_encoder_;
     Encoder* right_encoder_;
     Battery* battery_;
 
-    int32_t prev_left_ticks_ = 0;
+    int32_t prev_left_ticks_  = 0;
     int32_t prev_right_ticks_ = 0;
 
-    float left_velocity_mmps_ = 0.0f;
+    float left_velocity_mmps_  = 0.0f;
     float right_velocity_mmps_ = 0.0f;
 
-    float last_left_pos_mm_ = 0.0f;
+    float last_left_pos_mm_  = 0.0f;
     float last_right_pos_mm_ = 0.0f;
 };
 

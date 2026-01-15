@@ -76,12 +76,12 @@ class API
 
   private:
     std::string simulatorResponse(const std::string& cmd);
-    int simulatorInt(const std::string& cmd);
-    bool simulatorBool(const std::string& cmd);
+    int         simulatorInt(const std::string& cmd);
+    bool        simulatorBool(const std::string& cmd);
     std::string printMazeRow(int row);
 
     Mouse* mouse_;
-    char phase_color_ = 'y';
+    char   phase_color_ = 'y';
 };
 
 #endif

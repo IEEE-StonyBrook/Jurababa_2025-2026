@@ -10,8 +10,7 @@
 #include "app/multicore.h"
 #endif
 
-ToF::ToF(int xshut_pin, char sensor_position)
-    : sensor_position_(sensor_position)
+ToF::ToF(int xshut_pin, char sensor_position) : sensor_position_(sensor_position)
 {
     setupXSHUTPin(xshut_pin);
     resetSensor(xshut_pin);
@@ -36,8 +35,8 @@ void ToF::initializeSensor(int xshut_pin, char sensor_position)
     gpio_put(xshut_pin, 1);
     sleep_ms(10);
 
-    sensor_device_.I2cDevAddr = 0x29;
-    sensor_device_.comms_type = 1;
+    sensor_device_.I2cDevAddr      = 0x29;
+    sensor_device_.comms_type      = 1;
     sensor_device_.comms_speed_khz = 400;
 
     VL53L0X_dev_i2c_default_initialise(&sensor_device_, VL53L0X_DEFAULT_MODE);
@@ -45,10 +44,18 @@ void ToF::initializeSensor(int xshut_pin, char sensor_position)
     uint8_t new_address;
     switch (tolower(sensor_position))
     {
-        case 'l': new_address = 0x30; break;
-        case 'f': new_address = 0x31; break;
-        case 'r': new_address = 0x32; break;
-        default:  new_address = 0x33; break;
+        case 'l':
+            new_address = 0x30;
+            break;
+        case 'f':
+            new_address = 0x31;
+            break;
+        case 'r':
+            new_address = 0x32;
+            break;
+        default:
+            new_address = 0x33;
+            break;
     }
 
     VL53L0X_SetDeviceAddress(&sensor_device_, new_address);
@@ -71,8 +78,7 @@ float ToF::distance()
 {
     VL53L0X_RangingMeasurementData_t measurement_data;
     VL53L0X_GetRangingMeasurementData(&sensor_device_, &measurement_data);
-    VL53L0X_ClearInterruptMask(&sensor_device_,
-                               VL53L0X_REG_SYSTEM_INTERRUPT_GPIO_NEW_SAMPLE_READY);
+    VL53L0X_ClearInterruptMask(&sensor_device_, VL53L0X_REG_SYSTEM_INTERRUPT_GPIO_NEW_SAMPLE_READY);
 
     float distance_mm = measurement_data.RangeMilliMeter;
 
@@ -85,9 +91,15 @@ float ToF::distance()
 
         switch (position_lower)
         {
-            case 'l': sensor_data.tof_left_mm = static_cast<int16_t>(distance_mm); break;
-            case 'r': sensor_data.tof_right_mm = static_cast<int16_t>(distance_mm); break;
-            default:  sensor_data.tof_front_mm = static_cast<int16_t>(distance_mm); break;
+            case 'l':
+                sensor_data.tof_left_mm = static_cast<int16_t>(distance_mm);
+                break;
+            case 'r':
+                sensor_data.tof_right_mm = static_cast<int16_t>(distance_mm);
+                break;
+            default:
+                sensor_data.tof_front_mm = static_cast<int16_t>(distance_mm);
+                break;
         }
 
         sensor_data.timestamp_ms = to_ms_since_boot(get_absolute_time());
@@ -101,9 +113,12 @@ float ToF::distance()
 
     switch (position_lower)
     {
-        case 'l': return static_cast<float>(snapshot.tof_left_mm);
-        case 'r': return static_cast<float>(snapshot.tof_right_mm);
-        default:  return static_cast<float>(snapshot.tof_front_mm);
+        case 'l':
+            return static_cast<float>(snapshot.tof_left_mm);
+        case 'r':
+            return static_cast<float>(snapshot.tof_right_mm);
+        default:
+            return static_cast<float>(snapshot.tof_front_mm);
     }
 #else
     return distance_mm;

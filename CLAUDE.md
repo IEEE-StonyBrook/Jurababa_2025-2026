@@ -139,6 +139,20 @@ maze/ → config/
 drivers/ → config/
 ```
 
+### Code Formatting
+
+**IMPORTANT:** After editing any `.cpp` or `.h` file, always run clang-format:
+```bash
+clang-format -i <file_path>
+```
+
+To format all C++ files in the repository:
+```bash
+find firmware sim -type f \( -name "*.cpp" -o -name "*.h" \) | xargs clang-format -i
+```
+
+The `.clang-format` file at the repository root defines the project's style rules.
+
 ## Commit Message Guidelines
 
 Use imperative mood, present tense: "Add feature" not "Added feature"

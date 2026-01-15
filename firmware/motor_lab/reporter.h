@@ -18,13 +18,13 @@ class MotorLabReporter
     bool isTimeToReport(uint32_t current_time_ms);
 
     void printProfileHeader();
-    void reportProfile(uint32_t time_ms, float set_position, float actual_position,
-                       float set_speed, float actual_speed, float motor_volts);
+    void reportProfile(uint32_t time_ms, float set_position, float actual_position, float set_speed,
+                       float actual_speed, float motor_volts);
 
     void printControllerHeader();
     void reportController(uint32_t time_ms, float set_position, float actual_position,
-                          float set_speed, float actual_speed,
-                          float control_volts, float ff_volts, float total_volts);
+                          float set_speed, float actual_speed, float control_volts, float ff_volts,
+                          float total_volts);
 
     void printOpenLoopHeader();
     void reportOpenLoop(uint32_t time_ms, float voltage, float speed);

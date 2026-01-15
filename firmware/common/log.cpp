@@ -16,11 +16,21 @@ void Log::message(LogPriority priority, std::string msg)
     std::string prefix;
     switch (priority)
     {
-        case LogPriority::DEBUG: prefix = "[DEBUG] "; break;
-        case LogPriority::INFO:  prefix = "[INFO] ";  break;
-        case LogPriority::WARN:  prefix = "[WARN] ";  break;
-        case LogPriority::ERROR: prefix = "[ERROR] "; break;
-        case LogPriority::FATAL: prefix = "[FATAL] "; break;
+        case LogPriority::DEBUG:
+            prefix = "[DEBUG] ";
+            break;
+        case LogPriority::INFO:
+            prefix = "[INFO] ";
+            break;
+        case LogPriority::WARN:
+            prefix = "[WARN] ";
+            break;
+        case LogPriority::ERROR:
+            prefix = "[ERROR] ";
+            break;
+        case LogPriority::FATAL:
+            prefix = "[FATAL] ";
+            break;
     }
 
     std::string final_msg = prefix + msg;

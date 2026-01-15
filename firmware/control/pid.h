@@ -79,17 +79,17 @@ class PID
     float ki_;
     float kd_;
 
-    float integral_ = 0.0f;
+    float integral_       = 0.0f;
     float integral_limit_ = 1e6f;
 
-    float prev_error_ = 0.0f;
-    bool has_prev_error_ = false;
+    float prev_error_     = 0.0f;
+    bool  has_prev_error_ = false;
 
     float deadband_ = 0.0f;
 
     float filtered_derivative_ = 0.0f;
-    float derivative_alpha_ = 0.9f;
-    float derivative_limit_ = 1e6f;
+    float derivative_alpha_    = 0.9f;
+    float derivative_limit_    = 1e6f;
 
     float output_limit_ = FLT_MAX;
 
