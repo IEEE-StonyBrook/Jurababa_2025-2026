@@ -20,7 +20,10 @@ Press 'M' within 3 seconds of startup to enter MotorLab mode. Otherwise, Normal 
 ## Directory Structure
 
 ```
-firmware/                      # Embedded Pico firmware
+.clang-format                  # Code formatting rules
+CMakeLists.txt                 # Build configuration (project root)
+pico_sdk_import.cmake          # Pico SDK CMake helper
+firmware/                      # Embedded Pico firmware source
 sim/                           # mms-compatible simulator
 third_party/                   # External dependencies
 tools/                         # Python utilities
@@ -74,8 +77,7 @@ firmware/                      # All firmware source code
 │   ├── log.h/cpp              # Logging system
 │   └── utils.h                # WheelSide enum, helpers
 │
-├── main.cpp                   # Entry point
-└── CMakeLists.txt             # Build configuration
+└── main.cpp                   # Entry point
 ```
 
 ## Coding Standards (Google C++ Style Based)
@@ -208,10 +210,12 @@ All velocities use **mm/s** throughout the codebase:
 
 ### Firmware (Pico)
 ```bash
-mkdir -p build-firmware && cd build-firmware
-cmake ../firmware -DPICO_SDK_PATH=/path/to/pico-sdk
+mkdir -p build && cd build
+cmake .. -DPICO_SDK_PATH=/path/to/pico-sdk -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 make -j4
 ```
+
+**Note:** The `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` flag generates `compile_commands.json` for IDE IntelliSense. A symlink at the project root points to this file.
 
 ### Simulator (mms)
 ```bash

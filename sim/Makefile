@@ -1,6 +1,3 @@
-# Micromouse Simulator Makefile
-# Builds mms-compatible simulator binary using firmware algorithm code
-
 CXX = g++
 CXXFLAGS = -Wall -Wextra -std=c++17 -DSIMULATOR_BUILD -I../firmware -g -O0
 
