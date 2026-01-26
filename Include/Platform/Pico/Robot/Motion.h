@@ -51,7 +51,7 @@ class Motion {
   void stopAfter(float distance_mm);
   void waitUntilPosition(float target_mm);
   void waitUntilDistance(float delta_mm);
-  void centerFromFront(ToF* frontToF);
+  void centerFromFront();
 
   // ---------------- Update Loop ----------------
   void update();

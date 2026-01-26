@@ -41,6 +41,10 @@ class Drivetrain {
   bool isWallFront();
   bool isWallRight();
   
+  ToF* leftToF;
+  ToF* frontToF;
+  ToF* rightToF;
+  
  private:
   // Core controllers.
   float forwardPID();
@@ -54,9 +58,7 @@ class Drivetrain {
   Motor* rightMotor;
   Odometry odometry;
 
-  ToF* leftToF;
-  ToF* frontToF;
-  ToF* rightToF;
+  
 
   // Targets.
   float targetForwardVel;  // mm/s

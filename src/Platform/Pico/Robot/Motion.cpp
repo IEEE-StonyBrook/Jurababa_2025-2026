@@ -185,9 +185,9 @@ void Motion::waitUntilDistance(float delta_mm) {
   waitUntilPosition(positionMM() + delta_mm);
 }
 
-void Motion::centerFromFront(ToF* frontToF) {
+void Motion::centerFromFront() {
 
-  const float initialDistance = frontToF->getToFDistanceFromWallMM();
+  const float initialDistance = drivetrain_->frontToF->getToFDistanceFromWallMM();
   const float targetDistance = initialDistance - TO_CENTER_DISTANCE_MM;
   forward(targetDistance, 100.0f, 0.0f, 200.0f, true);
 
@@ -205,6 +205,16 @@ void Motion::update() {
   rotation_profile_.update(current_deg);
 
   // Drivetrain expects forward (mm/s) and rotation (deg/s).
+  const float leftToFDistance = drivetrain_->leftToF != nullptr ? drivetrain_->leftToF->getToFDistanceFromWallMM() : -1.0f;
+  const float rightToFDistance = drivetrain_->rightToF != nullptr ? drivetrain_->rightToF->getToFDistanceFromWallMM() : -1.0f;
+
+  if (leftToFDistance + rightToFDistance > HALF_CELL_DISTANCE_MM) {
+    LOG_WARNING("Both left and right ToF distances are invalid. Skipping wall correction.");
+    drivetrain_->runControl(forward_profile_.speed(), rotation_profile_.speed(), 0.0f);
+    return;
+  }
+
+  const float steering_correction = rightToFDistance - leftToFDistance;
   drivetrain_->runControl(forward_profile_.speed(), rotation_profile_.speed(),
-                          0.0f);
+                          steering_correction);
 }
