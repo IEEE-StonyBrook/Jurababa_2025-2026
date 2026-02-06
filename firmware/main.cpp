@@ -39,6 +39,7 @@
 #include "navigation/flood_fill.h"
 #include "navigation/path_utils.h"
 #include "pico/multicore.h"
+#include "pico/stdio/driver.h"
 #include "pico/stdlib.h"
 
 // ============================================================================
@@ -61,33 +62,21 @@ static Battery* g_battery = nullptr;
 // Dual Output printf (USB + Bluetooth UART) for MotorLab mode
 // ============================================================================
 
-static void uart_write_str(const char* str)
+// Custom driver to route stdout to Bluetooth UART
+static void uart_out_chars(const char* buf, int length)
 {
-    while (*str)
+    for (int i = 0; i < length; i++)
     {
-        uart_putc_raw(uart0, *str++);
+        uart_putc_raw(uart0, buf[i]);
     }
 }
 
-// Custom printf that outputs to both USB and Bluetooth UART
-// Only used in MotorLab mode for CLI output
-static int motorlab_printf(const char* format, ...)
-{
-    char    buffer[256];
-    va_list args;
-    va_start(args, format);
-    int ret = vsnprintf(buffer, sizeof(buffer), format, args);
-    va_end(args);
-
-    // Send to USB
-    fputs(buffer, stdout);
-    fflush(stdout);
-
-    // Send to UART (Bluetooth)
-    uart_write_str(buffer);
-
-    return ret;
-}
+static stdio_driver_t bt_driver = {
+    .out_chars = uart_out_chars,
+    .out_flush = nullptr,
+    .in_chars  = nullptr,
+    .next      = nullptr,
+};
 
 // ============================================================================
 // Startup Mode Selection
@@ -136,8 +125,8 @@ OperatingMode selectOperatingMode(uint32_t timeout_ms)
         }
     }
 
-    printf("\n*** Normal mode starting ***\n\n");
-    return OperatingMode::NORMAL;
+    printf("\n*** MotorLab mode starting ***\n\n");
+    return OperatingMode::MOTORLAB;
 }
 
 // ============================================================================
@@ -381,14 +370,17 @@ void runMotorLabMode(Battery& battery)
     uart_set_format(uart0, 8, 1, UART_PARITY_NONE);
     uart_set_fifo_enabled(uart0, true);
 
-    motorlab_printf("\n\n");
-    motorlab_printf("===========================================\n");
-    motorlab_printf("  MOTORLAB MODE - Motor Characterization  \n");
-    motorlab_printf("===========================================\n");
-    motorlab_printf("Serial I/O: USB (115200) and UART0 (9600)\n");
-    motorlab_printf("Units: mm/s (Config.h compatible)\n\n");
+    // Enable custom driver for Bluetooth output
+    stdio_set_driver_enabled(&bt_driver, true);
 
-    motorlab_printf("Battery voltage: %.2f V\n", battery.voltage());
+    printf("\n\n");
+    printf("===========================================\n");
+    printf("  MOTORLAB MODE - Motor Characterization  \n");
+    printf("===========================================\n");
+    printf("Serial I/O: USB (115200) and UART0 (9600)\n");
+    printf("Units: mm/s (Config.h compatible)\n\n");
+
+    printf("Battery voltage: %.2f V\n", battery.voltage());
 
     Encoder left_encoder(pio0, 20, true);
     Encoder right_encoder(pio0, 8, false);
@@ -398,8 +390,8 @@ void runMotorLabMode(Battery& battery)
     MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
     motorlab.init();
 
-    motorlab_printf("\nHardware initialized. Ready for testing.\n");
-    motorlab_printf("Type '?' for command help.\n\n");
+    printf("\nHardware initialized. Ready for testing.\n");
+    printf("Type '?' for command help.\n\n");
 
     const uint32_t  LOOP_PERIOD_MS = static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f);
     absolute_time_t next_tick      = make_timeout_time_ms(LOOP_PERIOD_MS);
@@ -426,6 +418,30 @@ void runMotorLabMode(Battery& battery)
 }
 
 // ============================================================================
+// Startup LED Indicator
+// ============================================================================
+
+/**
+ * Blink the onboard LED to indicate successful startup.
+ */
+void blinkStartupLED(int count, uint32_t on_ms, uint32_t off_ms)
+{
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+
+    for (int i = 0; i < count; i++)
+    {
+        gpio_put(PICO_DEFAULT_LED_PIN, 1);
+        sleep_ms(on_ms);
+        gpio_put(PICO_DEFAULT_LED_PIN, 0);
+        if (i < count - 1)
+        {
+            sleep_ms(off_ms);
+        }
+    }
+}
+
+// ============================================================================
 // Main Entry Point
 // ============================================================================
 
@@ -433,6 +449,10 @@ int main()
 {
     // Initialize USB serial
     stdio_init_all();
+
+    // Blink LED 3 times to indicate startup
+    blinkStartupLED(3, 150, 150);
+
     sleep_ms(2000); // Wait for USB connection
 
     // Battery monitor setup (shared by both modes)

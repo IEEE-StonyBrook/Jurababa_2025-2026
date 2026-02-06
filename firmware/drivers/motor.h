@@ -7,6 +7,7 @@
 #include "config/config.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
+#include "common/log.h"
 
 /**
  * @brief DC Motor driver using PWM control

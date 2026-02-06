@@ -4,7 +4,7 @@
 #include "app/bluetooth.h"
 #endif
 
-LogPriority Log::print_priority_level_ = LogPriority::INFO;
+LogPriority Log::print_priority_level_ = LogPriority::DEBUG;
 Bluetooth*  Log::bluetooth_            = nullptr;
 bool        Log::bluetooth_enabled_    = false;
 

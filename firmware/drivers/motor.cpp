@@ -51,8 +51,11 @@ void Motor::applyVoltage(float desired_volts, float battery_volts)
     if (battery_volts < 1.0f)
     {
         battery_volts = DEFAULT_BATTERY_VOLTAGE;
+        LOG_DEBUG("Using default battery voltage");
     }
     applyDuty(desired_volts / battery_volts);
+    LOG_DEBUG("Applying voltage of " + std::to_string(desired_volts) + " and duty of " +
+              std::to_string((desired_volts / battery_volts)));
 }
 
 void Motor::stop()
