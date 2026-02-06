@@ -29,7 +29,7 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                    Encoder* right_encoder, Battery* battery)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
-      input_index_(0), echo_enabled_(true), prev_left_ticks_(0), prev_right_ticks_(0),
+      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
       left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f)
 {
     clearInput();
@@ -40,7 +40,7 @@ MotorLab::MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right
                    Battery* battery)
     : left_motor_(nullptr), right_motor_(nullptr), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(drivetrain), reporter_(10),
-      input_index_(0), echo_enabled_(true), prev_left_ticks_(0), prev_right_ticks_(0),
+      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
       left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f)
 {
     clearInput();
