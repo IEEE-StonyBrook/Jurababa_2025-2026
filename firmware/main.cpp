@@ -35,6 +35,8 @@
 #include "maze/maze.h"
 #include "maze/mouse.h"
 #include "motor_lab/motor_lab.h"
+#include "control/line_follower.h"
+#include "drivers/line_sensor.h"
 #include "navigation/a_star.h"
 #include "navigation/flood_fill.h"
 #include "navigation/path_utils.h"
@@ -48,8 +50,9 @@
 
 enum class OperatingMode
 {
-    NORMAL,  // Dual-core maze solving
-    MOTORLAB // Single-core motor characterization
+    NORMAL,       // Dual-core maze solving
+    MOTORLAB,     // Single-core motor characterization
+    LINEFOLLOWING // Single-core line following with event queue
 };
 
 // Global mode (set during startup, read by runNormalMode/runMotorLabMode)
@@ -93,6 +96,7 @@ OperatingMode selectOperatingMode(uint32_t timeout_ms)
     printf("  Jurababa Micromouse - Mode Selection   \n");
     printf("==========================================\n");
     printf("  Press 'M' within %lu seconds for MotorLab\n", timeout_ms / 1000);
+    printf("  Press 'L' for Line Following\n");
     printf("  Otherwise, Normal mode starts...\n");
     printf("==========================================\n\n");
 
@@ -111,6 +115,11 @@ OperatingMode selectOperatingMode(uint32_t timeout_ms)
             {
                 printf("\n*** MotorLab mode selected ***\n\n");
                 return OperatingMode::MOTORLAB;
+            }
+            if (ch == 'L' || ch == 'l')
+            {
+                printf("\n*** Line Following mode selected ***\n\n");
+                return OperatingMode::LINEFOLLOWING;
             }
         }
 
@@ -418,6 +427,113 @@ void runMotorLabMode(Battery& battery)
 }
 
 // ============================================================================
+// LINEFOLLOWING MODE - Line following with intersection event queue
+// ============================================================================
+
+/**
+ * Run Line Following mode: single-core line following with event queue.
+ *
+ * The intersection_event_queue string defines actions at each intersection:
+ *   L# = turn left 90°, R# = turn right 90°, F# = go forward
+ * When the queue is exhausted, the robot continues forward.
+ */
+void runLineFollowingMode(Battery& battery)
+{
+    printf("\n");
+    printf("==========================================\n");
+    printf("  LINE FOLLOWING MODE                    \n");
+    printf("==========================================\n\n");
+
+    // Hardware init (no ToF sensors)
+    Encoder left_encoder(pio0, PIN_ENCODER_L, true);
+    Encoder right_encoder(pio0, PIN_ENCODER_R, false);
+    Motor   left_motor(PIN_MOTOR_L_A, PIN_MOTOR_L_B, true);
+    Motor   right_motor(PIN_MOTOR_R_A, PIN_MOTOR_R_B, false);
+    IMU     imu(PIN_IMU_RX);
+
+    LineSensor line_sensor(i2c0, PIN_LINE_SDA, PIN_LINE_SCL);
+    line_sensor.init();
+
+    Drivetrain   drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
+    LineFollower line_follower(&drivetrain, &line_sensor, &imu, &battery);
+
+    printf("Hardware initialized.\n");
+    printf("Battery voltage: %.2f V\n", battery.voltage());
+
+    // Intersection event queue: L=left, F=forward, R=right, separated by #
+    std::string intersection_event_queue = "L#F#R#";
+
+    printf("Event queue: %s\n\n", intersection_event_queue.c_str());
+
+    // Parse the queue into individual tokens
+    std::vector<char> event_queue;
+    for (size_t i = 0; i < intersection_event_queue.size(); i++)
+    {
+        char ch = intersection_event_queue[i];
+        if (ch == 'L' || ch == 'l' || ch == 'F' || ch == 'f' || ch == 'R' || ch == 'r')
+        {
+            event_queue.push_back(static_cast<char>(toupper(ch)));
+        }
+    }
+
+    size_t queue_index = 0;
+
+    printf("Parsed %zu events. Starting line follow...\n", event_queue.size());
+
+    line_follower.startFollowing();
+
+    // Control loop
+    const int       CONTROL_PERIOD_MS = 10;
+    absolute_time_t next_tick         = make_timeout_time_ms(CONTROL_PERIOD_MS);
+    absolute_time_t last_tick         = get_absolute_time();
+
+    while (true)
+    {
+        absolute_time_t now = get_absolute_time();
+        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
+        last_tick           = now;
+
+        drivetrain.update(dt);
+        line_follower.update(dt);
+
+        // Check for intersection events
+        if (line_follower.isIntersectionDetected() && line_follower.isMotionDone())
+        {
+            if (queue_index < event_queue.size())
+            {
+                char action = event_queue[queue_index];
+                queue_index++;
+
+                printf("Intersection! Action: %c (%zu/%zu)\n", action, queue_index,
+                       event_queue.size());
+
+                switch (action)
+                {
+                    case 'L':
+                        line_follower.turnLeft90();
+                        break;
+                    case 'R':
+                        line_follower.turnRight90();
+                        break;
+                    case 'F':
+                    default:
+                        // Continue forward — nothing to do
+                        break;
+                }
+            }
+            else
+            {
+                // Queue exhausted — keep going forward
+                printf("Queue empty, continuing forward\n");
+            }
+        }
+
+        sleep_until(next_tick);
+        next_tick = delayed_by_ms(next_tick, CONTROL_PERIOD_MS);
+    }
+}
+
+// ============================================================================
 // Startup LED Indicator
 // ============================================================================
 
@@ -474,6 +590,10 @@ int main()
     if (g_operating_mode == OperatingMode::MOTORLAB)
     {
         runMotorLabMode(battery);
+    }
+    else if (g_operating_mode == OperatingMode::LINEFOLLOWING)
+    {
+        runLineFollowingMode(battery);
     }
     else
     {

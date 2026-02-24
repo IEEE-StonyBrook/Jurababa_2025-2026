@@ -80,8 +80,8 @@ class Dashboard(QMainWindow):
         self.data = []
         self.parameters = {}
         self.move_mode = ONLY_FF
-        self.auto_connect = False  # Disable auto-connect (BLE port may not exist yet)
-        self.custom_ports = []  # User-added custom ports
+        self.auto_connect = False
+        self.custom_ports = []
         self.monitor_thread = None
         self.monitoring = False
 
@@ -184,10 +184,10 @@ class Dashboard(QMainWindow):
         self.settings_grid = QGridLayout()
         self.settings_grid.setContentsMargins(0, 0, 0, 0)
 
-        self.spin_biasff = self.double_spinbox("biasFF", 0.0, 0.4, 0.01, 2)
-        self.spin_speedff = self.double_spinbox("speedFF", 0.0, 0.001, 0.00001, 5)
-        self.spin_accff = self.double_spinbox("accFF", 0.0, 0.001, 0.00001, 5)
-        self.spin_zeta = self.double_spinbox("zeta", 0.0, 2.0, 0.005, 3)
+        self.spin_biasff = self.double_spinbox("FF kS", 0.0, 0.4, 0.01, 2)
+        self.spin_speedff = self.double_spinbox("FF kV", 0.0, 0.001, 0.00001, 5)
+        self.spin_accff = self.double_spinbox("FF kA", 0.0, 0.001, 0.00001, 5)
+        self.spin_zeta = self.double_spinbox("ζ", 0.0, 2.0, 0.005, 3)
         self.spin_td = self.double_spinbox("Td", 0.0, 1.00, 0.01, 3)
         self.spin_kp = self.double_spinbox("KP", 0.0, 8.0, 0.001, 4)
         self.spin_kd = self.double_spinbox("KD", 0.0, 2.0, 0.0001, 4)

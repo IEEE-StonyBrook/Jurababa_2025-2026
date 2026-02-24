@@ -2,6 +2,7 @@
 #define MOTOR_LAB_SETTINGS_H
 
 #include <cstdint>
+#include "config/config.h"
 
 /**
  * @brief Motor characterization and control parameters
@@ -34,18 +35,22 @@ struct MotorLabSettings
 
     void initDefaults()
     {
-        km = 717.0f;
-        tm = 0.325f;
+        // Load feedforward from config/tuning.h (already in Voltage units)
+        speed_ff = (FORWARD_KVL + FORWARD_KVR) / 2.0f;
+        bias_ff  = (FORWARD_KSL + FORWARD_KSR) / 2.0f;
+        acc_ff   = (FORWARD_KAL + FORWARD_KAR) / 2.0f;
 
-        speed_ff = 1.0f / km;
-        acc_ff   = tm / km;
-        bias_ff  = 0.145f;
+        // Derive motor model from feedforward
+        km = (speed_ff > 1e-6f) ? (1.0f / speed_ff) : 717.0f;
+        tm = acc_ff * km; // Tm = acc_ff / speed_ff
 
-        zeta = 0.707f;
-        td   = tm / 2.0f;
+        // Load PID from config/tuning.h (already in Voltage units)
+        kp = FWD_KP;
+        kd = FWD_KD;
 
-        kp = 1.0f / (km * td);
-        kd = (2.0f * zeta * td - tm) / km;
+        // Back-calculate zeta/td for display consistency
+        td   = (km > 1e-6f && kp > 1e-6f) ? (1.0f / (km * kp)) : 0.1f;
+        zeta = (td > 1e-6f) ? ((kd / km + tm) / (2.0f * td)) : 0.707f;
 
         control_flags = 0;
     }

@@ -40,4 +40,8 @@
 #define PIN_BT_TX 0 // Bluetooth transmit
 #define PIN_BT_RX 1 // Bluetooth receive
 
+// ================= Line Sensor Pins (I2C0) ================= //
+#define PIN_LINE_SDA 0 // I2C0 SDA
+#define PIN_LINE_SCL 1 // I2C0 SCL
+
 #endif // CONFIG_PINS_H

@@ -441,8 +441,7 @@ int MotorLab::readSerialLine()
         {
             c         = uart_getc(uart0);
             from_uart = true;
-            // Debug what we're receiving
-            printf("<U:0x%02X>", c);
+
         }
 
         if (c == PICO_ERROR_TIMEOUT)
@@ -452,11 +451,7 @@ int MotorLab::readSerialLine()
 
         char ch = static_cast<char>(c);
 
-        // Debug all characters
-        if (from_uart)
-        {
-            printf("[%c]", (ch >= 32 && ch < 127) ? ch : '?');
-        }
+
 
         // Handle newline (command complete)
         if (ch == '\n' || ch == '\r')
@@ -918,7 +913,7 @@ void MotorLab::cmdStep(const MotorLabArgs& args)
 void MotorLab::cmdMove(const MotorLabArgs& args)
 {
     // Default values in mm units (half cell = 90mm, typical micromouse speeds)
-    float dist  = 90.0f;  // mm (half cell)
+    float dist  = 480.0f;  // mm (3 cell)
     float speed = 200.0f; // mm/s
     float accel = 500.0f; // mm/s^2
     int   mode  = 2;

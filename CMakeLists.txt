@@ -36,6 +36,7 @@ set(DRIVER_SOURCES
     firmware/drivers/imu.cpp
     firmware/drivers/tof.cpp
     firmware/drivers/battery.cpp
+    firmware/drivers/line_sensor.cpp
 )
 
 set(CONTROL_SOURCES
@@ -43,6 +44,7 @@ set(CONTROL_SOURCES
     firmware/control/profile.cpp
     firmware/control/drivetrain.cpp
     firmware/control/robot.cpp
+    firmware/control/line_follower.cpp
 )
 
 set(MAZE_SOURCES

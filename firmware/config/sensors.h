@@ -47,4 +47,10 @@
 // ================= Angular Velocity Filtering ================= //
 #define SENSORS_ANGULAR_VEL_FILTER_ALPHA 0.7f
 
+// ================= Line Sensor Configuration ================= //
+#define LINE_SENSOR_COUNT             8
+#define LINE_SENSOR_I2C_ADDR          0x38
+#define LINE_SENSOR_I2C_BAUD          100000
+#define LINE_INTERSECTION_DEBOUNCE_MS 50
+
 #endif // CONFIG_SENSORS_H
