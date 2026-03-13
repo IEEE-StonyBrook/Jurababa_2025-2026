@@ -226,8 +226,8 @@ void core1_RobotController()
     ToF     front_tof(12, 'F');
     ToF     right_tof(13, 'R');
     IMU     imu(5);
-    Motor   left_motor(18, 19, true);
-    Motor   right_motor(6, 7, false);
+    Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
+    Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
 
     Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, g_battery);
     Robot      robot(&drivetrain, &imu, &left_tof, &front_tof, &right_tof);
@@ -393,8 +393,8 @@ void runMotorLabMode(Battery& battery)
 
     Encoder left_encoder(pio0, 20, true);
     Encoder right_encoder(pio0, 8, false);
-    Motor   left_motor(18, 19, true);
-    Motor   right_motor(6, 7, false);
+    Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
+    Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
 
     MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
     motorlab.init();
@@ -447,8 +447,8 @@ void runLineFollowingMode(Battery& battery)
     // Hardware init (no ToF sensors)
     Encoder left_encoder(pio0, PIN_ENCODER_L, true);
     Encoder right_encoder(pio0, PIN_ENCODER_R, false);
-    Motor   left_motor(PIN_MOTOR_L_A, PIN_MOTOR_L_B, true);
-    Motor   right_motor(PIN_MOTOR_R_A, PIN_MOTOR_R_B, false);
+    Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
+    Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
     IMU     imu(PIN_IMU_RX);
 
     LineSensor line_sensor(i2c0, PIN_LINE_SDA, PIN_LINE_SCL);

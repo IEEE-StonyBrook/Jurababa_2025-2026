@@ -9,13 +9,13 @@
 #define CONFIG_PINS_H
 
 // ================= Motor Pins ================= //
-// Left motor (PWM control via H-bridge)
-#define PIN_MOTOR_L_A 18 // Left motor forward PWM
-#define PIN_MOTOR_L_B 19 // Left motor reverse PWM
+// Left motor (TB6552FNG + hardware inverter)
+#define PIN_MOTOR_L_DIR 2 // Left motor direction (CTRL → inverter → IN1/IN2)
+#define PIN_MOTOR_L_PWM 3 // Left motor speed PWM
 
-// Right motor (PWM control via H-bridge)
-#define PIN_MOTOR_R_A 6 // Right motor forward PWM
-#define PIN_MOTOR_R_B 7 // Right motor reverse PWM
+// Right motor (TB6552FNG + hardware inverter)
+#define PIN_MOTOR_R_DIR 6 // Right motor direction (CTRL → inverter → IN1/IN2)
+#define PIN_MOTOR_R_PWM 7 // Right motor speed PWM
 
 // ================= Encoder Pins ================= //
 // Quadrature encoders (PIO-driven)

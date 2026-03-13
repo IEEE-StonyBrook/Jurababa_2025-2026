@@ -5,27 +5,30 @@
 #include <cmath>
 
 #include "config/config.h"
+#include "hardware/gpio.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
 #include "common/log.h"
 
 /**
- * @brief DC Motor driver using PWM control
+ * @brief DC Motor driver using TB6552FNG with hardware inverter
  *
- * Provides high-level interface for controlling a DC motor via two GPIO pins
- * configured for PWM output. Supports bidirectional control with duty cycle
- * or voltage-based commands.
+ * Each motor is controlled by two pins:
+ *   - DIR pin (GPIO): sets direction via hardware inverter → IN1/IN2
+ *   - PWM pin (hardware PWM): controls speed
+ *
+ * STBY is hardwired to 5V. Short brake occurs when PWM is low.
  */
 class Motor
 {
   public:
     /**
      * @brief Constructs motor controller with pin configuration
-     * @param gpio_pin_one First motor control pin (PWM capable)
-     * @param gpio_pin_two Second motor control pin (PWM capable)
-     * @param invert_direction If true, swaps forward/backward directions
+     * @param dir_pin GPIO pin for direction control (CTRL → inverter → IN1/IN2)
+     * @param pwm_pin GPIO pin for PWM speed control
+     * @param invert_direction If true, flips the direction logic
      */
-    Motor(int gpio_pin_one, int gpio_pin_two, bool invert_direction = false);
+    Motor(int dir_pin, int pwm_pin, bool invert_direction = false);
 
     /**
      * @brief Applies duty cycle command to motor
@@ -41,7 +44,7 @@ class Motor
     void applyVoltage(float desired_volts, float battery_volts);
 
     /**
-     * @brief Immediately stops motor by setting both PWM channels to zero
+     * @brief Immediately stops motor (short brake via PWM low)
      */
     void stop();
 
@@ -49,11 +52,10 @@ class Motor
     void configurePins();
     void configurePWM();
 
-    int  gpio_pin_one_;
-    int  gpio_pin_two_;
-    int  pwm_slice_number_;
-    int  forward_channel_;
-    int  backward_channel_;
+    int  dir_pin_;
+    int  pwm_pin_;
+    uint pwm_slice_;
+    uint pwm_channel_;
     bool invert_direction_;
 };
 
