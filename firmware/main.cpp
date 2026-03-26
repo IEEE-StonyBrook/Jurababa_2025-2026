@@ -220,12 +220,12 @@ void processCommands(Robot* robot)
  */
 void core1_RobotController()
 {
-    Encoder left_encoder(pio0, 20, true);
-    Encoder right_encoder(pio0, 8, false);
-    ToF     left_tof(11, 'L');
-    ToF     front_tof(12, 'F');
-    ToF     right_tof(13, 'R');
-    IMU     imu(5);
+    Encoder left_encoder(pio0, PIN_ENCODER_L_A, PIN_ENCODER_L_B, true);
+    Encoder right_encoder(pio0, PIN_ENCODER_R_A, PIN_ENCODER_R_B, false);
+    ToF     left_tof(PIN_TOF_LEFT_XSHUT, 'L');
+    ToF     front_tof(PIN_TOF_FRONT_XSHUT, 'F');
+    ToF     right_tof(PIN_TOF_RIGHT_XSHUT, 'R');
+    IMU     imu(PIN_IMU_RX);
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
 
@@ -270,7 +270,7 @@ void core1_RobotController()
  */
 void runNormalMode(Battery& battery)
 {
-    Bluetooth bluetooth(uart0, 9600, 16, 17);
+    Bluetooth bluetooth(uart0, 9600, PIN_BT_TX, PIN_BT_RX);
     bluetooth.init();
 
     bluetooth.write("=== Jurababa Normal Mode ===\r\n");
@@ -373,8 +373,8 @@ void runMotorLabMode(Battery& battery)
 {
     // Set up UART for Bluetooth in MotorLab mode
     uart_init(uart0, 9600);
-    gpio_set_function(16, GPIO_FUNC_UART);
-    gpio_set_function(17, GPIO_FUNC_UART);
+    gpio_set_function(PIN_BT_TX, GPIO_FUNC_UART);
+    gpio_set_function(PIN_BT_RX, GPIO_FUNC_UART);
     uart_set_hw_flow(uart0, false, false);
     uart_set_format(uart0, 8, 1, UART_PARITY_NONE);
     uart_set_fifo_enabled(uart0, true);
@@ -391,8 +391,8 @@ void runMotorLabMode(Battery& battery)
 
     printf("Battery voltage: %.2f V\n", battery.voltage());
 
-    Encoder left_encoder(pio0, 20, true);
-    Encoder right_encoder(pio0, 8, false);
+    Encoder left_encoder(pio0, PIN_ENCODER_L_A, PIN_ENCODER_L_B, true);
+    Encoder right_encoder(pio0, PIN_ENCODER_R_A, PIN_ENCODER_R_B, false);
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
 
@@ -445,8 +445,8 @@ void runLineFollowingMode(Battery& battery)
     printf("==========================================\n\n");
 
     // Hardware init (no ToF sensors)
-    Encoder left_encoder(pio0, PIN_ENCODER_L, true);
-    Encoder right_encoder(pio0, PIN_ENCODER_R, false);
+    Encoder left_encoder(pio0, PIN_ENCODER_L_A, PIN_ENCODER_L_B, true);
+    Encoder right_encoder(pio0, PIN_ENCODER_R_A, PIN_ENCODER_R_B, false);
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
     IMU     imu(PIN_IMU_RX);
@@ -572,7 +572,7 @@ int main()
     sleep_ms(2000); // Wait for USB connection
 
     // Battery monitor setup (shared by both modes)
-    Battery battery(26, 10000.0f, 5100.0f);
+    Battery battery(PIN_BATTERY_ADC, 10000.0f, 5100.0f);
     battery.init();
     for (int i = 0; i < 10; i++)
     {

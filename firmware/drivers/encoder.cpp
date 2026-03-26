@@ -4,13 +4,13 @@
 #include "app/multicore.h"
 #endif
 
-Encoder::Encoder(PIO pio_instance, int gpio_pin, bool invert_direction)
-    : pio_instance_(pio_instance), gpio_pin_(gpio_pin), offset_ticks_(0),
+Encoder::Encoder(PIO pio_instance, int pin_a, int pin_b, bool invert_direction)
+    : pio_instance_(pio_instance), pin_a_(pin_a), pin_b_(pin_b), offset_ticks_(0),
       invert_direction_(invert_direction)
 {
     state_machine_ = pio_claim_unused_sm(pio_instance_, true);
     loadPIOProgram(pio_instance_);
-    quadrature_encoder_program_init(pio_instance_, state_machine_, gpio_pin_, 0);
+    quadrature_encoder_program_init(pio_instance_, state_machine_, pin_a_, pin_b_, 0);
 }
 
 void Encoder::loadPIOProgram(PIO pio_instance)
