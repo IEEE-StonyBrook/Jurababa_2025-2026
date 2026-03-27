@@ -12,6 +12,7 @@ class Drivetrain;
 class Encoder;
 class Motor;
 class Battery;
+class IMU;
 
 constexpr int MOTORLAB_INPUT_BUFFER_SIZE = 64;
 constexpr int MOTORLAB_MAX_ARGC          = 8;
@@ -36,6 +37,10 @@ class MotorLab
     // Standalone mode: direct motor/encoder access
     MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
              Battery* battery);
+
+    // IMU mode: direct motor/encoder + IMU access
+    MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
+             Battery* battery, IMU* imu);
 
     // Integrated mode: use Drivetrain
     MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right_encoder,
@@ -81,6 +86,7 @@ class MotorLab
     void cmdSetAccFF(const MotorLabArgs& args);
     void cmdBattery();
     void cmdEncoders();
+    void cmdIMU();
     void cmdOpenLoop(const MotorLabArgs& args);
     void cmdStep(const MotorLabArgs& args);
     void cmdMove(const MotorLabArgs& args);
@@ -97,6 +103,7 @@ class MotorLab
     Encoder*    right_encoder_;
     Battery*    battery_;
     Drivetrain* drivetrain_;
+    IMU* imu_;
 
     MotorLabSettings settings_;
     MotorLabProfile  profile_;

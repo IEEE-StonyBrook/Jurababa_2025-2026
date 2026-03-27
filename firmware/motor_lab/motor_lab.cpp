@@ -5,6 +5,7 @@
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
 #include "drivers/motor.h"
+#include "drivers/imu.h"
 
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
@@ -31,6 +32,17 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
       input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
       left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f)
+{
+    clearInput();
+}
+
+// IMU mode: direct motor/encoder + IMU access
+MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
+                   Encoder* right_encoder, Battery* battery, IMU* imu)
+    : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
+      right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
+      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
+      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), imu_(imu)
 {
     clearInput();
 }
@@ -580,6 +592,10 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     {
         cmdEncoders();
     }
+    else if (strcmp(cmd, "YAW") == 0 || strcmp(cmd, "IMU") == 0)
+    {
+        cmdIMU();
+    }
     // Test commands
     else if (strcmp(cmd, "OPENLOOP") == 0 || strcmp(cmd, "OL") == 0)
     {
@@ -691,6 +707,7 @@ void MotorLab::cmdHelp()
     printf("\nHardware:\n");
     printf("  BAT        - Show battery voltage\n");
     printf("  ENC        - Show encoder values (mm, mm/s)\n");
+    printf("  IMU        - IMU yaw position value (degrees)\n");
     printf("  V [volts]  - Apply voltage to motors\n");
     printf("  X          - Stop motors\n");
     printf("\nTests:\n");
@@ -879,6 +896,12 @@ void MotorLab::cmdEncoders()
     printf("Velocity:\n");
     printf("  Avg: %.1f mm/s\n", encoderVelocityMMps());
     printf("  L: %.1f mm/s  R: %.1f mm/s\n", left_velocity_mmps_, right_velocity_mmps_);
+}
+
+void MotorLab::cmdIMU()
+{
+    printf("Yaw:\n");
+    printf("  Val: %.1f deg\n", imu_->yaw());
 }
 
 void MotorLab::cmdOpenLoop(const MotorLabArgs& args)
