@@ -89,6 +89,7 @@ class MotorLab
     void cmdYaw();
     void cmdYawVel();
     void cmdYawContinuous(const MotorLabArgs& args);
+    void cmdYawReset();
     void cmdOpenLoop(const MotorLabArgs& args);
     void cmdStep(const MotorLabArgs& args);
     void cmdMove(const MotorLabArgs& args);

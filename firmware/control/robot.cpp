@@ -355,10 +355,10 @@ void Robot::updateControl(float dt)
     static int log_counter = 0;
     if ((log_counter++ % 100) == 0)
     {
-        LOG_DEBUG("Robot | State: " + stateName() +
-                  " | ForwardVel: " + std::to_string(target_forward_vel_mmps_) +
-                  " mm/s | AngularVel: " + std::to_string(target_angular_vel_degps_) +
-                  " deg/s | Yaw: " + std::to_string(yaw()) + " deg");
+        // LOG_DEBUG("Robot | State: " + stateName() +
+        //           " | ForwardVel: " + std::to_string(target_forward_vel_mmps_) +
+        //           " mm/s | AngularVel: " + std::to_string(target_angular_vel_degps_) +
+        //           " deg/s | Yaw: " + std::to_string(yaw()) + " deg");
     }
 
     switch (state_)

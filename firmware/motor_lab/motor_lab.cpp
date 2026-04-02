@@ -604,6 +604,10 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     {
         cmdYawContinuous(args);
     }
+    else if (strcmp(cmd, "YAWRESET") == 0)
+    {
+        cmdYawReset();
+    }
     // Test commands
     else if (strcmp(cmd, "OPENLOOP") == 0 || strcmp(cmd, "OL") == 0)
     {
@@ -718,6 +722,7 @@ void MotorLab::cmdHelp()
     printf("  YAW        - Robot yaw position (degrees)\n");
     printf("  YAWVEL     - Robot angular velocity (deg/s)\n");
     printf("  YAWCON [X] [Y] - Print yaw for X ms every Y ms (default 5000 100)\n");
+    printf("  YAWRESET   - Reset yaw and angular velocity to 0\n");
     printf("  V [volts]  - Apply voltage to motors\n");
     printf("  X          - Stop motors\n");
     printf("\nTests:\n");
@@ -955,13 +960,19 @@ void MotorLab::cmdYawContinuous(const MotorLabArgs& args)
            static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
     printf("Time(ms)  Yaw(deg)  Omega(deg/s)\n");
 
-    uint32_t start_time = to_ms_since_boot(get_absolute_time());
-    uint32_t elapsed    = 0;
+    uint32_t        start_time = to_ms_since_boot(get_absolute_time());
+    absolute_time_t last_tick  = get_absolute_time();
+    uint32_t        elapsed    = 0;
 
     while (elapsed < duration_ms)
     {
-        uint32_t now = to_ms_since_boot(get_absolute_time());
-        elapsed      = now - start_time;
+        absolute_time_t now = get_absolute_time();
+        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
+        last_tick           = now;
+        elapsed             = to_ms_since_boot(now) - start_time;
+
+        // Keep robot sensor tracking (omega) up to date
+        robot_->update(dt);
 
         printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed),
                robot_->yaw(), robot_->omega());
@@ -970,6 +981,19 @@ void MotorLab::cmdYawContinuous(const MotorLabArgs& args)
     }
 
     printf("=== Done ===\n");
+}
+
+void MotorLab::cmdYawReset()
+{
+    if (robot_ != nullptr)
+    {
+        robot_->resetYaw();
+        printf("Yaw and angular velocity reset to 0\n");
+    }
+    else
+    {
+        printf("Robot not available\n");
+    }
 }
 
 void MotorLab::cmdOpenLoop(const MotorLabArgs& args)
