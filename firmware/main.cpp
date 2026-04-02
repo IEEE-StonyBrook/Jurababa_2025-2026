@@ -395,10 +395,12 @@ void runMotorLabMode(Battery& battery)
     Encoder right_encoder(pio0, PIN_ENCODER_R_A, PIN_ENCODER_R_B, false);
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
-    IMU    imu(PIN_IMU_RX);
+    IMU     imu(PIN_IMU_RX);
 
-    // MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
-    MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery, &imu);
+    Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
+    Robot      robot(&drivetrain, &imu, nullptr, nullptr, nullptr);
+
+    MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery, &robot);
     motorlab.init();
 
     printf("\nHardware initialized. Ready for testing.\n");
@@ -406,14 +408,19 @@ void runMotorLabMode(Battery& battery)
 
     const uint32_t  LOOP_PERIOD_MS = static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f);
     absolute_time_t next_tick      = make_timeout_time_ms(LOOP_PERIOD_MS);
+    absolute_time_t last_tick      = get_absolute_time();
 
     uint32_t       last_battery_update_ms     = 0;
     const uint32_t BATTERY_UPDATE_INTERVAL_MS = 1000;
 
     while (true)
     {
-        uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+        absolute_time_t now     = get_absolute_time();
+        float           dt      = absolute_time_diff_us(last_tick, now) * 1e-6f;
+        uint32_t        now_ms  = to_ms_since_boot(now);
+        last_tick               = now;
 
+        robot.update(dt);
         motorlab.updateEncoders(LOOP_INTERVAL_S);
         motorlab.processSerial();
 

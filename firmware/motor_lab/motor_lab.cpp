@@ -5,7 +5,7 @@
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
 #include "drivers/motor.h"
-#include "drivers/imu.h"
+#include "control/robot.h"
 
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
@@ -36,13 +36,13 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
     clearInput();
 }
 
-// IMU mode: direct motor/encoder + IMU access
+// Robot mode: direct motor/encoder + Robot access (for yaw/omega)
 MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
-                   Encoder* right_encoder, Battery* battery, IMU* imu)
+                   Encoder* right_encoder, Battery* battery, Robot* robot)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
       input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
-      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), imu_(imu)
+      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot)
 {
     clearInput();
 }
@@ -594,7 +594,15 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     }
     else if (strcmp(cmd, "YAW") == 0 || strcmp(cmd, "IMU") == 0)
     {
-        cmdIMU();
+        cmdYaw();
+    }
+    else if (strcmp(cmd, "YAWVEL") == 0)
+    {
+        cmdYawVel();
+    }
+    else if (strcmp(cmd, "YAWCON") == 0)
+    {
+        cmdYawContinuous(args);
     }
     // Test commands
     else if (strcmp(cmd, "OPENLOOP") == 0 || strcmp(cmd, "OL") == 0)
@@ -707,7 +715,9 @@ void MotorLab::cmdHelp()
     printf("\nHardware:\n");
     printf("  BAT        - Show battery voltage\n");
     printf("  ENC        - Show encoder values (mm, mm/s)\n");
-    printf("  IMU        - IMU yaw position value (degrees)\n");
+    printf("  YAW        - Robot yaw position (degrees)\n");
+    printf("  YAWVEL     - Robot angular velocity (deg/s)\n");
+    printf("  YAWCON [X] [Y] - Print yaw for X ms every Y ms (default 5000 100)\n");
     printf("  V [volts]  - Apply voltage to motors\n");
     printf("  X          - Stop motors\n");
     printf("\nTests:\n");
@@ -898,10 +908,68 @@ void MotorLab::cmdEncoders()
     printf("  L: %.1f mm/s  R: %.1f mm/s\n", left_velocity_mmps_, right_velocity_mmps_);
 }
 
-void MotorLab::cmdIMU()
+void MotorLab::cmdYaw()
 {
-    printf("Yaw:\n");
-    printf("  Val: %.1f deg\n", imu_->yaw());
+    if (robot_ != nullptr)
+    {
+        printf("Yaw: %.2f deg\n", robot_->yaw());
+    }
+    else
+    {
+        printf("Robot not available\n");
+    }
+}
+
+void MotorLab::cmdYawVel()
+{
+    if (robot_ != nullptr)
+    {
+        printf("Angular velocity: %.2f deg/s\n", robot_->omega());
+    }
+    else
+    {
+        printf("Robot not available\n");
+    }
+}
+
+void MotorLab::cmdYawContinuous(const MotorLabArgs& args)
+{
+    if (robot_ == nullptr)
+    {
+        printf("Robot not available\n");
+        return;
+    }
+
+    uint32_t duration_ms = 5000;
+    uint32_t interval_ms = 100;
+
+    if (args.argc > 1)
+        duration_ms = static_cast<uint32_t>(atoi(args.argv[1]));
+    if (args.argc > 2)
+        interval_ms = static_cast<uint32_t>(atoi(args.argv[2]));
+
+    if (interval_ms < 10)
+        interval_ms = 10;
+
+    printf("\n=== Continuous Yaw (duration: %lu ms, interval: %lu ms) ===\n",
+           static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
+    printf("Time(ms)  Yaw(deg)  Omega(deg/s)\n");
+
+    uint32_t start_time = to_ms_since_boot(get_absolute_time());
+    uint32_t elapsed    = 0;
+
+    while (elapsed < duration_ms)
+    {
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+        elapsed      = now - start_time;
+
+        printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed),
+               robot_->yaw(), robot_->omega());
+
+        sleep_ms(interval_ms);
+    }
+
+    printf("=== Done ===\n");
 }
 
 void MotorLab::cmdOpenLoop(const MotorLabArgs& args)
