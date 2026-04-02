@@ -395,8 +395,10 @@ void runMotorLabMode(Battery& battery)
     Encoder right_encoder(pio0, PIN_ENCODER_R_A, PIN_ENCODER_R_B, false);
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
+    IMU    imu(PIN_IMU_RX);
 
-    MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
+    // MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
+    MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery, &imu);
     motorlab.init();
 
     printf("\nHardware initialized. Ready for testing.\n");
