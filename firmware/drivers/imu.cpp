@@ -88,7 +88,7 @@ float IMU::yaw()
 {
     if (!yaw_data_ready_)
     {
-        LOG_DEBUG("IMU yaw not ready, returning 0");
+        // LOG_DEBUG("IMU yaw not ready, returning 0");
         return 0.0f;
     }
     return current_yaw_degrees_ - yaw_reset_offset_;

@@ -608,6 +608,22 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     {
         cmdYawReset();
     }
+    else if (strcmp(cmd, "LENC") == 0)
+    {
+        cmdLeftEncoder();
+    }
+    else if (strcmp(cmd, "RENC") == 0)
+    {
+        cmdRightEncoder();
+    }
+    else if (strcmp(cmd, "ENCRESET") == 0)
+    {
+        cmdEncoderReset();
+    }
+    else if (strcmp(cmd, "ENCCON") == 0)
+    {
+        cmdEncoderContinuous(args);
+    }
     // Test commands
     else if (strcmp(cmd, "OPENLOOP") == 0 || strcmp(cmd, "OL") == 0)
     {
@@ -723,6 +739,10 @@ void MotorLab::cmdHelp()
     printf("  YAWVEL     - Robot angular velocity (deg/s)\n");
     printf("  YAWCON [X] [Y] - Print yaw for X ms every Y ms (default 5000 100)\n");
     printf("  YAWRESET   - Reset yaw and angular velocity to 0\n");
+    printf("  LENC       - Left encoder position (mm)\n");
+    printf("  RENC       - Right encoder position (mm)\n");
+    printf("  ENCRESET   - Reset both encoders to 0\n");
+    printf("  ENCCON [X] [Y] - Print encoders for X ms every Y ms (default 5000 100)\n");
     printf("  V [volts]  - Apply voltage to motors\n");
     printf("  X          - Stop motors\n");
     printf("\nTests:\n");
@@ -994,6 +1014,66 @@ void MotorLab::cmdYawReset()
     {
         printf("Robot not available\n");
     }
+}
+
+void MotorLab::cmdLeftEncoder()
+{
+    float left_mm = left_encoder_->ticks() * MM_PER_TICK;
+    printf("Left: %.2f mm (%ld ticks)\n", left_mm, static_cast<long>(left_encoder_->ticks()));
+}
+
+void MotorLab::cmdRightEncoder()
+{
+    float right_mm = right_encoder_->ticks() * MM_PER_TICK;
+    printf("Right: %.2f mm (%ld ticks)\n", right_mm, static_cast<long>(right_encoder_->ticks()));
+}
+
+void MotorLab::cmdEncoderReset()
+{
+    resetEncoders();
+    printf("Encoders reset to 0\n");
+}
+
+void MotorLab::cmdEncoderContinuous(const MotorLabArgs& args)
+{
+    uint32_t duration_ms = 5000;
+    uint32_t interval_ms = 100;
+
+    if (args.argc > 1)
+        duration_ms = static_cast<uint32_t>(atoi(args.argv[1]));
+    if (args.argc > 2)
+        interval_ms = static_cast<uint32_t>(atoi(args.argv[2]));
+
+    if (interval_ms < 10)
+        interval_ms = 10;
+
+    printf("\n=== Continuous Encoders (duration: %lu ms, interval: %lu ms) ===\n",
+           static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
+    printf("Time(ms)  Left(mm)  Right(mm)\n");
+
+    uint32_t        start_time = to_ms_since_boot(get_absolute_time());
+    absolute_time_t last_tick  = get_absolute_time();
+    uint32_t        elapsed    = 0;
+
+    while (elapsed < duration_ms)
+    {
+        absolute_time_t now = get_absolute_time();
+        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
+        last_tick           = now;
+        elapsed             = to_ms_since_boot(now) - start_time;
+
+        updateEncoders(dt);
+
+        float left_mm  = left_encoder_->ticks() * MM_PER_TICK;
+        float right_mm = right_encoder_->ticks() * MM_PER_TICK;
+
+        printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed),
+               left_mm, right_mm);
+
+        sleep_ms(interval_ms);
+    }
+
+    printf("=== Done ===\n");
 }
 
 void MotorLab::cmdOpenLoop(const MotorLabArgs& args)
