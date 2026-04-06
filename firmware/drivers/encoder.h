@@ -22,10 +22,11 @@ class Encoder
     /**
      * @brief Constructs encoder reader with PIO configuration
      * @param pio_instance PIO hardware instance (pio0 or pio1)
-     * @param gpio_pin Base GPIO pin (channel B assumed to be next sequential pin)
+     * @param pin_a GPIO pin for encoder channel A
+     * @param pin_b GPIO pin for encoder channel B
      * @param invert_direction If true, inverts tick count direction
      */
-    Encoder(PIO pio_instance, int gpio_pin, bool invert_direction = false);
+    Encoder(PIO pio_instance, int pin_a, int pin_b, bool invert_direction = false);
 
     /**
      * @brief Resets encoder tick count to zero
@@ -45,7 +46,8 @@ class Encoder
     uint      state_machine_;
     int       offset_ticks_;
     bool      invert_direction_;
-    int       gpio_pin_;
+    int       pin_a_;
+    int       pin_b_;
 };
 
 #endif

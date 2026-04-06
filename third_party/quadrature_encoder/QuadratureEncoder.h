@@ -13,42 +13,47 @@
 // ------------------ //
 
 #define quadrature_encoder_wrap_target 15
-#define quadrature_encoder_wrap 23
+#define quadrature_encoder_wrap 28
 #define quadrature_encoder_pio_version 0
 
 static const uint16_t quadrature_encoder_program_instructions[] = {
-    0x000f, //  0: jmp    15
-    0x000e, //  1: jmp    14
-    0x0015, //  2: jmp    21
-    0x000f, //  3: jmp    15
-    0x0015, //  4: jmp    21
-    0x000f, //  5: jmp    15
-    0x000f, //  6: jmp    15
-    0x000e, //  7: jmp    14
-    0x000e, //  8: jmp    14
-    0x000f, //  9: jmp    15
-    0x000f, // 10: jmp    15
-    0x0015, // 11: jmp    21
-    0x000f, // 12: jmp    15
-    0x0015, // 13: jmp    21
-    0x008f, // 14: jmp    y--, 15
+    0x000f, //  0: jmp    15             ; 00→00: no change
+    0x000e, //  1: jmp    14             ; 00→01: decrement
+    0x001a, //  2: jmp    26             ; 00→10: increment
+    0x000f, //  3: jmp    15             ; 00→11: no change
+    0x001a, //  4: jmp    26             ; 01→00: increment
+    0x000f, //  5: jmp    15             ; 01→01: no change
+    0x000f, //  6: jmp    15             ; 01→10: no change
+    0x000e, //  7: jmp    14             ; 01→11: decrement
+    0x000e, //  8: jmp    14             ; 10→00: decrement
+    0x000f, //  9: jmp    15             ; 10→01: no change
+    0x000f, // 10: jmp    15             ; 10→10: no change
+    0x001a, // 11: jmp    26             ; 10→11: increment
+    0x000f, // 12: jmp    15             ; 11→00: no change
+    0x001a, // 13: jmp    26             ; 11→01: increment
+    0x008f, // 14: jmp    y--, 15        ; decrement
             //     .wrap_target
-    0xa0c2, // 15: mov    isr, y
+    0xa0c2, // 15: mov    isr, y         ; update
     0x8000, // 16: push   noblock
-    0x60c2, // 17: out    isr, 2
-    0x4002, // 18: in     pins, 2
-    0xa0e6, // 19: mov    osr, isr
-    0xa0a6, // 20: mov    pc, isr
-    0xa04a, // 21: mov    y, ~y
-    0x0097, // 22: jmp    y--, 23
-    0xa04a, // 23: mov    y, ~y
+    0x60c2, // 17: out    isr, 2         ; shift old state from OSR
+    0x00d5, // 18: jmp    pin, 21        ; test pin_b (jmp_pin)
+    0x4061, // 19: in     null, 1        ; pin_b = 0
+    0x0017, // 20: jmp    23             ; → read_a
+    0xe021, // 21: set    x, 1           ; pin_b_high
+    0x4021, // 22: in     x, 1           ; pin_b = 1
+    0x4001, // 23: in     pins, 1        ; read pin_a (in_base)
+    0xa0e6, // 24: mov    osr, isr       ; save state
+    0xa0a6, // 25: mov    pc, isr        ; computed jump
+    0xa04a, // 26: mov    y, ~y          ; increment
+    0x009c, // 27: jmp    y--, 28
+    0xa04a, // 28: mov    y, ~y
             //     .wrap
 };
 
 #if !PICO_NO_HARDWARE
 static const struct pio_program quadrature_encoder_program = {
     .instructions = quadrature_encoder_program_instructions,
-    .length = 24,
+    .length = 29,
     .origin = 0,
     .pio_version = quadrature_encoder_pio_version,
 #if PICO_PIO_VERSION > 0
@@ -66,29 +71,39 @@ static inline pio_sm_config quadrature_encoder_program_get_default_config(uint o
 #include "hardware/gpio.h"
 // max_step_rate is used to lower the clock of the state machine to save power
 // if the application doesn't require a very high sampling rate. Passing zero
-// will set the clock to the maximum
-static inline void quadrature_encoder_program_init(PIO pio, uint sm, uint pin, int max_step_rate)
+// will set the clock to the maximum.
+//
+// pin_a = channel A (used as in_base for IN PINS)
+// pin_b = channel B (used as jmp_pin for JMP PIN)
+// Pins do NOT need to be adjacent.
+static inline void quadrature_encoder_program_init(PIO pio, uint sm, uint pin_a, uint pin_b, int max_step_rate)
 {
-    pio_sm_set_consecutive_pindirs(pio, sm, pin, 2, false);
-    pio_gpio_init(pio, pin);
-    pio_gpio_init(pio, pin + 1);
-    gpio_pull_up(pin);
-    gpio_pull_up(pin + 1);
+    pio_gpio_init(pio, pin_a);
+    pio_gpio_init(pio, pin_b);
+
+    gpio_set_dir(pin_a, GPIO_IN);
+    gpio_set_dir(pin_b, GPIO_IN);
+    gpio_pull_up(pin_a);
+    gpio_pull_up(pin_b);
+
     pio_sm_config c = quadrature_encoder_program_get_default_config(0);
-    sm_config_set_in_pins(&c, pin); // for WAIT, IN
-    sm_config_set_jmp_pin(&c, pin); // for JMP
+
+    sm_config_set_in_pins(&c, pin_a);  // for IN PINS, 1
+    sm_config_set_jmp_pin(&c, pin_b);  // for JMP PIN
     // shift to left, autopull disabled
     sm_config_set_in_shift(&c, false, false, 32);
     // don't join FIFO's
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_NONE);
+
     // passing "0" as the sample frequency,
     if (max_step_rate == 0) {
         sm_config_set_clkdiv(&c, 1.0);
     } else {
-        // one state machine loop takes at most 10 cycles
-        float div = (float)clock_get_hz(clk_sys) / (10 * max_step_rate);
+        // one state machine loop takes at most 13 cycles
+        float div = (float)clock_get_hz(clk_sys) / (13 * max_step_rate);
         sm_config_set_clkdiv(&c, div);
     }
+
     pio_sm_init(pio, sm, 0, &c);
     pio_sm_set_enabled(pio, sm, true);
 }
