@@ -39,7 +39,8 @@ void ToF::initializeSensor(int xshut_pin, char sensor_position)
     sensor_device_.comms_type      = 1;
     sensor_device_.comms_speed_khz = 400;
 
-    VL53L0X_dev_i2c_default_initialise(&sensor_device_, VL53L0X_DEFAULT_MODE);
+    VL53L0X_Error status =
+        VL53L0X_dev_i2c_default_initialise(&sensor_device_, VL53L0X_DEFAULT_MODE);
 
     uint8_t new_address;
     switch (tolower(sensor_position))
@@ -58,7 +59,7 @@ void ToF::initializeSensor(int xshut_pin, char sensor_position)
             break;
     }
 
-    VL53L0X_SetDeviceAddress(&sensor_device_, new_address);
+    status                    = VL53L0X_SetDeviceAddress(&sensor_device_, new_address);
     sensor_device_.I2cDevAddr = new_address;
 }
 
@@ -123,4 +124,20 @@ float ToF::distance()
 #else
     return distance_mm;
 #endif
+}
+
+float ToF::distanceDirect()
+{
+    VL53L0X_RangingMeasurementData_t measurement_data;
+    VL53L0X_GetRangingMeasurementData(&sensor_device_, &measurement_data);
+    VL53L0X_ClearInterruptMask(&sensor_device_, VL53L0X_REG_SYSTEM_INTERRUPT_GPIO_NEW_SAMPLE_READY);
+
+    // Check if measurement is valid (RangeStatus == 0 means valid)
+    if (measurement_data.RangeStatus == 0)
+    {
+        return measurement_data.RangeMilliMeter;
+    }
+
+    // Return error value (8191mm) for invalid measurements
+    return 8191.0f;
 }

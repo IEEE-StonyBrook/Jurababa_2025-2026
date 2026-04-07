@@ -28,6 +28,12 @@ class ToF
      */
     float distance();
 
+    /**
+     * @brief Returns measured distance directly from hardware (bypasses multicore snapshot)
+     * @return Distance in millimeters
+     */
+    float distanceDirect();
+
   private:
     void setupXSHUTPin(int xshut_pin);
     void resetSensor(int xshut_pin);

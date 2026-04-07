@@ -2,11 +2,13 @@
 
 #include "config/config.h"
 #include "control/drivetrain.h"
+#include "control/robot.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
 #include "drivers/motor.h"
-#include "control/robot.h"
+#include "drivers/tof.h"
 
+#include "hardware/i2c.h"
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
 
@@ -42,7 +44,21 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
       input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
-      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot)
+      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr),
+      front_tof_(nullptr), right_tof_(nullptr)
+{
+    clearInput();
+}
+
+// Robot mode with ToF sensors: direct motor/encoder + Robot + ToF access
+MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
+                   Encoder* right_encoder, Battery* battery, Robot* robot, ToF* left_tof,
+                   ToF* front_tof, ToF* right_tof)
+    : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
+      right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
+      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
+      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot), left_tof_(left_tof),
+      front_tof_(front_tof), right_tof_(right_tof)
 {
     clearInput();
 }
@@ -453,7 +469,6 @@ int MotorLab::readSerialLine()
         {
             c         = uart_getc(uart0);
             from_uart = true;
-
         }
 
         if (c == PICO_ERROR_TIMEOUT)
@@ -462,8 +477,6 @@ int MotorLab::readSerialLine()
         }
 
         char ch = static_cast<char>(c);
-
-
 
         // Handle newline (command complete)
         if (ch == '\n' || ch == '\r')
@@ -608,6 +621,23 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     {
         cmdYawReset();
     }
+    // ToF sensor queries
+    else if (strcmp(cmd, "LTOF") == 0)
+    {
+        cmdLeftTof();
+    }
+    else if (strcmp(cmd, "FTOF") == 0)
+    {
+        cmdFrontTof();
+    }
+    else if (strcmp(cmd, "RTOF") == 0)
+    {
+        cmdRightTof();
+    }
+    else if (strcmp(cmd, "TOFCON") == 0)
+    {
+        cmdTofContinuous(args);
+    }
     else if (strcmp(cmd, "LENC") == 0)
     {
         cmdLeftEncoder();
@@ -739,6 +769,10 @@ void MotorLab::cmdHelp()
     printf("  YAWVEL     - Robot angular velocity (deg/s)\n");
     printf("  YAWCON [X] [Y] - Print yaw for X ms every Y ms (default 5000 100)\n");
     printf("  YAWRESET   - Reset yaw and angular velocity to 0\n");
+    printf("  LTOF       - Left ToF distance (mm)\n");
+    printf("  FTOF       - Front ToF distance (mm)\n");
+    printf("  RTOF       - Right ToF distance (mm)\n");
+    printf("  TOFCON [X] [Y] - Print all ToF for X ms every Y ms (default 5000 100)\n");
     printf("  LENC       - Left encoder position (mm)\n");
     printf("  RENC       - Right encoder position (mm)\n");
     printf("  ENCRESET   - Reset both encoders to 0\n");
@@ -994,8 +1028,8 @@ void MotorLab::cmdYawContinuous(const MotorLabArgs& args)
         // Keep robot sensor tracking (omega) up to date
         robot_->update(dt);
 
-        printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed),
-               robot_->yaw(), robot_->omega());
+        printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed), robot_->yaw(),
+               robot_->omega());
 
         sleep_ms(interval_ms);
     }
@@ -1014,6 +1048,94 @@ void MotorLab::cmdYawReset()
     {
         printf("Robot not available\n");
     }
+}
+
+void MotorLab::cmdLeftTof()
+{
+    if (left_tof_ != nullptr)
+    {
+        printf("Left ToF: %.0f mm\n", left_tof_->distanceDirect());
+    }
+    else
+    {
+        printf("Left ToF not available\n");
+    }
+}
+
+void MotorLab::cmdFrontTof()
+{
+    if (front_tof_ != nullptr)
+    {
+        printf("Front ToF: %.0f mm\n", front_tof_->distanceDirect());
+    }
+    else
+    {
+        printf("Front ToF not available\n");
+    }
+}
+
+void MotorLab::cmdRightTof()
+{
+    if (right_tof_ != nullptr)
+    {
+        printf("Right ToF: %.0f mm\n", right_tof_->distanceDirect());
+    }
+    else
+    {
+        printf("Right ToF not available\n");
+    }
+}
+
+void MotorLab::cmdTofContinuous(const MotorLabArgs& args)
+{
+    if (left_tof_ == nullptr && front_tof_ == nullptr && right_tof_ == nullptr)
+    {
+        printf("ToF sensors not available\n");
+        return;
+    }
+
+    uint32_t duration_ms = 5000;
+    uint32_t interval_ms = 100;
+
+    if (args.argc > 1)
+        duration_ms = static_cast<uint32_t>(atoi(args.argv[1]));
+    if (args.argc > 2)
+        interval_ms = static_cast<uint32_t>(atoi(args.argv[2]));
+
+    if (interval_ms < 10)
+        interval_ms = 10;
+
+    printf("\n=== Continuous ToF (duration: %lu ms, interval: %lu ms) ===\n",
+           static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
+    printf("Time(ms)  Left(mm)  Front(mm)  Right(mm)\n");
+
+    uint32_t        start_time = to_ms_since_boot(get_absolute_time());
+    absolute_time_t last_tick  = get_absolute_time();
+    uint32_t        elapsed    = 0;
+
+    while (elapsed < duration_ms)
+    {
+        absolute_time_t now = get_absolute_time();
+        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
+        last_tick           = now;
+        elapsed             = to_ms_since_boot(now) - start_time;
+
+        if (robot_ != nullptr)
+        {
+            robot_->update(dt);
+        }
+
+        float left_dist  = (left_tof_ != nullptr) ? left_tof_->distanceDirect() : 0.0f;
+        float front_dist = (front_tof_ != nullptr) ? front_tof_->distanceDirect() : 0.0f;
+        float right_dist = (right_tof_ != nullptr) ? right_tof_->distanceDirect() : 0.0f;
+
+        printf("%7lu  %8.0f  %9.0f  %8.0f\n", static_cast<unsigned long>(elapsed), left_dist,
+               front_dist, right_dist);
+
+        sleep_ms(interval_ms);
+    }
+
+    printf("=== Done ===\n");
 }
 
 void MotorLab::cmdLeftEncoder()
@@ -1067,8 +1189,7 @@ void MotorLab::cmdEncoderContinuous(const MotorLabArgs& args)
         float left_mm  = left_encoder_->ticks() * MM_PER_TICK;
         float right_mm = right_encoder_->ticks() * MM_PER_TICK;
 
-        printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed),
-               left_mm, right_mm);
+        printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed), left_mm, right_mm);
 
         sleep_ms(interval_ms);
     }
@@ -1108,7 +1229,7 @@ void MotorLab::cmdStep(const MotorLabArgs& args)
 void MotorLab::cmdMove(const MotorLabArgs& args)
 {
     // Default values in mm units (half cell = 90mm, typical micromouse speeds)
-    float dist  = 480.0f;  // mm (3 cell)
+    float dist  = 480.0f; // mm (3 cell)
     float speed = 200.0f; // mm/s
     float accel = 500.0f; // mm/s^2
     int   mode  = 2;

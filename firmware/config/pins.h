@@ -29,10 +29,10 @@
 #define PIN_IMU_RX 9 // IMU UART receive (TX from IMU)
 
 // ================= ToF Sensor Pins ================= //
-// VL53L0X Time-of-Flight sensors (I2C with XSHUT control)
-#define PIN_TOF_LEFT_XSHUT  0 // Left ToF shutdown
-#define PIN_TOF_FRONT_XSHUT 29 // Front ToF shutdown
-#define PIN_TOF_RIGHT_XSHUT 15 // Right ToF shutdown
+// VL53L0X Time-of-Flight sensors (I2C0: GP4=SDA, GP5=SCL)
+#define PIN_TOF_LEFT_XSHUT  3  // Left ToF shutdown (only sensor connected)
+#define PIN_TOF_FRONT_XSHUT 29 // Front ToF shutdown (not connected)
+#define PIN_TOF_RIGHT_XSHUT 15 // Right ToF shutdown (not connected)
 
 // ================= Battery Monitor Pins ================= //
 #define PIN_BATTERY_ADC 28 // ADC0 for battery voltage divider

@@ -13,6 +13,7 @@ class Encoder;
 class Motor;
 class Battery;
 class Robot;
+class ToF;
 
 constexpr int MOTORLAB_INPUT_BUFFER_SIZE = 64;
 constexpr int MOTORLAB_MAX_ARGC          = 8;
@@ -41,6 +42,10 @@ class MotorLab
     // Robot mode: direct motor/encoder + Robot access (for yaw/omega)
     MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
              Battery* battery, Robot* robot);
+
+    // Robot mode with ToF sensors: direct motor/encoder + Robot + ToF access
+    MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
+             Battery* battery, Robot* robot, ToF* left_tof, ToF* front_tof, ToF* right_tof);
 
     // Integrated mode: use Drivetrain
     MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right_encoder,
@@ -90,6 +95,10 @@ class MotorLab
     void cmdYawVel();
     void cmdYawContinuous(const MotorLabArgs& args);
     void cmdYawReset();
+    void cmdLeftTof();
+    void cmdFrontTof();
+    void cmdRightTof();
+    void cmdTofContinuous(const MotorLabArgs& args);
     void cmdLeftEncoder();
     void cmdRightEncoder();
     void cmdEncoderReset();
@@ -110,7 +119,10 @@ class MotorLab
     Encoder*    right_encoder_;
     Battery*    battery_;
     Drivetrain* drivetrain_;
-    Robot* robot_;
+    Robot*      robot_;
+    ToF*        left_tof_;
+    ToF*        front_tof_;
+    ToF*        right_tof_;
 
     MotorLabSettings settings_;
     MotorLabProfile  profile_;

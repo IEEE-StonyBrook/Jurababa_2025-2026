@@ -26,17 +26,17 @@
 #include "common/log.h"
 #include "config/config.h"
 #include "control/drivetrain.h"
+#include "control/line_follower.h"
 #include "control/robot.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
 #include "drivers/imu.h"
+#include "drivers/line_sensor.h"
 #include "drivers/motor.h"
 #include "drivers/tof.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
 #include "motor_lab/motor_lab.h"
-#include "control/line_follower.h"
-#include "drivers/line_sensor.h"
 #include "navigation/a_star.h"
 #include "navigation/flood_fill.h"
 #include "navigation/path_utils.h"
@@ -397,10 +397,14 @@ void runMotorLabMode(Battery& battery)
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
     IMU     imu(PIN_IMU_RX);
 
-    Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
-    Robot      robot(&drivetrain, &imu, nullptr, nullptr, nullptr);
+    // Initialize ToF sensor (uses I2C0: GP4=SDA, GP5=SCL, XSHUT=GP3)
+    ToF left_tof(PIN_TOF_LEFT_XSHUT, 'L');
 
-    MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery, &robot);
+    Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
+    Robot      robot(&drivetrain, &imu, &left_tof, nullptr, nullptr);
+
+    MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery, &robot,
+                      &left_tof, nullptr, nullptr);
     motorlab.init();
 
     printf("\nHardware initialized. Ready for testing.\n");
@@ -415,10 +419,10 @@ void runMotorLabMode(Battery& battery)
 
     while (true)
     {
-        absolute_time_t now     = get_absolute_time();
-        float           dt      = absolute_time_diff_us(last_tick, now) * 1e-6f;
-        uint32_t        now_ms  = to_ms_since_boot(now);
-        last_tick               = now;
+        absolute_time_t now    = get_absolute_time();
+        float           dt     = absolute_time_diff_us(last_tick, now) * 1e-6f;
+        uint32_t        now_ms = to_ms_since_boot(now);
+        last_tick              = now;
 
         robot.update(dt);
         motorlab.updateEncoders(LOOP_INTERVAL_S);
