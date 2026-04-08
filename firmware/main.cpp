@@ -220,8 +220,8 @@ void processCommands(Robot* robot)
  */
 void core1_RobotController()
 {
-    Encoder left_encoder(pio0, PIN_ENCODER_L_A, PIN_ENCODER_L_B, true);
-    Encoder right_encoder(pio0, PIN_ENCODER_R_A, PIN_ENCODER_R_B, false);
+    // TESTING: Only right encoder (GP10/GP11 adjacent)
+    Encoder right_encoder(pio0, PIN_ENCODER_R_A, false);
     ToF     left_tof(PIN_TOF_LEFT_XSHUT, 'L');
     ToF     front_tof(PIN_TOF_FRONT_XSHUT, 'F');
     ToF     right_tof(PIN_TOF_RIGHT_XSHUT, 'R');
@@ -229,7 +229,8 @@ void core1_RobotController()
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
 
-    Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, g_battery);
+    // TESTING: Pass nullptr for left_encoder
+    Drivetrain drivetrain(&left_motor, &right_motor, nullptr, &right_encoder, g_battery);
     Robot      robot(&drivetrain, &imu, &left_tof, &front_tof, &right_tof);
 
     LOG_DEBUG("Core1: Hardware initialized");
@@ -251,7 +252,7 @@ void core1_RobotController()
         processCommands(&robot);
 
         SensorData sensor_data{};
-        sensor_data.left_encoder  = left_encoder.ticks();
+        sensor_data.left_encoder  = 0; // TESTING: Left encoder not initialized
         sensor_data.right_encoder = right_encoder.ticks();
         sensor_data.tof_left_mm   = static_cast<int16_t>(left_tof.distance());
         sensor_data.tof_front_mm  = static_cast<int16_t>(front_tof.distance());
@@ -391,8 +392,9 @@ void runMotorLabMode(Battery& battery)
 
     printf("Battery voltage: %.2f V\n", battery.voltage());
 
-    Encoder left_encoder(pio0, PIN_ENCODER_L_A, PIN_ENCODER_L_B, true);
-    Encoder right_encoder(pio0, PIN_ENCODER_R_A, PIN_ENCODER_R_B, false);
+    // TESTING: Only initialize right encoder (GP10/GP11 - adjacent pins)
+    // Left encoder (GP8/GP1 - NON-adjacent) won't work with adjacent-pin PIO code
+    Encoder right_encoder(pio0, PIN_ENCODER_R_A, false); // GP10, assumes GP11 is channel B
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
     IMU     imu(PIN_IMU_RX);
@@ -400,10 +402,11 @@ void runMotorLabMode(Battery& battery)
     // Initialize ToF sensor (uses I2C0: GP4=SDA, GP5=SCL, XSHUT=GP3)
     ToF left_tof(PIN_TOF_LEFT_XSHUT, 'L');
 
-    Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
+    // TESTING: Pass nullptr for left_encoder since it's not initialized
+    Drivetrain drivetrain(&left_motor, &right_motor, nullptr, &right_encoder, &battery);
     Robot      robot(&drivetrain, &imu, &left_tof, nullptr, nullptr);
 
-    MotorLab motorlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery, &robot,
+    MotorLab motorlab(&left_motor, &right_motor, nullptr, &right_encoder, &battery, &robot,
                       &left_tof, nullptr, nullptr);
     motorlab.init();
 
@@ -458,8 +461,8 @@ void runLineFollowingMode(Battery& battery)
     printf("==========================================\n\n");
 
     // Hardware init (no ToF sensors)
-    Encoder left_encoder(pio0, PIN_ENCODER_L_A, PIN_ENCODER_L_B, true);
-    Encoder right_encoder(pio0, PIN_ENCODER_R_A, PIN_ENCODER_R_B, false);
+    // TESTING: Only right encoder (GP10/GP11 adjacent)
+    Encoder right_encoder(pio0, PIN_ENCODER_R_A, false);
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
     IMU     imu(PIN_IMU_RX);
@@ -467,7 +470,8 @@ void runLineFollowingMode(Battery& battery)
     LineSensor line_sensor(i2c0, PIN_LINE_SDA, PIN_LINE_SCL);
     line_sensor.init();
 
-    Drivetrain   drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
+    // TESTING: Pass nullptr for left_encoder
+    Drivetrain   drivetrain(&left_motor, &right_motor, nullptr, &right_encoder, &battery);
     LineFollower line_follower(&drivetrain, &line_sensor, &imu, &battery);
 
     printf("Hardware initialized.\n");

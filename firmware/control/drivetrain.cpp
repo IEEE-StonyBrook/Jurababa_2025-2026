@@ -14,11 +14,25 @@ Drivetrain::Drivetrain(Motor* left_motor, Motor* right_motor, Encoder* left_enco
 
 void Drivetrain::reset()
 {
-    left_encoder_->reset();
-    right_encoder_->reset();
+    if (left_encoder_)
+    {
+        left_encoder_->reset();
+        prev_left_ticks_ = left_encoder_->ticks();
+    }
+    else
+    {
+        prev_left_ticks_ = 0;
+    }
 
-    prev_left_ticks_  = left_encoder_->ticks();
-    prev_right_ticks_ = right_encoder_->ticks();
+    if (right_encoder_)
+    {
+        right_encoder_->reset();
+        prev_right_ticks_ = right_encoder_->ticks();
+    }
+    else
+    {
+        prev_right_ticks_ = 0;
+    }
 
     left_velocity_mmps_  = 0.0f;
     right_velocity_mmps_ = 0.0f;
@@ -29,9 +43,11 @@ void Drivetrain::reset()
 
 float Drivetrain::position(WheelSide side)
 {
-    bool is_left    = (side == WheelSide::LEFT);
-    int  tick_count = is_left ? left_encoder_->ticks() : right_encoder_->ticks();
-    return tick_count * MM_PER_TICK;
+    bool     is_left = (side == WheelSide::LEFT);
+    Encoder* enc     = is_left ? left_encoder_ : right_encoder_;
+    if (!enc)
+        return 0.0f;
+    return enc->ticks() * MM_PER_TICK;
 }
 
 float Drivetrain::velocity(WheelSide side)
@@ -76,17 +92,21 @@ void Drivetrain::update(float dt)
     if (dt < DRIVETRAIN_MIN_DT)
         return;
 
-    int32_t curr_left  = left_encoder_->ticks();
-    int32_t curr_right = right_encoder_->ticks();
+    if (left_encoder_)
+    {
+        int32_t curr_left = left_encoder_->ticks();
+        int32_t d_left    = curr_left - prev_left_ticks_;
+        prev_left_ticks_  = curr_left;
+        left_velocity_mmps_ = (d_left * MM_PER_TICK) / dt;
+    }
 
-    int32_t d_left  = curr_left - prev_left_ticks_;
-    int32_t d_right = curr_right - prev_right_ticks_;
-
-    prev_left_ticks_  = curr_left;
-    prev_right_ticks_ = curr_right;
-
-    left_velocity_mmps_  = (d_left * MM_PER_TICK) / dt;
-    right_velocity_mmps_ = (d_right * MM_PER_TICK) / dt;
+    if (right_encoder_)
+    {
+        int32_t curr_right = right_encoder_->ticks();
+        int32_t d_right    = curr_right - prev_right_ticks_;
+        prev_right_ticks_  = curr_right;
+        right_velocity_mmps_ = (d_right * MM_PER_TICK) / dt;
+    }
 
     if (left_velocity_mmps_ > DRIVETRAIN_MAX_VELOCITY_MMPS ||
         right_velocity_mmps_ > DRIVETRAIN_MAX_VELOCITY_MMPS)

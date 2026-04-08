@@ -167,9 +167,12 @@ float MotorLab::encoderPositionMM() const
         return (left_mm + right_mm) / 2.0f;
     }
     // Standalone mode: calculate from encoder ticks
-    int32_t left_ticks  = left_encoder_->ticks();
-    int32_t right_ticks = right_encoder_->ticks();
-    float   avg_ticks   = static_cast<float>(left_ticks + right_ticks) / 2.0f;
+    int32_t left_ticks  = left_encoder_ ? left_encoder_->ticks() : 0;
+    int32_t right_ticks = right_encoder_ ? right_encoder_->ticks() : 0;
+    int     num_encoders = (left_encoder_ ? 1 : 0) + (right_encoder_ ? 1 : 0);
+    if (num_encoders == 0)
+        return 0.0f;
+    float avg_ticks = static_cast<float>(left_ticks + right_ticks) / static_cast<float>(num_encoders);
     return avg_ticks * MM_PER_TICK;
 }
 
@@ -192,8 +195,10 @@ void MotorLab::resetEncoders()
     {
         drivetrain_->reset();
     }
-    left_encoder_->reset();
-    right_encoder_->reset();
+    if (left_encoder_)
+        left_encoder_->reset();
+    if (right_encoder_)
+        right_encoder_->reset();
     prev_left_ticks_     = 0;
     prev_right_ticks_    = 0;
     left_velocity_mmps_  = 0.0f;
@@ -218,18 +223,21 @@ void MotorLab::updateEncoders(float dt)
         return; // Avoid division by zero
     }
 
-    int32_t left_ticks  = left_encoder_->ticks();
-    int32_t right_ticks = right_encoder_->ticks();
+    if (left_encoder_)
+    {
+        int32_t left_ticks = left_encoder_->ticks();
+        int32_t delta_left = left_ticks - prev_left_ticks_;
+        prev_left_ticks_   = left_ticks;
+        left_velocity_mmps_ = (delta_left * MM_PER_TICK) / dt;
+    }
 
-    int32_t delta_left  = left_ticks - prev_left_ticks_;
-    int32_t delta_right = right_ticks - prev_right_ticks_;
-
-    prev_left_ticks_  = left_ticks;
-    prev_right_ticks_ = right_ticks;
-
-    // Convert tick deltas to mm/s (using MM_PER_TICK from Config.h)
-    left_velocity_mmps_  = (delta_left * MM_PER_TICK) / dt;
-    right_velocity_mmps_ = (delta_right * MM_PER_TICK) / dt;
+    if (right_encoder_)
+    {
+        int32_t right_ticks = right_encoder_->ticks();
+        int32_t delta_right = right_ticks - prev_right_ticks_;
+        prev_right_ticks_   = right_ticks;
+        right_velocity_mmps_ = (delta_right * MM_PER_TICK) / dt;
+    }
 }
 
 // ============================================================================
@@ -955,12 +963,25 @@ void MotorLab::cmdBattery()
 
 void MotorLab::cmdEncoders()
 {
-    float left_mm  = left_encoder_->ticks() * MM_PER_TICK;
-    float right_mm = right_encoder_->ticks() * MM_PER_TICK;
-
     printf("Position:\n");
-    printf("  Left:  %ld ticks = %.1f mm\n", static_cast<long>(left_encoder_->ticks()), left_mm);
-    printf("  Right: %ld ticks = %.1f mm\n", static_cast<long>(right_encoder_->ticks()), right_mm);
+    if (left_encoder_)
+    {
+        float left_mm = left_encoder_->ticks() * MM_PER_TICK;
+        printf("  Left:  %ld ticks = %.1f mm\n", static_cast<long>(left_encoder_->ticks()), left_mm);
+    }
+    else
+    {
+        printf("  Left:  N/A (not connected)\n");
+    }
+    if (right_encoder_)
+    {
+        float right_mm = right_encoder_->ticks() * MM_PER_TICK;
+        printf("  Right: %ld ticks = %.1f mm\n", static_cast<long>(right_encoder_->ticks()), right_mm);
+    }
+    else
+    {
+        printf("  Right: N/A (not connected)\n");
+    }
 
     printf("Velocity:\n");
     printf("  Avg: %.1f mm/s\n", encoderVelocityMMps());
@@ -1140,12 +1161,22 @@ void MotorLab::cmdTofContinuous(const MotorLabArgs& args)
 
 void MotorLab::cmdLeftEncoder()
 {
+    if (!left_encoder_)
+    {
+        printf("Left encoder not connected\n");
+        return;
+    }
     float left_mm = left_encoder_->ticks() * MM_PER_TICK;
     printf("Left: %.2f mm (%ld ticks)\n", left_mm, static_cast<long>(left_encoder_->ticks()));
 }
 
 void MotorLab::cmdRightEncoder()
 {
+    if (!right_encoder_)
+    {
+        printf("Right encoder not connected\n");
+        return;
+    }
     float right_mm = right_encoder_->ticks() * MM_PER_TICK;
     printf("Right: %.2f mm (%ld ticks)\n", right_mm, static_cast<long>(right_encoder_->ticks()));
 }
@@ -1186,8 +1217,8 @@ void MotorLab::cmdEncoderContinuous(const MotorLabArgs& args)
 
         updateEncoders(dt);
 
-        float left_mm  = left_encoder_->ticks() * MM_PER_TICK;
-        float right_mm = right_encoder_->ticks() * MM_PER_TICK;
+        float left_mm  = left_encoder_ ? left_encoder_->ticks() * MM_PER_TICK : 0.0f;
+        float right_mm = right_encoder_ ? right_encoder_->ticks() * MM_PER_TICK : 0.0f;
 
         printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed), left_mm, right_mm);
 
