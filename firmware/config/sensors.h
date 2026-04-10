@@ -49,7 +49,8 @@
 
 // ================= Line Sensor Configuration ================= //
 #define LINE_SENSOR_COUNT             8
-#define LINE_SENSOR_I2C_ADDR          0x38
+#define LINE_SENSOR_I2C_ADDR          0x12 // YahBoom 8-channel sensor
+#define LINE_SENSOR_DATA_REG          0x30 // Sensor data register
 #define LINE_SENSOR_I2C_BAUD          100000
 #define LINE_INTERSECTION_DEBOUNCE_MS 50
 

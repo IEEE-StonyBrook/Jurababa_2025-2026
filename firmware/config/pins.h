@@ -10,12 +10,12 @@
 
 // ================= Motor Pins ================= //
 // Left motor (TB6552FNG + hardware inverter)
-#define PIN_MOTOR_L_DIR 2 // Left motor direction (CTRL → inverter → IN1/IN2)
-#define PIN_MOTOR_L_PWM 3 // Left motor speed PWM
+#define PIN_MOTOR_L_DIR 6 // Left motor direction (CTRL → inverter → IN1/IN2)
+#define PIN_MOTOR_L_PWM 7 // Left motor speed PWM
 
 // Right motor (TB6552FNG + hardware inverter)
-#define PIN_MOTOR_R_DIR 6 // Right motor direction (CTRL → inverter → IN1/IN2)
-#define PIN_MOTOR_R_PWM 7 // Right motor speed PWM
+#define PIN_MOTOR_R_DIR 2 // Right motor direction (CTRL → inverter → IN1/IN2)
+#define PIN_MOTOR_R_PWM 3 // Right motor speed PWM
 
 // ================= Encoder Pins ================= //
 // Quadrature encoders (PIO-driven)
@@ -30,7 +30,7 @@
 
 // ================= ToF Sensor Pins ================= //
 // VL53L0X Time-of-Flight sensors (I2C0: GP4=SDA, GP5=SCL)
-#define PIN_TOF_LEFT_XSHUT  3  // Left ToF shutdown (only sensor connected)
+#define PIN_TOF_LEFT_XSHUT  16 // Left ToF shutdown (only sensor connected)
 #define PIN_TOF_FRONT_XSHUT 29 // Front ToF shutdown (not connected)
 #define PIN_TOF_RIGHT_XSHUT 15 // Right ToF shutdown (not connected)
 
@@ -43,7 +43,7 @@
 #define PIN_BT_RX 13 // Bluetooth receive
 
 // ================= Line Sensor Pins (I2C0) ================= //
-#define PIN_LINE_SDA 0 // I2C0 SDA
-#define PIN_LINE_SCL 1 // I2C0 SCL
+#define PIN_LINE_SDA 4 // I2C0 SDA
+#define PIN_LINE_SCL 5 // I2C0 SCL
 
 #endif // CONFIG_PINS_H

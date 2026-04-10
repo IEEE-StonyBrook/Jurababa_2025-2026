@@ -14,6 +14,7 @@ class Motor;
 class Battery;
 class Robot;
 class ToF;
+class LineSensor;
 
 constexpr int MOTORLAB_INPUT_BUFFER_SIZE = 64;
 constexpr int MOTORLAB_MAX_ARGC          = 8;
@@ -46,6 +47,10 @@ class MotorLab
     // Robot mode with ToF sensors: direct motor/encoder + Robot + ToF access
     MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
              Battery* battery, Robot* robot, ToF* left_tof, ToF* front_tof, ToF* right_tof);
+
+    // Robot mode with LineSensor: direct motor/encoder + Robot + LineSensor access
+    MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
+             Battery* battery, Robot* robot, LineSensor* line_sensor);
 
     // Integrated mode: use Drivetrain
     MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right_encoder,
@@ -111,6 +116,12 @@ class MotorLab
     void cmdVoltageRight(const MotorLabArgs& args);
     void cmdStop();
     void cmdExport();
+    void cmdGpioDiag(const MotorLabArgs& args);
+
+    // Line sensor commands
+    void cmdLinePosition();
+    void cmdLineIntersection();
+    void cmdLineContinuous(const MotorLabArgs& args);
 
   private:
     Motor*      left_motor_;
@@ -123,6 +134,7 @@ class MotorLab
     ToF*        left_tof_;
     ToF*        front_tof_;
     ToF*        right_tof_;
+    LineSensor* line_sensor_;
 
     MotorLabSettings settings_;
     MotorLabProfile  profile_;

@@ -5,9 +5,11 @@
 #include "control/robot.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
+#include "drivers/line_sensor.h"
 #include "drivers/motor.h"
 #include "drivers/tof.h"
 
+#include "hardware/gpio.h"
 #include "hardware/i2c.h"
 #include "hardware/uart.h"
 #include "pico/stdlib.h"
@@ -33,7 +35,8 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
       input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
-      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f)
+      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr),
+      front_tof_(nullptr), right_tof_(nullptr), line_sensor_(nullptr)
 {
     clearInput();
 }
@@ -45,7 +48,7 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
       input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
       left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr),
-      front_tof_(nullptr), right_tof_(nullptr)
+      front_tof_(nullptr), right_tof_(nullptr), line_sensor_(nullptr)
 {
     clearInput();
 }
@@ -58,7 +61,19 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
       input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
       left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot), left_tof_(left_tof),
-      front_tof_(front_tof), right_tof_(right_tof)
+      front_tof_(front_tof), right_tof_(right_tof), line_sensor_(nullptr)
+{
+    clearInput();
+}
+
+// Robot mode with LineSensor: direct motor/encoder + Robot + LineSensor access
+MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
+                   Encoder* right_encoder, Battery* battery, Robot* robot, LineSensor* line_sensor)
+    : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
+      right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
+      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
+      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr),
+      front_tof_(nullptr), right_tof_(nullptr), line_sensor_(line_sensor)
 {
     clearInput();
 }
@@ -69,7 +84,8 @@ MotorLab::MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right
     : left_motor_(nullptr), right_motor_(nullptr), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(drivetrain), reporter_(10),
       input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
-      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f)
+      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr),
+      front_tof_(nullptr), right_tof_(nullptr), line_sensor_(nullptr)
 {
     clearInput();
 }
@@ -167,12 +183,13 @@ float MotorLab::encoderPositionMM() const
         return (left_mm + right_mm) / 2.0f;
     }
     // Standalone mode: calculate from encoder ticks
-    int32_t left_ticks  = left_encoder_ ? left_encoder_->ticks() : 0;
-    int32_t right_ticks = right_encoder_ ? right_encoder_->ticks() : 0;
+    int32_t left_ticks   = left_encoder_ ? left_encoder_->ticks() : 0;
+    int32_t right_ticks  = right_encoder_ ? right_encoder_->ticks() : 0;
     int     num_encoders = (left_encoder_ ? 1 : 0) + (right_encoder_ ? 1 : 0);
     if (num_encoders == 0)
         return 0.0f;
-    float avg_ticks = static_cast<float>(left_ticks + right_ticks) / static_cast<float>(num_encoders);
+    float avg_ticks =
+        static_cast<float>(left_ticks + right_ticks) / static_cast<float>(num_encoders);
     return avg_ticks * MM_PER_TICK;
 }
 
@@ -225,17 +242,17 @@ void MotorLab::updateEncoders(float dt)
 
     if (left_encoder_)
     {
-        int32_t left_ticks = left_encoder_->ticks();
-        int32_t delta_left = left_ticks - prev_left_ticks_;
-        prev_left_ticks_   = left_ticks;
+        int32_t left_ticks  = left_encoder_->ticks();
+        int32_t delta_left  = left_ticks - prev_left_ticks_;
+        prev_left_ticks_    = left_ticks;
         left_velocity_mmps_ = (delta_left * MM_PER_TICK) / dt;
     }
 
     if (right_encoder_)
     {
-        int32_t right_ticks = right_encoder_->ticks();
-        int32_t delta_right = right_ticks - prev_right_ticks_;
-        prev_right_ticks_   = right_ticks;
+        int32_t right_ticks  = right_encoder_->ticks();
+        int32_t delta_right  = right_ticks - prev_right_ticks_;
+        prev_right_ticks_    = right_ticks;
         right_velocity_mmps_ = (delta_right * MM_PER_TICK) / dt;
     }
 }
@@ -696,6 +713,24 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     {
         cmdExport();
     }
+    // GPIO diagnostic
+    else if (strcmp(cmd, "GPIO") == 0)
+    {
+        cmdGpioDiag(args);
+    }
+    // Line sensor commands
+    else if (strcmp(cmd, "LINPOS") == 0)
+    {
+        cmdLinePosition();
+    }
+    else if (strcmp(cmd, "LININTER") == 0)
+    {
+        cmdLineIntersection();
+    }
+    else if (strcmp(cmd, "LINCON") == 0)
+    {
+        cmdLineContinuous(args);
+    }
     // Echo control
     else if (strcmp(cmd, "ECHO") == 0)
     {
@@ -781,10 +816,14 @@ void MotorLab::cmdHelp()
     printf("  FTOF       - Front ToF distance (mm)\n");
     printf("  RTOF       - Right ToF distance (mm)\n");
     printf("  TOFCON [X] [Y] - Print all ToF for X ms every Y ms (default 5000 100)\n");
+    printf("  LINPOS     - Line sensor position (-3.5 to +3.5)\n");
+    printf("  LININTER   - Line intersection detected (YES/NO)\n");
+    printf("  LINCON [X] [Y] - Print line data for X ms every Y ms (default 5000 100)\n");
     printf("  LENC       - Left encoder position (mm)\n");
     printf("  RENC       - Right encoder position (mm)\n");
     printf("  ENCRESET   - Reset both encoders to 0\n");
     printf("  ENCCON [X] [Y] - Print encoders for X ms every Y ms (default 5000 100)\n");
+    printf("  GPIO       - Test raw GPIO pins for encoder channels\n");
     printf("  V [volts]  - Apply voltage to motors\n");
     printf("  X          - Stop motors\n");
     printf("\nTests:\n");
@@ -967,7 +1006,8 @@ void MotorLab::cmdEncoders()
     if (left_encoder_)
     {
         float left_mm = left_encoder_->ticks() * MM_PER_TICK;
-        printf("  Left:  %ld ticks = %.1f mm\n", static_cast<long>(left_encoder_->ticks()), left_mm);
+        printf("  Left:  %ld ticks = %.1f mm\n", static_cast<long>(left_encoder_->ticks()),
+               left_mm);
     }
     else
     {
@@ -976,7 +1016,8 @@ void MotorLab::cmdEncoders()
     if (right_encoder_)
     {
         float right_mm = right_encoder_->ticks() * MM_PER_TICK;
-        printf("  Right: %ld ticks = %.1f mm\n", static_cast<long>(right_encoder_->ticks()), right_mm);
+        printf("  Right: %ld ticks = %.1f mm\n", static_cast<long>(right_encoder_->ticks()),
+               right_mm);
     }
     else
     {
@@ -1379,4 +1420,129 @@ void MotorLab::cmdExport()
     printf("//   bias_ff = %.3f V\n", settings_.bias_ff);
     printf("// ============================================================\n");
     printf("\n");
+}
+
+void MotorLab::cmdGpioDiag(const MotorLabArgs& args)
+{
+    printf("\n=== Raw GPIO Diagnostic ===\n");
+    printf("Reading GP%d (channel A) and GP%d (channel B)\n", PIN_ENCODER_R_A, PIN_ENCODER_R_B);
+    printf("Slowly spin right wheel and watch for changes\n");
+    printf("Both pins should toggle. If only one changes → wiring issue\n\n");
+
+    // Set pins as inputs with pull-ups (match PIO config)
+    gpio_init(PIN_ENCODER_R_A);
+    gpio_set_dir(PIN_ENCODER_R_A, GPIO_IN);
+    gpio_pull_up(PIN_ENCODER_R_A);
+
+    gpio_init(PIN_ENCODER_R_B);
+    gpio_set_dir(PIN_ENCODER_R_B, GPIO_IN);
+    gpio_pull_up(PIN_ENCODER_R_B);
+
+    printf("Sample  GP%d(A)  GP%d(B)  State\n", PIN_ENCODER_R_A, PIN_ENCODER_R_B);
+    printf("------  ------  ------  -----\n");
+
+    for (int i = 0; i < 100; i++)
+    {
+        bool pin_a = gpio_get(PIN_ENCODER_R_A);
+        bool pin_b = gpio_get(PIN_ENCODER_R_B);
+        int  state = (pin_a ? 2 : 0) | (pin_b ? 1 : 0); // 2-bit state (0-3)
+
+        printf("%6d     %d       %d      %d\n", i, pin_a, pin_b, state);
+        sleep_ms(100);
+    }
+
+    printf("\n=== Analysis ===\n");
+    printf("Expected: Both columns toggle between 0 and 1 as wheel spins\n");
+    printf("Expected: State cycles through 0→1→3→2→0 (or reverse)\n");
+    printf("If only GP%d changes: Channel B (GP%d) wiring issue\n", PIN_ENCODER_R_A,
+           PIN_ENCODER_R_B);
+    printf("If only GP%d changes: Channel A (GP%d) wiring issue\n", PIN_ENCODER_R_B,
+           PIN_ENCODER_R_A);
+}
+
+// ============================================================================
+// Line Sensor Commands
+// ============================================================================
+
+void MotorLab::cmdLinePosition()
+{
+    if (line_sensor_ == nullptr)
+    {
+        printf("Line sensor not available\n");
+        return;
+    }
+
+    line_sensor_->read();
+    float position = line_sensor_->getPosition();
+    bool  on_line  = line_sensor_->onLine();
+
+    printf("Position: %.2f (%s)\n", position, on_line ? "on line" : "off line");
+}
+
+void MotorLab::cmdLineIntersection()
+{
+    if (line_sensor_ == nullptr)
+    {
+        printf("Line sensor not available\n");
+        return;
+    }
+
+    line_sensor_->read();
+    bool intersection = line_sensor_->detectIntersection();
+
+    printf("Intersection: %s\n", intersection ? "YES" : "NO");
+}
+
+void MotorLab::cmdLineContinuous(const MotorLabArgs& args)
+{
+    if (line_sensor_ == nullptr)
+    {
+        printf("Line sensor not available\n");
+        return;
+    }
+
+    uint32_t duration_ms = 5000;
+    uint32_t interval_ms = 100;
+
+    if (args.argc > 1)
+        duration_ms = static_cast<uint32_t>(atoi(args.argv[1]));
+    if (args.argc > 2)
+        interval_ms = static_cast<uint32_t>(atoi(args.argv[2]));
+
+    if (interval_ms < 10)
+        interval_ms = 10;
+
+    printf("\n=== Continuous Line Sensor (duration: %lu ms, interval: %lu ms) ===\n",
+           static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
+    printf("Time(ms)  Position  Intersect\n");
+
+    uint32_t        start_time = to_ms_since_boot(get_absolute_time());
+    absolute_time_t last_tick  = get_absolute_time();
+    uint32_t        elapsed    = 0;
+
+    while (elapsed < duration_ms)
+    {
+        absolute_time_t now = get_absolute_time();
+        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
+        last_tick           = now;
+        elapsed             = to_ms_since_boot(now) - start_time;
+
+        // Update robot if available (keeps IMU tracking active)
+        if (robot_ != nullptr)
+        {
+            robot_->update(dt);
+        }
+
+        // Read and display line sensor
+        line_sensor_->read();
+        float position     = line_sensor_->getPosition();
+        bool  intersection = line_sensor_->detectIntersection();
+
+        printf("%7lu  %8.2f  %9s\n", static_cast<unsigned long>(elapsed), position,
+               intersection ? "YES" : "NO");
+
+        sleep_ms(interval_ms);
+    }
+
+    printf("=== Done ===\n");
 }

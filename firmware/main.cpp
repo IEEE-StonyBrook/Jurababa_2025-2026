@@ -55,6 +55,12 @@ enum class OperatingMode
     LINEFOLLOWING // Single-core line following with event queue
 };
 
+enum class SensorMode
+{
+    TOF,        // ToF sensors (I2C0)
+    LINE_SENSOR // Line sensor (I2C0)
+};
+
 // Global mode (set during startup, read by runNormalMode/runMotorLabMode)
 static OperatingMode g_operating_mode = OperatingMode::NORMAL;
 
@@ -136,6 +142,57 @@ OperatingMode selectOperatingMode(uint32_t timeout_ms)
 
     printf("\n*** MotorLab mode starting ***\n\n");
     return OperatingMode::MOTORLAB;
+}
+
+/**
+ * Select sensor mode for MotorLab (ToF vs LineSensor).
+ * Both use I2C0, so they are mutually exclusive.
+ */
+SensorMode selectSensorMode(uint32_t timeout_ms)
+{
+    printf("\n");
+    printf("==========================================\n");
+    printf("  I2C0 Sensor Selection                  \n");
+    printf("==========================================\n");
+    printf("  Press 'T' for ToF sensors\n");
+    printf("  Press 'L' for Line sensor\n");
+    printf("  Default: ToF sensors (in %lu seconds)\n", timeout_ms / 1000);
+    printf("==========================================\n\n");
+
+    uint32_t start_time        = to_ms_since_boot(get_absolute_time());
+    uint32_t elapsed           = 0;
+    int      countdown_printed = -1;
+
+    while (elapsed < timeout_ms)
+    {
+        int c = getchar_timeout_us(100000);
+        if (c != PICO_ERROR_TIMEOUT)
+        {
+            char ch = static_cast<char>(c);
+            if (ch == 'T' || ch == 't')
+            {
+                printf("\n*** ToF sensors selected ***\n\n");
+                return SensorMode::TOF;
+            }
+            if (ch == 'L' || ch == 'l')
+            {
+                printf("\n*** Line sensor selected ***\n\n");
+                return SensorMode::LINE_SENSOR;
+            }
+        }
+
+        elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
+
+        int seconds_left = static_cast<int>((timeout_ms - elapsed) / 1000);
+        if (seconds_left != countdown_printed && seconds_left >= 0)
+        {
+            printf("  %d...\n", seconds_left);
+            countdown_printed = seconds_left;
+        }
+    }
+
+    printf("\n*** ToF sensors selected (default) ***\n\n");
+    return SensorMode::TOF;
 }
 
 // ============================================================================
@@ -392,6 +449,9 @@ void runMotorLabMode(Battery& battery)
 
     printf("Battery voltage: %.2f V\n", battery.voltage());
 
+    // Select sensor mode (ToF vs LineSensor - both use I2C0)
+    SensorMode sensor_mode = selectSensorMode(3000);
+
     // TESTING: Only initialize right encoder (GP10/GP11 - adjacent pins)
     // Left encoder (GP8/GP1 - NON-adjacent) won't work with adjacent-pin PIO code
     Encoder right_encoder(pio0, PIN_ENCODER_R_A, false); // GP10, assumes GP11 is channel B
@@ -399,16 +459,38 @@ void runMotorLabMode(Battery& battery)
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
     IMU     imu(PIN_IMU_RX);
 
-    // Initialize ToF sensor (uses I2C0: GP4=SDA, GP5=SCL, XSHUT=GP3)
-    ToF left_tof(PIN_TOF_LEFT_XSHUT, 'L');
-
     // TESTING: Pass nullptr for left_encoder since it's not initialized
     Drivetrain drivetrain(&left_motor, &right_motor, nullptr, &right_encoder, &battery);
-    Robot      robot(&drivetrain, &imu, &left_tof, nullptr, nullptr);
+    Robot      robot(&drivetrain, &imu, nullptr, nullptr, nullptr);
 
-    MotorLab motorlab(&left_motor, &right_motor, nullptr, &right_encoder, &battery, &robot,
-                      &left_tof, nullptr, nullptr);
-    motorlab.init();
+    // Create MotorLab with appropriate sensor based on mode selection
+    MotorLab* motorlab = nullptr;
+
+    if (sensor_mode == SensorMode::LINE_SENSOR)
+    {
+        // Initialize line sensor (I2C0: GP4=SDA, GP5=SCL)
+        static LineSensor line_sensor(i2c0, PIN_LINE_SDA, PIN_LINE_SCL);
+        line_sensor.init();
+
+        printf("Line sensor initialized on I2C0\n");
+
+        motorlab = new MotorLab(&left_motor, &right_motor, nullptr, &right_encoder, &battery,
+                                &robot, &line_sensor);
+    }
+    else
+    {
+        // Initialize ToF sensors (I2C0: GP4=SDA, GP5=SCL)
+        static ToF left_tof(PIN_TOF_LEFT_XSHUT, 'L');
+        static ToF front_tof(PIN_TOF_FRONT_XSHUT, 'F');
+        static ToF right_tof(PIN_TOF_RIGHT_XSHUT, 'R');
+
+        printf("ToF sensors initialized on I2C0\n");
+
+        motorlab = new MotorLab(&left_motor, &right_motor, nullptr, &right_encoder, &battery,
+                                &robot, &left_tof, &front_tof, &right_tof);
+    }
+
+    motorlab->init();
 
     printf("\nHardware initialized. Ready for testing.\n");
     printf("Type '?' for command help.\n\n");
@@ -428,8 +510,8 @@ void runMotorLabMode(Battery& battery)
         last_tick              = now;
 
         robot.update(dt);
-        motorlab.updateEncoders(LOOP_INTERVAL_S);
-        motorlab.processSerial();
+        motorlab->updateEncoders(LOOP_INTERVAL_S);
+        motorlab->processSerial();
 
         if (now_ms - last_battery_update_ms >= BATTERY_UPDATE_INTERVAL_MS)
         {

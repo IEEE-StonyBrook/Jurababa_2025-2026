@@ -16,15 +16,35 @@ void LineSensor::init()
     gpio_pull_up(sda_pin_);
     gpio_pull_up(scl_pin_);
 
+    // Initialization sequence from vendor sample code:
+    // Write 1 to register 0x01, wait, then write 0
+    uint8_t init_on[]  = {0x01, 0x01};
+    uint8_t init_off[] = {0x01, 0x00};
+
+    i2c_write_blocking(i2c_, addr_, init_on, 2, false);
+    sleep_ms(100);
+    i2c_write_blocking(i2c_, addr_, init_off, 2, false);
+    sleep_ms(100);
+
     LOG_INFO("LineSensor: I2C initialized on SDA=" + std::to_string(sda_pin_) +
              " SCL=" + std::to_string(scl_pin_) + " addr=0x" + std::to_string(addr_));
 }
 
 void LineSensor::read()
 {
+    // Read from sensor data register
+    uint8_t reg = LINE_SENSOR_DATA_REG;
     uint8_t buf = 0;
-    int     ret = i2c_read_blocking(i2c_, addr_, &buf, 1, false);
 
+    // Write register address, then read data
+    int ret = i2c_write_blocking(i2c_, addr_, &reg, 1, true); // keep bus active
+    if (ret == PICO_ERROR_GENERIC)
+    {
+        LOG_DEBUG("LineSensor: I2C write reg failed");
+        return;
+    }
+
+    ret = i2c_read_blocking(i2c_, addr_, &buf, 1, false);
     if (ret == PICO_ERROR_GENERIC)
     {
         LOG_DEBUG("LineSensor: I2C read failed");
