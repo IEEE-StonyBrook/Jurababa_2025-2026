@@ -42,6 +42,7 @@ class ToF
 
     VL53L0X_Dev_t sensor_device_;
     char          sensor_position_;
+    float         last_valid_distance_ = 500.0f;
 };
 
 #endif

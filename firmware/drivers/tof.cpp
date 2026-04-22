@@ -81,7 +81,18 @@ float ToF::distance()
     VL53L0X_GetRangingMeasurementData(&sensor_device_, &measurement_data);
     VL53L0X_ClearInterruptMask(&sensor_device_, VL53L0X_REG_SYSTEM_INTERRUPT_GPIO_NEW_SAMPLE_READY);
 
-    float distance_mm = measurement_data.RangeMilliMeter;
+    float distance_mm;
+
+    // Validate measurement (RangeStatus == 0 means valid)
+    if (measurement_data.RangeStatus == 0)
+    {
+        distance_mm            = measurement_data.RangeMilliMeter;
+        last_valid_distance_   = distance_mm; // Cache valid reading
+    }
+    else
+    {
+        distance_mm = last_valid_distance_; // Use cached value on error
+    }
 
 #ifdef USE_MULTICORE_SENSORS
     char position_lower = tolower(sensor_position_);
