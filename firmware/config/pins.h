@@ -19,7 +19,7 @@
 
 // ================= Encoder Pins ================= //
 // Quadrature encoders (PIO-driven)
-#define PIN_ENCODER_L_A 8  // Left encoder channel A (OUT_A_1)
+#define PIN_ENCODER_L_A 0  // Left encoder channel A (OUT_A_1)
 #define PIN_ENCODER_L_B 1  // Left encoder channel B (OUT_B_1)
 #define PIN_ENCODER_R_A 10 // Right encoder channel A (OUT_A_2)
 #define PIN_ENCODER_R_B 11 // Right encoder channel B (OUT_B_2)
@@ -30,9 +30,11 @@
 
 // ================= ToF Sensor Pins ================= //
 // VL53L0X Time-of-Flight sensors (I2C0: GP4=SDA, GP5=SCL)
-#define PIN_TOF_LEFT_XSHUT  16 // Left ToF shutdown (only sensor connected)
+#define PIN_TOF_LEFT_XSHUT  8  // Left ToF shutdown (only sensor connected)
 #define PIN_TOF_FRONT_XSHUT 29 // Front ToF shutdown (not connected)
 #define PIN_TOF_RIGHT_XSHUT 15 // Right ToF shutdown (not connected)
+// We don't use the INTERRUPT PINS for the ToF yet.
+// They are wired to GP14, 26, 27 for future development.
 
 // ================= Battery Monitor Pins ================= //
 #define PIN_BATTERY_ADC 28 // ADC0 for battery voltage divider
