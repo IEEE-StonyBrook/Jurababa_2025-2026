@@ -12,7 +12,8 @@ IMU* IMU::imu_instance_ = nullptr;
 
 IMU::IMU(int uart_rx_pin)
     : uart_rx_pin_(uart_rx_pin), packet_buffer_index_(0), yaw_data_ready_(false),
-      current_yaw_degrees_(0.0f), yaw_reset_offset_(0.0f)
+      current_yaw_degrees_(0.0f), yaw_reset_offset_(0.0f), filtered_yaw_degrees_(0.0f),
+      prev_raw_yaw_degrees_(0.0f), first_reading_(true)
 {
     setupUART();
     setupInterrupt();
@@ -52,16 +53,22 @@ void IMU::processReceiveData()
     {
         uint8_t received_byte = uart_getc(IMU_UART_ID);
 
+        // Check first header byte (0xAA)
         if (packet_buffer_index_ == 0 && received_byte != IMU_HDR0)
             continue;
+
+        // Check second header byte (also 0xAA in RVC mode)
+        if (packet_buffer_index_ == 1 && received_byte != IMU_HDR1)
+        {
+            packet_buffer_index_ = 0; // Reset and start over
+            continue;
+        }
 
         packet_buffer_[packet_buffer_index_++] = received_byte;
 
         if (packet_buffer_index_ >= IMU_PACKET_LEN)
         {
-            if (packet_buffer_[IMU_IDX_HDR0] == IMU_HDR0)
-                parsePacketAndExtractYaw();
-
+            parsePacketAndExtractYaw();
             packet_buffer_index_ = 0;
         }
     }
@@ -69,19 +76,61 @@ void IMU::processReceiveData()
 
 void IMU::parsePacketAndExtractYaw()
 {
-    packet_buffer_index_ = 0;
-
+    // Validate checksum
     uint8_t checksum = 0;
     for (int i = IMU_CHKSUM_FIRST; i <= IMU_CHKSUM_LAST; i++)
         checksum += packet_buffer_[i];
 
-    if (checksum == packet_buffer_[IMU_IDX_CHECKSUM])
+    if (checksum != packet_buffer_[IMU_IDX_CHECKSUM])
+        return; // Bad checksum, discard packet
+
+    int16_t raw_yaw     = (packet_buffer_[IMU_IDX_YAW_H] << 8) | packet_buffer_[IMU_IDX_YAW_L];
+    float   yaw_degrees = static_cast<float>(raw_yaw) / IMU_RAW_TO_DEGREES_DIVISOR;
+
+    // Normalize to [-180, 180]
+    yaw_degrees = fmodf(yaw_degrees + 180.0f, 360.0f) - 180.0f;
+
+    // Outlier rejection: skip if change is physically impossible
+    if (!first_reading_)
     {
-        int16_t raw_yaw      = (packet_buffer_[IMU_IDX_YAW_H] << 8) | packet_buffer_[IMU_IDX_YAW_L];
-        float   yaw_degrees  = static_cast<float>(raw_yaw) / IMU_RAW_TO_DEGREES_DIVISOR;
-        current_yaw_degrees_ = fmodf(yaw_degrees + 180.0f, 360.0f) - 180.0f;
-        yaw_data_ready_      = true;
+        float delta = yaw_degrees - prev_raw_yaw_degrees_;
+        // Normalize delta to [-180, 180]
+        if (delta > 180.0f)
+            delta -= 360.0f;
+        if (delta < -180.0f)
+            delta += 360.0f;
+
+        if (std::fabs(delta) > IMU_MAX_YAW_DELTA_PER_SAMPLE)
+            return; // Reject outlier - physically impossible change
     }
+
+    prev_raw_yaw_degrees_ = yaw_degrees;
+    first_reading_        = false;
+
+    // Apply EMA filter to smooth yaw readings
+    if (!yaw_data_ready_)
+    {
+        filtered_yaw_degrees_ = yaw_degrees; // Initialize filter on first valid reading
+    }
+    else
+    {
+        float alpha = IMU_YAW_FILTER_ALPHA;
+        // Handle wraparound for filtering (compute shortest path)
+        float diff = yaw_degrees - filtered_yaw_degrees_;
+        if (diff > 180.0f)
+            diff -= 360.0f;
+        if (diff < -180.0f)
+            diff += 360.0f;
+        filtered_yaw_degrees_ += alpha * diff;
+        // Renormalize to [-180, 180]
+        if (filtered_yaw_degrees_ > 180.0f)
+            filtered_yaw_degrees_ -= 360.0f;
+        if (filtered_yaw_degrees_ < -180.0f)
+            filtered_yaw_degrees_ += 360.0f;
+    }
+
+    current_yaw_degrees_ = filtered_yaw_degrees_;
+    yaw_data_ready_      = true;
 }
 
 float IMU::yaw()
@@ -91,7 +140,17 @@ float IMU::yaw()
         // LOG_DEBUG("IMU yaw not ready, returning 0");
         return 0.0f;
     }
-    return current_yaw_degrees_ - yaw_reset_offset_;
+
+    // Compute yaw relative to reset offset
+    float result = current_yaw_degrees_ - yaw_reset_offset_;
+
+    // Normalize result to [-180, 180]
+    if (result > 180.0f)
+        result -= 360.0f;
+    else if (result < -180.0f)
+        result += 360.0f;
+
+    return result;
 }
 
 void IMU::resetYaw()

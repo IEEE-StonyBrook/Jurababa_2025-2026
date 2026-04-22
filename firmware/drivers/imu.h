@@ -52,6 +52,11 @@ class IMU
     float        current_yaw_degrees_;
     float        yaw_reset_offset_;
 
+    // Filtering state for noise reduction
+    float filtered_yaw_degrees_; // EMA-filtered yaw
+    float prev_raw_yaw_degrees_; // Previous raw yaw for outlier detection
+    bool  first_reading_;        // Skip outlier check on first reading
+
     static IMU* imu_instance_;
 
     void        setupUART();

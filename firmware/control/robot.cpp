@@ -123,12 +123,21 @@ float Robot::rightDistance()
 
 void Robot::updateSensors(float dt)
 {
-    if (dt < 0.0001f)
+    // Require minimum dt to avoid divide-by-zero spikes
+    // At 100Hz loop, dt should be ~0.01s; reject anything < 5ms
+    if (dt < 0.005f)
         return;
 
     float current   = yaw();
     float delta     = normalizeYawDelta(current - prev_yaw_);
     float raw_omega = delta / dt;
+
+    // Rate-limit omega to physical maximum (±1500°/s is generous for any robot)
+    const float MAX_OMEGA = 1500.0f;
+    if (raw_omega > MAX_OMEGA)
+        raw_omega = MAX_OMEGA;
+    if (raw_omega < -MAX_OMEGA)
+        raw_omega = -MAX_OMEGA;
 
     float alpha  = SENSORS_ANGULAR_VEL_FILTER_ALPHA;
     omega_degps_ = alpha * raw_omega + (1.0f - alpha) * omega_degps_;

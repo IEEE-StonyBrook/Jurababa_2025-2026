@@ -26,26 +26,33 @@
 #define IMU_STOP_BITS 1
 #define IMU_PARITY    UART_PARITY_NONE
 
-// BNO085 RVC packet format
+// BNO085 RVC packet format (19 bytes total)
+// Byte layout: [0xAA][0xAA][Index][YawL][YawH][PitchL][PitchH][RollL][RollH]...
 #define IMU_PACKET_LEN   19 // Total packet bytes
 #define IMU_IDX_HDR0     0  // Header byte 0 (0xAA)
-#define IMU_IDX_HDR1     1  // Report ID (0x01)
-#define IMU_IDX_YAW_L    2  // Yaw low byte
-#define IMU_IDX_YAW_H    3  // Yaw high byte
-#define IMU_IDX_PITCH_L  4
-#define IMU_IDX_PITCH_H  5
-#define IMU_IDX_ROLL_L   6
-#define IMU_IDX_ROLL_H   7
-#define IMU_CHKSUM_FIRST 2   // First checksum byte index
+#define IMU_IDX_HDR1     1  // Header byte 1 (0xAA in RVC mode)
+#define IMU_IDX_INDEX    2  // Packet index/sequence byte (skip this for data)
+#define IMU_IDX_YAW_L    3  // Yaw low byte (was 2 - WRONG!)
+#define IMU_IDX_YAW_H    4  // Yaw high byte (was 3 - WRONG!)
+#define IMU_IDX_PITCH_L  5
+#define IMU_IDX_PITCH_H  6
+#define IMU_IDX_ROLL_L   7
+#define IMU_IDX_ROLL_H   8
+#define IMU_CHKSUM_FIRST 2   // First checksum byte index (includes index byte)
 #define IMU_CHKSUM_LAST  17  // Last checksum byte index
 #define IMU_IDX_CHECKSUM 18  // Checksum byte index
-#define IMU_HDR0         170 // Expected header (0xAA)
+#define IMU_HDR0         170 // Expected header byte 0 (0xAA)
+#define IMU_HDR1         170 // Expected header byte 1 (0xAA) - RVC uses 0xAA 0xAA
 
 // IMU processing
 #define IMU_RAW_TO_DEGREES_DIVISOR 100.0f
 
+// ================= IMU Filtering ================= //
+#define IMU_YAW_FILTER_ALPHA         0.3f  // EMA filter for yaw (0.3 = moderate smoothing)
+#define IMU_MAX_YAW_DELTA_PER_SAMPLE 20.0f // Max degrees change per 10ms (2000°/s physical limit)
+
 // ================= Angular Velocity Filtering ================= //
-#define SENSORS_ANGULAR_VEL_FILTER_ALPHA 0.7f
+#define SENSORS_ANGULAR_VEL_FILTER_ALPHA 0.15f // Was 0.7f - lower = more smoothing for omega
 
 // ================= Line Sensor Configuration ================= //
 #define LINE_SENSOR_COUNT             8

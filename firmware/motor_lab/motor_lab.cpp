@@ -1076,6 +1076,10 @@ void MotorLab::cmdYawContinuous(const MotorLabArgs& args)
            static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
     printf("Time(ms)  Yaw(deg)  Omega(deg/s)\n");
 
+    // Initial sleep to establish proper dt on first iteration
+    // This prevents divide-by-near-zero causing huge omega spikes
+    sleep_ms(interval_ms);
+
     uint32_t        start_time = to_ms_since_boot(get_absolute_time());
     absolute_time_t last_tick  = get_absolute_time();
     uint32_t        elapsed    = 0;
