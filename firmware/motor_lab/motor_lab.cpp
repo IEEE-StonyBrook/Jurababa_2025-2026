@@ -634,15 +634,15 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     {
         cmdYaw();
     }
-    else if (strcmp(cmd, "YAWVEL") == 0)
+    else if (strcmp(cmd, "YAWVEL") == 0 || strcmp(cmd, "IMUVEL") == 0)
     {
         cmdYawVel();
     }
-    else if (strcmp(cmd, "YAWCON") == 0)
+    else if (strcmp(cmd, "YAWCON") == 0 || strcmp(cmd, "IMUCON") == 0)
     {
         cmdYawContinuous(args);
     }
-    else if (strcmp(cmd, "YAWRESET") == 0)
+    else if (strcmp(cmd, "YAWRESET") == 0 || strcmp(cmd, "IMURESET") == 0)
     {
         cmdYawReset();
     }
@@ -808,10 +808,10 @@ void MotorLab::cmdHelp()
     printf("\nHardware:\n");
     printf("  BAT        - Show battery voltage\n");
     printf("  ENC        - Show encoder values (mm, mm/s)\n");
-    printf("  YAW        - Robot yaw position (degrees)\n");
-    printf("  YAWVEL     - Robot angular velocity (deg/s)\n");
-    printf("  YAWCON [X] [Y] - Print yaw for X ms every Y ms (default 5000 100)\n");
-    printf("  YAWRESET   - Reset yaw and angular velocity to 0\n");
+    printf("  IMU        - Robot yaw position (degrees)\n");
+    printf("  IMUVEL     - Robot angular velocity (deg/s)\n");
+    printf("  IMUCON [X] [Y] - Print yaw for X ms every Y ms (default 5000 100)\n");
+    printf("  IMURESET   - Reset yaw and angular velocity to 0\n");
     printf("  LTOF       - Left ToF distance (mm)\n");
     printf("  FTOF       - Front ToF distance (mm)\n");
     printf("  RTOF       - Right ToF distance (mm)\n");
