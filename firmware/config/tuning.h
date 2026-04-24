@@ -13,16 +13,16 @@
 // Determined from MotorLab open-loop trials
 
 // Forward direction
-#define FORWARD_KVL 0.000422394f // Left velocity gain (duty per mm/s)
-#define FORWARD_KVR 0.000422394f // Right velocity gain
-#define FORWARD_KSL 4.4512f      // Left static friction (duty)
-#define FORWARD_KSR 4.4512f      // Right static friction
+#define FORWARD_KVL 0.0029239766f // Left velocity gain (duty per mm/s)
+#define FORWARD_KVR 0.0029239766f // Right velocity gain
+#define FORWARD_KSL 0.35f         // Left static friction (duty)
+#define FORWARD_KSR 0.35f         // Right static friction
 
 // Reverse direction (may differ due to motor asymmetry)
-#define REVERSE_KVL 0.000422394f // Left velocity gain reverse
-#define REVERSE_KVR 0.000422394f // Right velocity gain reverse
-#define REVERSE_KSL 4.4512f      // Left static friction reverse
-#define REVERSE_KSR 4.4512f      // Right static friction reverse
+#define REVERSE_KVL 0.0029239766f // Left velocity gain reverse
+#define REVERSE_KVR 0.0029239766f // Right velocity gain reverse
+#define REVERSE_KSL 0.35f         // Left static friction reverse
+#define REVERSE_KSR 0.35f         // Right static friction reverse
 
 // Acceleration feedforward (tune after step response tests)
 #define FORWARD_KAL 0.0f // Left acceleration gain (duty per mm/s²)

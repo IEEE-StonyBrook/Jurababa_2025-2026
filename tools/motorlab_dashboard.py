@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox, QComboBox,
     QGridLayout, QHBoxLayout, QVBoxLayout,
     QPlainTextEdit, QPushButton,
-    QRadioButton, QLabel, QSplitter)
+    QRadioButton, QLabel, QSplitter, QButtonGroup)
 
 import pyqtgraph as pg
 
@@ -81,7 +81,6 @@ class Dashboard(QMainWindow):
         self.parameters = {}
         self.move_mode = ONLY_FF
         self.auto_connect = False
-        self.custom_ports = []
         self.monitor_thread = None
         self.monitoring = False
 
@@ -147,15 +146,11 @@ class Dashboard(QMainWindow):
 
         port_layout.addLayout(port_select_layout)
 
-        # Connect/Disconnect and Add Custom buttons
+        # Connect/Disconnect button
         port_button_layout = QHBoxLayout()
         self.btn_connect = QPushButton("Connect")
         self.btn_connect.clicked.connect(self.toggle_connection)
         port_button_layout.addWidget(self.btn_connect)
-
-        self.btn_add_port = QPushButton("Add Custom")
-        self.btn_add_port.clicked.connect(self.add_custom_port)
-        port_button_layout.addWidget(self.btn_add_port)
 
         port_layout.addLayout(port_button_layout)
 
@@ -189,8 +184,8 @@ class Dashboard(QMainWindow):
         self.spin_accff = self.double_spinbox("FF kA", 0.0, 0.001, 0.00001, 5)
         self.spin_zeta = self.double_spinbox("ζ", 0.0, 2.0, 0.005, 3)
         self.spin_td = self.double_spinbox("Td", 0.0, 1.00, 0.01, 3)
-        self.spin_kp = self.double_spinbox("KP", 0.0, 8.0, 0.001, 4)
-        self.spin_kd = self.double_spinbox("KD", 0.0, 2.0, 0.0001, 4)
+        self.spin_kp = self.double_spinbox("kP", 0.0, 8.0, 0.001, 4)
+        self.spin_kd = self.double_spinbox("kD", 0.0, 2.0, 0.0001, 4)
 
         self.spin_biasff.valueChanged.connect(self.parameter_change)
         self.spin_speedff.valueChanged.connect(self.parameter_change)
@@ -201,21 +196,21 @@ class Dashboard(QMainWindow):
         self.spin_kd.valueChanged.connect(self.parameter_change)
 
         # Labels
-        self.lbl_biasff = QLabel(" Bias FF:")
+        self.lbl_biasff = QLabel("kS:")
         self.lbl_biasff.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTrailing | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_speedff = QLabel("Speed FF:")
+        self.lbl_speedff = QLabel("kV:")
         self.lbl_speedff.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTrailing | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_accff = QLabel("  Acc FF:")
+        self.lbl_accff = QLabel("kA:")
         self.lbl_accff.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTrailing | Qt.AlignmentFlag.AlignVCenter)
         self.lbl_zeta = QLabel("Damping Ratio:")
         self.lbl_zeta.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTrailing | Qt.AlignmentFlag.AlignVCenter)
         self.lbl_td = QLabel("Settling Time:")
         self.lbl_td.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTrailing | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_kp = QLabel("Kp:")
+        self.lbl_kp = QLabel("kP:")
         self.lbl_kp.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTrailing | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_kd = QLabel("Kd:")
+        self.lbl_kd = QLabel("kD:")
         self.lbl_kd.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTrailing | Qt.AlignmentFlag.AlignVCenter)
-        self.lbl_km = QLabel("Km:")
+        self.lbl_km = QLabel("kM:")
         self.lbl_km.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTrailing | Qt.AlignmentFlag.AlignVCenter)
         self.lbl_km_val = QLabel("0.000")
         self.lbl_tm = QLabel("Tm:")
@@ -302,6 +297,12 @@ class Dashboard(QMainWindow):
         option_layout.addWidget(self.rb_onlyff)
         self.rb_onlyff.setChecked(True)
 
+        # Group radio buttons for exclusive selection
+        self.mode_button_group = QButtonGroup(self)
+        self.mode_button_group.addButton(self.rb_full)
+        self.mode_button_group.addButton(self.rb_noff)
+        self.mode_button_group.addButton(self.rb_onlyff)
+
         # ========== SIDEBAR ==========
         self.side_bar = QWidget()
         side_layout = QVBoxLayout()
@@ -333,8 +334,8 @@ class Dashboard(QMainWindow):
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
         main_splitter.addWidget(plot_splitter)
         main_splitter.addWidget(self.side_bar)
-        # Set initial sizes: plots get 60%, sidebar gets 40%
-        main_splitter.setSizes([700, 300])
+        # Set initial sizes: plots get ~63%, sidebar gets ~37%
+        main_splitter.setSizes([750, 450])
 
         # Vertical app layout
         main_vbox = QVBoxLayout()
@@ -347,8 +348,8 @@ class Dashboard(QMainWindow):
         # Main window style, layout and position
         self.setWindowTitle("Jurababa MotorLab Dashboard")
         self.setCentralWidget(main_widget)
-        self.setMinimumSize(960, 720)
-        self.resize(960, 720)
+        self.setMinimumSize(1200, 900)
+        self.resize(1200, 900)
         self.show()
         self.center_window()
         self.setFocus()
@@ -362,9 +363,6 @@ class Dashboard(QMainWindow):
         """Scan and update available serial ports."""
         current_text = self.port_combo.currentText()
         self.port_combo.clear()
-
-        # Always add BLE serial port option
-        self.port_combo.addItem("/tmp/ttyBLE (BLE)", "/tmp/ttyBLE")
 
         # Add detected ports
         for p in serial.tools.list_ports.comports():
@@ -380,34 +378,12 @@ class Dashboard(QMainWindow):
                 desc = "Arduino"
             self.port_combo.addItem(f"{p.device} ({desc})", p.device)
 
-        # Add custom ports
-        for port in self.custom_ports:
-            if port != '/tmp/ttyBLE' and not any(p.device == port for p in serial.tools.list_ports.comports()):
-                self.port_combo.addItem(f"{port} (Custom)", port)
-
         # Restore selection if still available
         idx = self.port_combo.findText(current_text)
         if idx >= 0:
             self.port_combo.setCurrentIndex(idx)
 
         self.log_message(f"Found {self.port_combo.count()} port(s)")
-
-    def add_custom_port(self):
-        """Add the currently entered text as a custom port."""
-        port = self.port_combo.currentText().strip()
-        # Extract just the port path if it has description
-        if ' (' in port:
-            port = port.split(' (')[0]
-
-        if port and port not in self.custom_ports:
-            self.custom_ports.append(port)
-            self.refresh_ports()
-            # Select the newly added port
-            for i in range(self.port_combo.count()):
-                if self.port_combo.itemData(i) == port:
-                    self.port_combo.setCurrentIndex(i)
-                    break
-            self.log_message(f"Added custom port: {port}")
 
     def toggle_connection(self):
         """Connect or disconnect from the selected port."""
@@ -480,9 +456,9 @@ class Dashboard(QMainWindow):
     def parameter_change(self):
         spinner = self.sender()
         if spinner.objectName() == "zeta" or spinner.objectName() == "Td":
-            if "Tm" in self.parameters and "Km" in self.parameters:
+            if "Tm" in self.parameters and "kM" in self.parameters:
                 tm = self.parameters["Tm"]
-                km = self.parameters["Km"]
+                km = self.parameters["kM"]
                 z = self.spin_zeta.value()
                 td = self.spin_td.value()
                 td = max(td, 0.005)
@@ -538,6 +514,7 @@ class Dashboard(QMainWindow):
             self.btn_reset_settings.setEnabled(True)
             self.btn_move.setEnabled(True)
             self.btn_id.setEnabled(True)
+            self.chk_monitor.setChecked(True)  # Auto-enable monitoring
 
     @Slot()
     def usb_disconnect(self):
@@ -642,27 +619,32 @@ class Dashboard(QMainWindow):
         self.get_response()
 
     def update_parameters(self):
-        if 'biasFF' in self.parameters:
-            self.set_safely(self.spin_biasff, self.parameters['biasFF'])
-        if 'speedFF' in self.parameters:
-            self.set_safely(self.spin_speedff, self.parameters['speedFF'])
-        if 'accFF' in self.parameters:
-            self.set_safely(self.spin_accff, self.parameters['accFF'])
+        if 'kS' in self.parameters:
+            self.set_safely(self.spin_biasff, self.parameters['kS'])
+        if 'kV' in self.parameters:
+            self.set_safely(self.spin_speedff, self.parameters['kV'])
+        if 'kA' in self.parameters:
+            self.set_safely(self.spin_accff, self.parameters['kA'])
         if 'zeta' in self.parameters:
             self.set_safely(self.spin_zeta, self.parameters['zeta'])
         if 'Td' in self.parameters:
             self.set_safely(self.spin_td, self.parameters['Td'])
-        if 'KP' in self.parameters:
-            self.set_safely(self.spin_kp, self.parameters['KP'])
-        if 'KD' in self.parameters:
-            self.set_safely(self.spin_kd, self.parameters['KD'])
-        if 'Km' in self.parameters:
-            self.lbl_km_val.setText(f"{self.parameters['Km']:.2f}")
+        if 'kP' in self.parameters:
+            self.set_safely(self.spin_kp, self.parameters['kP'])
+        if 'kD' in self.parameters:
+            self.set_safely(self.spin_kd, self.parameters['kD'])
+        if 'kM' in self.parameters:
+            self.lbl_km_val.setText(f"{self.parameters['kM']:.2f}")
         if 'Tm' in self.parameters:
             self.lbl_tm_val.setText(f"{self.parameters['Tm']:.5f}")
 
     def write_parameters(self):
         """Send all parameter values to device."""
+        # Send kM and Tm if we have them (from OL calculation)
+        if 'kM' in self.parameters:
+            self.write(f"KM {self.parameters['kM']}\n")
+        if 'Tm' in self.parameters:
+            self.write(f"TM {self.parameters['Tm']}\n")
         self.write(f"BIAS {self.spin_biasff.value()}\n")
         self.write(f"SPEEDFF {self.spin_speedff.value()}\n")
         self.write(f"ACCFF {self.spin_accff.value()}\n")
@@ -697,15 +679,15 @@ class Dashboard(QMainWindow):
 
         # Mapping from firmware key names to dashboard key names
         key_mapping = {
-            'km': 'Km',
+            'km': 'kM',
             'tm': 'Tm',
-            'bias_ff': 'biasFF',
-            'speed_ff': 'speedFF',
-            'acc_ff': 'accFF',
+            'ks': 'kS',
+            'kv': 'kV',
+            'ka': 'kA',
             'zeta': 'zeta',
             'td': 'Td',
-            'kp': 'KP',
-            'kd': 'KD',
+            'kp': 'kP',
+            'kd': 'kD',
         }
 
         # Parse settings response
@@ -753,6 +735,10 @@ class Dashboard(QMainWindow):
         if not self.device:
             self.log_message("ERROR: Not connected to device")
             return
+
+        # Clear graphs and serial monitor before new trial
+        self.clear_monitor()
+
         self.log_message("Sending OL command...")
         self.data = self.query('OL\n')
         self.log_message(f"Received {len(self.data)} lines")
@@ -788,10 +774,83 @@ class Dashboard(QMainWindow):
             self.motion_plot.enableAutoRange()
             self.output_plot.setXLink(self.motion_plot)
 
+        # Extract calculated kM, kS, Tm from OL output
+        for line in self.data:
+            if line.startswith('kM ='):
+                parts = line.split('=')
+                if len(parts) == 2:
+                    val_str = parts[1].strip().split()[0]
+                    try:
+                        kM_val = float(val_str)
+                        self.parameters['kM'] = kM_val
+                        self.lbl_km_val.setText(f"{kM_val:.2f}")
+                    except ValueError:
+                        pass
+            elif line.startswith('kS ='):
+                parts = line.split('=')
+                if len(parts) == 2:
+                    val_str = parts[1].strip().split()[0]
+                    try:
+                        kS_val = float(val_str)
+                        self.parameters['kS'] = kS_val
+                        self.set_safely(self.spin_biasff, kS_val)
+                    except ValueError:
+                        pass
+            elif line.startswith('Tm ='):
+                parts = line.split('=')
+                if len(parts) == 2:
+                    val_str = parts[1].strip().split()[0]
+                    try:
+                        Tm_val = float(val_str)
+                        self.parameters['Tm'] = Tm_val
+                        self.lbl_tm_val.setText(f"{Tm_val:.5f}")
+                    except ValueError:
+                        pass
+
+        # Auto-populate all derived values from kM and Tm
+        if 'kM' in self.parameters:
+            kM = self.parameters['kM']
+
+            # kV = 1/kM (speed feedforward)
+            kV = 1.0 / kM
+            self.parameters['kV'] = kV
+            self.set_safely(self.spin_speedff, kV)
+
+            # zeta = 0.707 (critical damping)
+            self.parameters['zeta'] = 0.707
+            self.set_safely(self.spin_zeta, 0.707)
+
+            if 'Tm' in self.parameters:
+                Tm = self.parameters['Tm']
+
+                # kA = Tm/kM (acceleration feedforward)
+                kA = Tm / kM
+                self.parameters['kA'] = kA
+                self.set_safely(self.spin_accff, kA)
+
+                # Td = Tm/2 (common choice for derivative time)
+                Td = Tm / 2.0
+                self.parameters['Td'] = Td
+                self.set_safely(self.spin_td, Td)
+
+                # kP = 1/(kM * Td)
+                kP = 1.0 / (kM * Td)
+                self.parameters['kP'] = kP
+                self.set_safely(self.spin_kp, kP)
+
+                # kD = (2*zeta*Td - Tm) / kM
+                zeta = 0.707
+                kD = (2.0 * zeta * Td - Tm) / kM
+                self.parameters['kD'] = kD
+                self.set_safely(self.spin_kd, kD)
+
     def send_move(self):
         """Send MOVE command with selected control mode."""
         if not self.device:
             return
+
+        # Clear graphs and serial monitor before new trial
+        self.clear_monitor()
 
         self.data = self.query(f'MOVE 360 500 1000 {self.move_mode}\n')
         self.log_data()
@@ -829,7 +888,7 @@ class Dashboard(QMainWindow):
                 style = Qt.PenStyle.DotLine
             else:
                 style = Qt.PenStyle.SolidLine
-            if len(d) > 6:
+            if len(d) > 6 and len(d[6]) > 0:
                 self.plot(d[0], d[6], self.output_plot, "FF Volts", palette[1], style)
 
             # CTRL Volts
@@ -837,22 +896,22 @@ class Dashboard(QMainWindow):
                 style = Qt.PenStyle.DotLine
             else:
                 style = Qt.PenStyle.SolidLine
-            if len(d) > 5:
+            if len(d) > 5 and len(d[5]) > 0:
                 self.plot(d[0], d[5], self.output_plot, "CTRL Volts", palette[2], style)
 
             # Motor Volts (total)
-            if len(d) > 7:
+            if len(d) > 7 and len(d[7]) > 0:
                 self.plot(d[0], d[7], self.output_plot, "Motor Volts", palette[3], Qt.PenStyle.SolidLine)
 
             self.output_plot.enableAutoRange()
             self.output_plot.setYRange(-7, 7)
 
             self.motion_plot.clear()
-            # Set Speed
-            if len(d) > 3:
-                self.plot(d[0], d[3], self.motion_plot, "Set Speed", palette[4], Qt.PenStyle.DotLine)
+            # Set Speed (use DashLine for better visibility)
+            if len(d) > 3 and len(d[3]) > 0:
+                self.plot(d[0], d[3], self.motion_plot, "Set Speed", palette[4], Qt.PenStyle.DashLine)
             # Robot Speed
-            if len(d) > 4:
+            if len(d) > 4 and len(d[4]) > 0:
                 self.plot(d[0], d[4], self.motion_plot, "Robot Speed", palette[5])
 
             self.motion_plot.enableAutoRange()
@@ -1066,8 +1125,23 @@ class Dashboard(QMainWindow):
             pass
 
     def clear_monitor(self):
-        """Clear the text box."""
+        """Clear the text box and reset graphs."""
         self.text_box.clear()
+
+        # Reset graphs
+        self.output_plot.clear()
+        self.motion_plot.clear()
+        self.plot_curves = {'output': [], 'motion': []}
+
+        # Reset telemetry channels
+        for channel in self.telemetry:
+            channel.data_ = np.zeros(shape=channel.points, dtype=float)
+
+        # Reset to default ranges
+        self.output_plot.setYRange(-1, 7)
+        self.motion_plot.setYRange(-50, 500)
+        self.output_plot.enableAutoRange(enable=True)
+        self.motion_plot.enableAutoRange(enable=True)
 
 
 class SerialMonitor(QThread):

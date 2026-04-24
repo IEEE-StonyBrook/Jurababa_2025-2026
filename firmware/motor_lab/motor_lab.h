@@ -6,6 +6,8 @@
 #include "motor_lab/reporter.h"
 #include "motor_lab/settings.h"
 
+#include "pico/stdlib.h"
+
 #include <cstdint>
 
 class Drivetrain;

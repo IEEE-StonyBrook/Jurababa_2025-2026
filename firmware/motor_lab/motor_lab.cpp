@@ -20,6 +20,8 @@
 #include <cstdlib>
 #include <cstring>
 
+#include <vector>
+
 // ============================================================================
 // Version and identification
 // ============================================================================
@@ -230,6 +232,9 @@ void MotorLab::resetEncoders()
     prev_right_ticks_    = 0;
     left_velocity_mmps_  = 0.0f;
     right_velocity_mmps_ = 0.0f;
+
+    // Prime encoder state: capture current position to avoid velocity spike on first update
+    updateEncoders(LOOP_INTERVAL_S);
 }
 
 void MotorLab::updateEncoders(float dt)
@@ -283,42 +288,124 @@ void MotorLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t 
 
     resetEncoders();
 
+    // Store data points for linear regression and Tm calculation
+    std::vector<float> voltages;
+    std::vector<float> speeds;
+    std::vector<float> tm_samples;
+
+    constexpr float MIN_SPEED_THRESHOLD = 10.0f; // mm/s
+
+    // Skip first N samples after voltage change (avoids transient spikes)
+    constexpr size_t SKIP_SAMPLES = 10; // 100ms at 100Hz
+    constexpr size_t OUTPUT_EVERY = 5;  // Output every 5th sample for plotting
+
     // Sweep from 0 to max_voltage
     for (float voltage = step_voltage; voltage <= max_voltage + 0.01f; voltage += step_voltage)
     {
         // Apply voltage
         setMotorVoltage(voltage);
 
-        // Wait for steady state
-        uint32_t start_time = to_ms_since_boot(get_absolute_time());
-        while (to_ms_since_boot(get_absolute_time()) - start_time < settle_time_ms)
+        // Record transient during settle time
+        std::vector<float> step_speeds;
+        uint32_t           step_start   = to_ms_since_boot(get_absolute_time());
+        size_t             sample_count = 0;
+
+        while (to_ms_since_boot(get_absolute_time()) - step_start < settle_time_ms)
         {
             updateEncoders(LOOP_INTERVAL_S);
+            float speed = encoderVelocityMMps();
+
+            // Skip first N samples (transient spike region)
+            if (sample_count >= SKIP_SAMPLES)
+            {
+                step_speeds.push_back(speed);
+
+                // Output every Nth sample for plotting (reduces data volume)
+                if ((sample_count - SKIP_SAMPLES) % OUTPUT_EVERY == 0)
+                {
+                    uint32_t now = to_ms_since_boot(get_absolute_time());
+                    reporter_.reportOpenLoop(now, voltage, speed);
+                }
+            }
+
+            sample_count++;
             sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
         }
 
-        // Measure steady-state speed (average over a few samples)
-        float     speed_sum   = 0.0f;
-        const int num_samples = 10;
-        for (int i = 0; i < num_samples; i++)
+        // Use average of last 10 samples as steady-state (more robust than single sample)
+        float  final_speed = 0.0f;
+        size_t avg_count   = std::min(step_speeds.size(), size_t(10));
+        if (avg_count > 0)
         {
-            updateEncoders(LOOP_INTERVAL_S);
-            speed_sum += encoderVelocityMMps();
-            sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
+            for (size_t i = step_speeds.size() - avg_count; i < step_speeds.size(); i++)
+                final_speed += step_speeds[i];
+            final_speed /= static_cast<float>(avg_count);
         }
-        float avg_speed = speed_sum / static_cast<float>(num_samples);
 
-        // Report data
-        uint32_t now = to_ms_since_boot(get_absolute_time());
-        reporter_.reportOpenLoop(now, voltage, avg_speed);
+        // Calculate Tm for this step (time to reach 63.2% of final speed)
+        if (final_speed > MIN_SPEED_THRESHOLD)
+        {
+            float target_speed = final_speed * 0.632f;
+            // Require 2 consecutive samples above threshold (noise rejection)
+            for (size_t i = 1; i < step_speeds.size(); i++)
+            {
+                if (step_speeds[i - 1] >= target_speed && step_speeds[i] >= target_speed)
+                {
+                    float tm_step = (i - 1) * LOOP_INTERVAL_S;
+                    tm_samples.push_back(tm_step);
+                    break;
+                }
+            }
+        }
+
+        // Store steady-state for kM/kS regression
+        voltages.push_back(voltage);
+        speeds.push_back(final_speed);
     }
 
     stopMotors();
 
+    // Filter out stall points for regression
+    std::vector<float> filtered_voltages;
+    std::vector<float> filtered_speeds;
+    for (size_t i = 0; i < voltages.size(); i++)
+    {
+        if (speeds[i] > MIN_SPEED_THRESHOLD)
+        {
+            filtered_voltages.push_back(voltages[i]);
+            filtered_speeds.push_back(speeds[i]);
+        }
+    }
+
+    // Calculate linear regression: speed = kM * voltage + intercept
+    // kS = x-intercept = -intercept / kM
+    float sum_v = 0, sum_s = 0, sum_vs = 0, sum_vv = 0;
+    int   n = static_cast<int>(filtered_voltages.size());
+    for (int i = 0; i < n; i++)
+    {
+        sum_v += filtered_voltages[i];
+        sum_s += filtered_speeds[i];
+        sum_vs += filtered_voltages[i] * filtered_speeds[i];
+        sum_vv += filtered_voltages[i] * filtered_voltages[i];
+    }
+    float kM_calc   = (n * sum_vs - sum_v * sum_s) / (n * sum_vv - sum_v * sum_v);
+    float intercept = (sum_s - kM_calc * sum_v) / n;
+    float kS_calc   = -intercept / kM_calc;
+
+    // Average Tm across all moving steps
+    float tm_calc = 0.0f;
+    if (!tm_samples.empty())
+    {
+        for (float t : tm_samples)
+            tm_calc += t;
+        tm_calc /= static_cast<float>(tm_samples.size());
+    }
+
     printf("\n=== Trial Complete ===\n");
-    printf("Samples: %lu\n", static_cast<unsigned long>(reporter_.sampleCount()));
-    printf("To find Km: slope of speed (mm/s) vs voltage line\n");
-    printf("To find bias_ff: x-intercept of the line\n\n");
+    printf("Samples: %d (filtered from %zu)\n", n, voltages.size());
+    printf("kM = %.2f mm/s/V\n", kM_calc);
+    printf("kS = %.4f V\n", kS_calc);
+    printf("Tm = %.4f s (%zu samples)\n\n", tm_calc, tm_samples.size());
     printPrompt();
 }
 
@@ -411,16 +498,16 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
         // Feedforward (if enabled)
         if (mode == 0 || mode == 2)
         {
-            ff_volts = settings_.bias_ff;
+            ff_volts = settings_.kS;
             if (set_speed > 0.0f)
             {
-                ff_volts += settings_.speed_ff * set_speed;
+                ff_volts += settings_.kV * set_speed;
             }
             else if (set_speed < 0.0f)
             {
-                ff_volts = -settings_.bias_ff + settings_.speed_ff * set_speed;
+                ff_volts = -settings_.kS + settings_.kV * set_speed;
             }
-            ff_volts += settings_.acc_ff * set_accel;
+            ff_volts += settings_.kA * set_accel;
         }
 
         // PD Controller (if enabled)
@@ -433,7 +520,7 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
 
             // PD output
             float derivative = (position_error - prev_error) / LOOP_INTERVAL_S;
-            control_volts    = settings_.kp * position_error + settings_.kd * derivative;
+            control_volts    = settings_.kP * position_error + settings_.kD * derivative;
             prev_error       = position_error;
         }
 
@@ -898,13 +985,13 @@ void MotorLab::cmdSetKm(const MotorLabArgs& args)
     float val;
     if (parseFloat(args, 1, 100.0f, 10000.0f, val))
     {
-        settings_.km = val;
+        settings_.kM = val;
         settings_.recalculateDerived();
-        printf("Km = %.2f (derived updated)\n", settings_.km);
+        printf("kM = %.2f (derived updated)\n", settings_.kM);
     }
     else if (args.argc == 1)
     {
-        printf("Km = %.2f\n", settings_.km);
+        printf("kM = %.2f\n", settings_.kM);
     }
 }
 
@@ -959,12 +1046,12 @@ void MotorLab::cmdSetKp(const MotorLabArgs& args)
     float val;
     if (parseFloat(args, 1, 0.0f, 10.0f, val))
     {
-        settings_.kp = val;
-        printf("Kp = %.7f (manual override)\n", settings_.kp);
+        settings_.kP = val;
+        printf("kP = %.7f (manual override)\n", settings_.kP);
     }
     else if (args.argc == 1)
     {
-        printf("Kp = %.7f\n", settings_.kp);
+        printf("kP = %.7f\n", settings_.kP);
     }
 }
 
@@ -973,12 +1060,12 @@ void MotorLab::cmdSetKd(const MotorLabArgs& args)
     float val;
     if (parseFloat(args, 1, 0.0f, 10.0f, val))
     {
-        settings_.kd = val;
-        printf("Kd = %.7f (manual override)\n", settings_.kd);
+        settings_.kD = val;
+        printf("kD = %.7f (manual override)\n", settings_.kD);
     }
     else if (args.argc == 1)
     {
-        printf("Kd = %.7f\n", settings_.kd);
+        printf("kD = %.7f\n", settings_.kD);
     }
 }
 
@@ -987,12 +1074,12 @@ void MotorLab::cmdSetBiasFF(const MotorLabArgs& args)
     float val;
     if (parseFloat(args, 1, 0.0f, 3.0f, val))
     {
-        settings_.bias_ff = val;
-        printf("bias_ff = %.5f V\n", settings_.bias_ff);
+        settings_.kS = val;
+        printf("kS = %.5f V\n", settings_.kS);
     }
     else if (args.argc == 1)
     {
-        printf("bias_ff = %.5f V\n", settings_.bias_ff);
+        printf("kS = %.5f V\n", settings_.kS);
     }
 }
 
@@ -1002,12 +1089,12 @@ void MotorLab::cmdSetSpeedFF(const MotorLabArgs& args)
     float val;
     if (parseFloat(args, 1, 0.0f, 0.1f, val))
     {
-        settings_.speed_ff = val;
-        printf("speed_ff = %.7f V/(mm/s) (manual override)\n", settings_.speed_ff);
+        settings_.kV = val;
+        printf("kV = %.7f V/(mm/s) (manual override)\n", settings_.kV);
     }
     else if (args.argc == 1)
     {
-        printf("speed_ff = %.7f V/(mm/s) [= 1/Km]\n", settings_.speed_ff);
+        printf("kV = %.7f V/(mm/s) [= 1/Km]\n", settings_.kV);
     }
 }
 
@@ -1017,12 +1104,12 @@ void MotorLab::cmdSetAccFF(const MotorLabArgs& args)
     float val;
     if (parseFloat(args, 1, 0.0f, 0.01f, val))
     {
-        settings_.acc_ff = val;
-        printf("acc_ff = %.7f V/(mm/s^2) (manual override)\n", settings_.acc_ff);
+        settings_.kA = val;
+        printf("kA = %.7f V/(mm/s^2) (manual override)\n", settings_.kA);
     }
     else if (args.argc == 1)
     {
-        printf("acc_ff = %.7f V/(mm/s^2) [= Tm/Km]\n", settings_.acc_ff);
+        printf("kA = %.7f V/(mm/s^2) [= Tm/Km]\n", settings_.kA);
     }
 }
 
@@ -1429,16 +1516,16 @@ void MotorLab::cmdExport()
     float battery_volts = batteryVoltage();
 
     // KV: duty per mm/s
-    // duty = volts / battery, and volts = speed / km (where km is mm/s per volt)
-    // So: duty_per_mmps = 1 / (km * battery_volts)
-    float kv = 1.0f / (settings_.km * battery_volts);
+    // duty = volts / battery, and volts = speed / kM (where kM is mm/s per volt)
+    // So: duty_per_mmps = 1 / (kM * battery_volts)
+    float kv_duty = 1.0f / (settings_.kM * battery_volts);
 
     // KS: duty for static friction
-    float ks = settings_.bias_ff / battery_volts;
+    float ks_duty = settings_.kS / battery_volts;
 
     // Ka: acceleration feedforward (duty per mm/s^2)
-    // acc_ff is in V/(mm/s^2), convert to duty/(mm/s^2)
-    float ka = settings_.acc_ff / battery_volts;
+    // kA is in V/(mm/s^2), convert to duty/(mm/s^2)
+    float ka_duty = settings_.kA / battery_volts;
 
     printf("\n");
     printf("// ============================================================\n");
@@ -1447,19 +1534,19 @@ void MotorLab::cmdExport()
     printf("// ============================================================\n");
     printf("\n");
     printf("// Feedforward constants (duty-based, for mm/s units)\n");
-    printf("#define FORWARD_KVL %.6ff  // Left velocity gain (duty per mm/s)\n", kv);
-    printf("#define FORWARD_KVR %.6ff  // Right velocity gain (duty per mm/s)\n", kv);
-    printf("#define FORWARD_KSL %.3ff     // Left static friction (duty)\n", ks);
-    printf("#define FORWARD_KSR %.3ff     // Right static friction (duty)\n", ks);
+    printf("#define FORWARD_KVL %.6ff  // Left velocity gain (duty per mm/s)\n", kv_duty);
+    printf("#define FORWARD_KVR %.6ff  // Right velocity gain (duty per mm/s)\n", kv_duty);
+    printf("#define FORWARD_KSL %.3ff     // Left static friction (duty)\n", ks_duty);
+    printf("#define FORWARD_KSR %.3ff     // Right static friction (duty)\n", ks_duty);
     printf("\n");
     printf("// Acceleration feedforward (optional, set to 0 if not used)\n");
-    printf("#define FORWARD_KAL %.7ff  // Left accel gain (duty per mm/s^2)\n", ka);
-    printf("#define FORWARD_KAR %.7ff  // Right accel gain (duty per mm/s^2)\n", ka);
+    printf("#define FORWARD_KAL %.7ff  // Left accel gain (duty per mm/s^2)\n", ka_duty);
+    printf("#define FORWARD_KAR %.7ff  // Right accel gain (duty per mm/s^2)\n", ka_duty);
     printf("\n");
     printf("// Raw MotorLab values (for reference):\n");
-    printf("//   Km = %.2f mm/s/V\n", settings_.km);
+    printf("//   kM = %.2f mm/s/V\n", settings_.kM);
     printf("//   Tm = %.5f s\n", settings_.tm);
-    printf("//   bias_ff = %.3f V\n", settings_.bias_ff);
+    printf("//   kS = %.3f V\n", settings_.kS);
     printf("// ============================================================\n");
     printf("\n");
 }
