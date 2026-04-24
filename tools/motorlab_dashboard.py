@@ -88,6 +88,8 @@ class Dashboard(QMainWindow):
         self.nChannels = 8
         self.nPoints = 400
         self.telemetry = [DataChannel(self.nPoints) for i in range(self.nChannels)]
+        self.csv_headings = []
+        self.plot_curves = {'output': [], 'motion': []}
         self.initUI()
 
     def initUI(self):
@@ -891,6 +893,169 @@ class Dashboard(QMainWindow):
     def on_monitor_data(self, line):
         """Handle incoming serial monitor data."""
         self.text_box.appendPlainText(line)
+        
+        # Skip empty lines and comments
+        if not line or line.startswith('#'):
+            return
+        
+        # Parse CSV header to identify columns
+        if line.startswith('time_ms'):
+            self.csv_headings = line.split(',')
+            # Clear old plot curves when header arrives (new trial starting)
+            self.output_plot.clear()
+            self.motion_plot.clear()
+            self.plot_curves = {'output': [], 'motion': []}
+            return
+        
+        # Parse CSV data line
+        try:
+            parts = line.split(',')
+            if len(parts) < 2:
+                return
+            
+            # Convert all parts to floats
+            values = []
+            for part in parts:
+                try:
+                    values.append(float(part))
+                except ValueError:
+                    return  # Skip malformed lines
+            
+            if len(values) == 0:
+                return
+            
+            # Add values to telemetry channels
+            for i in range(min(len(values), self.nChannels)):
+                self.telemetry[i].add_new_value(values[i])
+            
+            # Determine data type from headings and update plots accordingly
+            if self.csv_headings:
+                headings_str = ','.join(self.csv_headings).lower()
+                
+                # Update output plot based on available data
+                if 'voltage' in headings_str and len(values) > 1:
+                    # OpenLoop format: time_ms, voltage, speed
+                    if len(self.plot_curves['output']) == 0:
+                        pen = pg.mkPen(color=palette[3], width=2)
+                        curve = self.output_plot.plot(name='Voltage', pen=pen)
+                        self.plot_curves['output'].append(curve)
+                    
+                    x_data = self.telemetry[0].data()
+                    y_data = self.telemetry[1].data()
+                    self.plot_curves['output'][0].setData(x_data, y_data)
+                    self.output_plot.setYRange(-1, 7)
+                    
+                    # Update motion plot
+                    if len(values) > 2:
+                        if len(self.plot_curves['motion']) == 0:
+                            pen = pg.mkPen(color=palette[5], width=2)
+                            curve = self.motion_plot.plot(name='Speed', pen=pen)
+                            self.plot_curves['motion'].append(curve)
+                        
+                        y_data = self.telemetry[2].data()
+                        self.plot_curves['motion'][0].setData(x_data, y_data)
+                        self.motion_plot.enableAutoRange()
+                
+                elif 'step_voltage' in headings_str and len(values) > 1:
+                    # Step format: time_ms, step_voltage, speed, position
+                    if len(self.plot_curves['output']) == 0:
+                        pen = pg.mkPen(color=palette[4], width=2)
+                        curve = self.output_plot.plot(name='Step Voltage', pen=pen)
+                        self.plot_curves['output'].append(curve)
+                    
+                    x_data = self.telemetry[0].data()
+                    y_data = self.telemetry[1].data()
+                    self.plot_curves['output'][0].setData(x_data, y_data)
+                    self.output_plot.setYRange(-1, 7)
+                    
+                    # Update motion plot with speed
+                    if len(values) > 2:
+                        if len(self.plot_curves['motion']) == 0:
+                            pen = pg.mkPen(color=palette[5], width=2)
+                            curve = self.motion_plot.plot(name='Speed', pen=pen)
+                            self.plot_curves['motion'].append(curve)
+                        
+                        y_data = self.telemetry[2].data()
+                        self.plot_curves['motion'][0].setData(x_data, y_data)
+                        self.motion_plot.enableAutoRange()
+                
+                elif 'motor_volts' in headings_str and len(values) > 1:
+                    # Profile format: time_ms, set_pos, actual_pos, set_speed, actual_speed, motor_volts
+                    if len(self.plot_curves['output']) == 0:
+                        pen = pg.mkPen(color=palette[6], width=2)
+                        curve = self.output_plot.plot(name='Motor Volts', pen=pen)
+                        self.plot_curves['output'].append(curve)
+                    
+                    x_data = self.telemetry[0].data()
+                    y_data = self.telemetry[5].data()
+                    self.plot_curves['output'][0].setData(x_data, y_data)
+                    self.output_plot.setYRange(-1, 7)
+                    
+                    # Update motion plot with actual speed
+                    if len(values) > 4:
+                        if len(self.plot_curves['motion']) == 0:
+                            pen = pg.mkPen(color=palette[5], width=2)
+                            curve = self.motion_plot.plot(name='Actual Speed', pen=pen)
+                            self.plot_curves['motion'].append(curve)
+                        
+                        y_data = self.telemetry[4].data()
+                        self.plot_curves['motion'][0].setData(x_data, y_data)
+                        self.motion_plot.enableAutoRange()
+                
+                elif 'ctrl_v' in headings_str or 'ff_v' in headings_str:
+                    # Controller format: time_ms, set_pos, actual_pos, set_speed, actual_speed, ctrl_v, ff_v, total_v
+                    # or Profile format: time_ms, set_pos, actual_pos, set_speed, actual_speed, motor_volts
+                    
+                    x_data = self.telemetry[0].data()
+                    
+                    # Update FF voltage curve
+                    if 'ff_v' in headings_str and len(values) > 6:
+                        if len(self.plot_curves['output']) == 0:
+                            pen = pg.mkPen(color=palette[1], width=2, style=Qt.PenStyle.SolidLine)
+                            curve = self.output_plot.plot(name='FF Volts', pen=pen)
+                            self.plot_curves['output'].append(curve)
+                        
+                        y_data = self.telemetry[6].data()
+                        self.plot_curves['output'][0].setData(x_data, y_data)
+                    
+                    # Update control voltage curve
+                    if 'ctrl_v' in headings_str and len(values) > 5:
+                        if len(self.plot_curves['output']) < 2:
+                            pen = pg.mkPen(color=palette[2], width=2, style=Qt.PenStyle.SolidLine)
+                            curve = self.output_plot.plot(name='Ctrl Volts', pen=pen)
+                            self.plot_curves['output'].append(curve)
+                        
+                        y_data = self.telemetry[5].data()
+                        if len(self.plot_curves['output']) > 1:
+                            self.plot_curves['output'][1].setData(x_data, y_data)
+                    
+                    # Update total voltage curve
+                    if 'total_v' in headings_str and len(values) > 7:
+                        if len(self.plot_curves['output']) < 3:
+                            pen = pg.mkPen(color=palette[7], width=2, style=Qt.PenStyle.SolidLine)
+                            curve = self.output_plot.plot(name='Total Volts', pen=pen)
+                            self.plot_curves['output'].append(curve)
+                        
+                        y_data = self.telemetry[7].data()
+                        if len(self.plot_curves['output']) > 2:
+                            self.plot_curves['output'][2].setData(x_data, y_data)
+                    
+                    self.output_plot.setYRange(-1, 7)
+                    
+                    # Update motion plot with actual speed
+                    if len(values) > 4:
+                        if len(self.plot_curves['motion']) == 0:
+                            pen = pg.mkPen(color=palette[5], width=2)
+                            curve = self.motion_plot.plot(name='Actual Speed', pen=pen)
+                            self.plot_curves['motion'].append(curve)
+                        
+                        y_data = self.telemetry[4].data()
+                        self.plot_curves['motion'][0].setData(x_data, y_data)
+                        self.motion_plot.enableAutoRange()
+        
+        except Exception as e:
+            # Silently ignore parsing errors to avoid spam
+            pass
 
     def clear_monitor(self):
         """Clear the text box."""
