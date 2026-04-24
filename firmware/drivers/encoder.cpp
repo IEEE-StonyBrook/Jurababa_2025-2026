@@ -18,7 +18,8 @@ void Encoder::loadPIOProgram(PIO pio_instance)
     static bool program_loaded = false;
     if (!program_loaded)
     {
-        pio_add_program(pio_instance, &quadrature_encoder_program);
+        // CRITICAL: quadrature_encoder program MUST be at offset 0 due to computed jumps
+        pio_add_program_at_offset(pio_instance, &quadrature_encoder_program, 0);
         program_loaded = true;
     }
 }

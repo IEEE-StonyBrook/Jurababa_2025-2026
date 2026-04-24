@@ -18,6 +18,7 @@ class LineSensor;
 
 constexpr int MOTORLAB_INPUT_BUFFER_SIZE = 64;
 constexpr int MOTORLAB_MAX_ARGC          = 8;
+constexpr int MOTORLAB_HISTORY_SIZE      = 10;
 
 struct MotorLabArgs
 {
@@ -117,6 +118,7 @@ class MotorLab
     void cmdStop();
     void cmdExport();
     void cmdGpioDiag(const MotorLabArgs& args);
+    void cmdDirTest(const MotorLabArgs& args);
 
     // Line sensor commands
     void cmdLinePosition();
@@ -144,6 +146,13 @@ class MotorLab
     int  input_index_;
     bool echo_enabled_;
 
+    // Command history (circular buffer)
+    char history_[MOTORLAB_HISTORY_SIZE][MOTORLAB_INPUT_BUFFER_SIZE];
+    int  history_count_;
+    int  history_write_idx_;
+    int  history_nav_idx_;
+    char temp_buffer_[MOTORLAB_INPUT_BUFFER_SIZE];
+
     int32_t prev_left_ticks_;
     int32_t prev_right_ticks_;
     float   left_velocity_mmps_;
@@ -156,6 +165,12 @@ class MotorLab
     void         printPrompt();
     bool         parseFloat(const MotorLabArgs& args, int index, float min_val, float max_val,
                             float& result);
+
+    // History commands and helpers
+    void cmdRepeat();
+    void cmdHistory();
+    void executeHistorySelection(int selection);
+    void saveToHistory();
 };
 
 #endif

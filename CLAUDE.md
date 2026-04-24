@@ -215,7 +215,9 @@ cmake .. -DPICO_SDK_PATH=/path/to/pico-sdk -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 make -j4
 ```
 
-**Note:** The `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` flag generates `compile_commands.json` for IDE IntelliSense. A symlink at the project root points to this file.
+**Note:**
+- The `-DCMAKE_EXPORT_COMPILE_COMMANDS=ON` flag generates `compile_commands.json` for IDE IntelliSense. A symlink at the project root points to this file.
+- **Do not build/compile in Claude Code.** The user will compile and flash manually after code changes.
 
 ### Simulator (mms)
 ```bash

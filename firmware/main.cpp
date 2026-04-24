@@ -284,7 +284,7 @@ void core1_RobotController()
     ToF     right_tof(PIN_TOF_RIGHT_XSHUT, 'R');
     IMU     imu(PIN_IMU_RX);
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
-    Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
+    Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, true);
 
     // TESTING: Pass nullptr for left_encoder
     Drivetrain drivetrain(&left_motor, &right_motor, nullptr, &right_encoder, g_battery);
@@ -452,15 +452,14 @@ void runMotorLabMode(Battery& battery)
     // Select sensor mode (ToF vs LineSensor - both use I2C0)
     SensorMode sensor_mode = selectSensorMode(3000);
 
-    // TESTING: Only initialize right encoder (GP10/GP11 - adjacent pins)
-    // Left encoder (GP8/GP1 - NON-adjacent) won't work with adjacent-pin PIO code
-    Encoder right_encoder(pio0, PIN_ENCODER_R_A, false); // GP10, assumes GP11 is channel B
+    // Initialize both encoders
+    Encoder left_encoder(pio0, PIN_ENCODER_L_A, false);  // GP0, GP1 for channel B
+    Encoder right_encoder(pio0, PIN_ENCODER_R_A, true); // GP10, GP11 for channel B
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
-    Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
+    Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, true);
     IMU     imu(PIN_IMU_RX);
 
-    // TESTING: Pass nullptr for left_encoder since it's not initialized
-    Drivetrain drivetrain(&left_motor, &right_motor, nullptr, &right_encoder, &battery);
+    Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
     Robot      robot(&drivetrain, &imu, nullptr, nullptr, nullptr);
 
     // Create MotorLab with appropriate sensor based on mode selection
@@ -474,7 +473,7 @@ void runMotorLabMode(Battery& battery)
 
         printf("Line sensor initialized on I2C0\n");
 
-        motorlab = new MotorLab(&left_motor, &right_motor, nullptr, &right_encoder, &battery,
+        motorlab = new MotorLab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery,
                                 &robot, &line_sensor);
     }
     else
@@ -486,7 +485,7 @@ void runMotorLabMode(Battery& battery)
 
         printf("ToF sensors initialized on I2C0\n");
 
-        motorlab = new MotorLab(&left_motor, &right_motor, nullptr, &right_encoder, &battery,
+        motorlab = new MotorLab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery,
                                 &robot, &left_tof, &front_tof, &right_tof);
     }
 
@@ -546,7 +545,7 @@ void runLineFollowingMode(Battery& battery)
     // TESTING: Only right encoder (GP10/GP11 adjacent)
     Encoder right_encoder(pio0, PIN_ENCODER_R_A, false);
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
-    Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, false);
+    Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, true);
     IMU     imu(PIN_IMU_RX);
 
     LineSensor line_sensor(i2c0, PIN_LINE_SDA, PIN_LINE_SCL);

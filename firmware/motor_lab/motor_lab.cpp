@@ -34,11 +34,13 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                    Encoder* right_encoder, Battery* battery)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
-      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
-      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr),
-      front_tof_(nullptr), right_tof_(nullptr), line_sensor_(nullptr)
+      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
+      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
+      right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr), front_tof_(nullptr),
+      right_tof_(nullptr), line_sensor_(nullptr)
 {
     clearInput();
+    temp_buffer_[0] = '\0';
 }
 
 // Robot mode: direct motor/encoder + Robot access (for yaw/omega)
@@ -46,11 +48,13 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                    Encoder* right_encoder, Battery* battery, Robot* robot)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
-      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
-      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr),
-      front_tof_(nullptr), right_tof_(nullptr), line_sensor_(nullptr)
+      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
+      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
+      right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
+      right_tof_(nullptr), line_sensor_(nullptr)
 {
     clearInput();
+    temp_buffer_[0] = '\0';
 }
 
 // Robot mode with ToF sensors: direct motor/encoder + Robot + ToF access
@@ -59,11 +63,13 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                    ToF* front_tof, ToF* right_tof)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
-      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
-      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot), left_tof_(left_tof),
-      front_tof_(front_tof), right_tof_(right_tof), line_sensor_(nullptr)
+      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
+      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
+      right_velocity_mmps_(0.0f), robot_(robot), left_tof_(left_tof), front_tof_(front_tof),
+      right_tof_(right_tof), line_sensor_(nullptr)
 {
     clearInput();
+    temp_buffer_[0] = '\0';
 }
 
 // Robot mode with LineSensor: direct motor/encoder + Robot + LineSensor access
@@ -71,11 +77,13 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                    Encoder* right_encoder, Battery* battery, Robot* robot, LineSensor* line_sensor)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
-      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
-      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr),
-      front_tof_(nullptr), right_tof_(nullptr), line_sensor_(line_sensor)
+      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
+      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
+      right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
+      right_tof_(nullptr), line_sensor_(line_sensor)
 {
     clearInput();
+    temp_buffer_[0] = '\0';
 }
 
 // Integrated mode: use Drivetrain for velocity and motor control
@@ -83,11 +91,13 @@ MotorLab::MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right
                    Battery* battery)
     : left_motor_(nullptr), right_motor_(nullptr), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), drivetrain_(drivetrain), reporter_(10),
-      input_index_(0), echo_enabled_(false), prev_left_ticks_(0), prev_right_ticks_(0),
-      left_velocity_mmps_(0.0f), right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr),
-      front_tof_(nullptr), right_tof_(nullptr), line_sensor_(nullptr)
+      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
+      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
+      right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr), front_tof_(nullptr),
+      right_tof_(nullptr), line_sensor_(nullptr)
 {
     clearInput();
+    temp_buffer_[0] = '\0';
 }
 
 void MotorLab::init()
@@ -510,6 +520,14 @@ int MotorLab::readSerialLine()
             {
                 printf("\n");
             }
+
+            // Save non-empty command to history
+            if (input_index_ > 0)
+            {
+                saveToHistory();
+            }
+
+            history_nav_idx_ = -1; // Reset navigation
             return 1;
         }
 
@@ -718,6 +736,11 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     {
         cmdGpioDiag(args);
     }
+    // Motor DIR pin test
+    else if (strcmp(cmd, "DIRTEST") == 0)
+    {
+        cmdDirTest(args);
+    }
     // Line sensor commands
     else if (strcmp(cmd, "LINPOS") == 0)
     {
@@ -744,6 +767,21 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
             echo_enabled_ = true;
             printf("Echo enabled\n");
         }
+    }
+    // History commands
+    else if (strcmp(cmd, "R") == 0)
+    {
+        cmdRepeat();
+    }
+    else if (strcmp(cmd, "H") == 0)
+    {
+        cmdHistory();
+    }
+    else if (cmd[0] >= '1' && cmd[0] <= '9' && strlen(cmd) <= 2)
+    {
+        // Handle history selection (1-10)
+        int selection = atoi(cmd);
+        executeHistorySelection(selection);
     }
     else
     {
@@ -1549,4 +1587,158 @@ void MotorLab::cmdLineContinuous(const MotorLabArgs& args)
     }
 
     printf("=== Done ===\n");
+}
+
+// ============================================================================
+// Command History
+// ============================================================================
+
+void MotorLab::saveToHistory()
+{
+    // Don't save if same as most recent command
+    if (history_count_ > 0)
+    {
+        int last_idx = (history_write_idx_ - 1 + MOTORLAB_HISTORY_SIZE) % MOTORLAB_HISTORY_SIZE;
+        if (strcmp(input_buffer_, history_[last_idx]) == 0)
+        {
+            return;
+        }
+    }
+
+    strncpy(history_[history_write_idx_], input_buffer_, MOTORLAB_INPUT_BUFFER_SIZE - 1);
+    history_[history_write_idx_][MOTORLAB_INPUT_BUFFER_SIZE - 1] = '\0';
+
+    history_write_idx_ = (history_write_idx_ + 1) % MOTORLAB_HISTORY_SIZE;
+    if (history_count_ < MOTORLAB_HISTORY_SIZE)
+    {
+        history_count_++;
+    }
+}
+
+void MotorLab::cmdRepeat()
+{
+    if (history_count_ == 0)
+    {
+        printf("No command history\n");
+        return;
+    }
+
+    // Get most recent command
+    int last_idx = (history_write_idx_ - 1 + MOTORLAB_HISTORY_SIZE) % MOTORLAB_HISTORY_SIZE;
+
+    // Copy to input buffer
+    strncpy(input_buffer_, history_[last_idx], MOTORLAB_INPUT_BUFFER_SIZE);
+    printf("Repeating: %s\n", input_buffer_);
+
+    // Parse and execute
+    MotorLabArgs args = tokenize();
+    if (args.argc > 0)
+    {
+        executeCommand(args);
+    }
+}
+
+void MotorLab::cmdHistory()
+{
+    if (history_count_ == 0)
+    {
+        printf("No command history\n");
+        return;
+    }
+
+    printf("Command History:\n");
+
+    // Print from oldest to newest
+    int oldest =
+        (history_write_idx_ - history_count_ + MOTORLAB_HISTORY_SIZE) % MOTORLAB_HISTORY_SIZE;
+    for (int i = 0; i < history_count_; i++)
+    {
+        int idx = (oldest + i) % MOTORLAB_HISTORY_SIZE;
+        printf("  %d: %s\n", i + 1, history_[idx]);
+    }
+
+    printf("Type number (1-%d) and press Enter to execute\n", history_count_);
+}
+
+void MotorLab::executeHistorySelection(int selection)
+{
+    if (selection < 1 || selection > history_count_)
+    {
+        printf("Invalid selection: %d (valid range: 1-%d)\n", selection, history_count_);
+        return;
+    }
+
+    // Calculate index in circular buffer
+    int oldest =
+        (history_write_idx_ - history_count_ + MOTORLAB_HISTORY_SIZE) % MOTORLAB_HISTORY_SIZE;
+    int idx = (oldest + selection - 1) % MOTORLAB_HISTORY_SIZE;
+
+    // Copy to input buffer
+    strncpy(input_buffer_, history_[idx], MOTORLAB_INPUT_BUFFER_SIZE);
+    printf("Executing: %s\n", input_buffer_);
+
+    // Parse and execute
+    MotorLabArgs args = tokenize();
+    if (args.argc > 0)
+    {
+        executeCommand(args);
+    }
+}
+
+// ============================================================================
+// Motor Direction Pin Diagnostic
+// ============================================================================
+
+void MotorLab::cmdDirTest(const MotorLabArgs& args)
+{
+    printf("\n=== Motor Direction Pin Test ===\n");
+    printf("This applies constant 25%% PWM and toggles DIR pins\n");
+    printf("Watch motors - they should alternate direction every 2 seconds\n");
+    printf("Press any key to stop\n\n");
+
+    // Drain input buffer
+    while (getchar_timeout_us(0) != PICO_ERROR_TIMEOUT)
+        ;
+    while (uart_is_readable(uart0))
+        uart_getc(uart0);
+
+    // Get PWM slices/channels for direct control
+    uint     left_slice    = pwm_gpio_to_slice_num(PIN_MOTOR_L_PWM);
+    uint     left_channel  = pwm_gpio_to_channel(PIN_MOTOR_L_PWM);
+    uint     right_slice   = pwm_gpio_to_slice_num(PIN_MOTOR_R_PWM);
+    uint     right_channel = pwm_gpio_to_channel(PIN_MOTOR_R_PWM);
+    uint16_t pwm_level     = static_cast<uint16_t>(PWM_WRAP * 0.3f); // 30% duty
+
+    int cycle = 0;
+    while (true) // Run until interrupted
+    {
+        // Check for user input to stop
+        int c = getchar_timeout_us(0);
+        if (c != PICO_ERROR_TIMEOUT)
+        {
+            printf("\nStopped by user\n");
+            break;
+        }
+
+        bool dir_state = (cycle % 2 == 0);
+
+        printf("Cycle %d: DIR_L=%d, DIR_R=%d\n", cycle + 1, dir_state, dir_state);
+        cycle++;
+
+        // Set DIR pins FIRST
+        gpio_put(PIN_MOTOR_L_DIR, dir_state);
+        gpio_put(PIN_MOTOR_R_DIR, dir_state);
+
+        // Then set PWM level directly (bypasses Motor class)
+        pwm_set_chan_level(left_slice, left_channel, pwm_level);
+        pwm_set_chan_level(right_slice, right_channel, pwm_level);
+
+        sleep_ms(2000);
+    }
+
+    // Stop motors
+    stopMotors();
+    printf("=== Test Complete ===\n");
+    printf("Expected: Both motors should have reversed direction\n");
+    printf("If right motor didn't reverse: Hardware issue with GP2 or H-bridge\n");
 }

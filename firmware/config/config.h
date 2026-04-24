@@ -27,7 +27,7 @@
 // ================= Drivetrain Constants ================= //
 #define DRIVETRAIN_MIN_DT            0.001f  // Minimum valid dt (s)
 #define DRIVETRAIN_FF_DEADZONE_MMPS  10.0f   // Feedforward deadzone (mm/s)
-#define DRIVETRAIN_MAX_VELOCITY_MMPS 1500.0f // Velocity sanity check
+#define DRIVETRAIN_MAX_VELOCITY_MMPS 2500.0f // Velocity sanity check
 
 // ================= Multicore Constants ================= //
 #define CORE_SLEEP_MS 250 // Inter-core sync sleep time (ms)
