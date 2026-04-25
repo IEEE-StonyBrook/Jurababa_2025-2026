@@ -554,32 +554,56 @@ class Dashboard(QMainWindow):
         return x_data[mask], y_data[mask]
 
     def log_data(self):
-        for line in self.data:
-            if len(line) > 0:
-                self.text_box.appendPlainText(line)
-            self.text_box.update()
-            QApplication.processEvents()
+        """Batch log all data lines in a single update for performance."""
+        if self.data:
+            # Filter out empty lines and join into single string
+            text = '\n'.join(line for line in self.data if line)
+            if text:
+                self.text_box.appendPlainText(text)
 
     def log_message(self, message):
+        """Log a single message to the text box."""
         self.text_box.appendPlainText(message)
-        self.text_box.update()
-        QApplication.processEvents()
 
     def clear_data(self):
         self.data = []
 
     # ========== SERIAL COMMUNICATION ==========
 
-    def get_response(self):
-        time.sleep(0.25)
+    def get_response(self, timeout_sec=5.0):
+        """Read response lines until '>' prompt or timeout.
+
+        Uses empty-read counting to handle variable data rates without
+        truncating data that's still being transmitted.
+        """
         data = []
-        done = False
-        while not done:
-            line = self.serial.readline().decode('ascii', errors='ignore').strip()
-            if line == '>' or line == '':
-                done = True
-                continue
-            data.append(line)
+        empty_reads = 0
+        max_empty_reads = 50  # Allow ~50 empty reads (each ~10ms) before giving up
+        start_time = time.time()
+
+        while True:
+            # Check overall timeout
+            if time.time() - start_time > timeout_sec:
+                break
+
+            # Non-blocking check for available data
+            if self.serial.in_waiting > 0:
+                line = self.serial.readline().decode('ascii', errors='ignore').strip()
+                empty_reads = 0  # Reset empty counter on successful read
+
+                if line == '>':
+                    break  # Normal completion - got prompt
+                if line:
+                    data.append(line)
+            else:
+                # No data available - wait a bit
+                time.sleep(0.01)
+                empty_reads += 1
+
+                # Only exit after getting some data AND seeing empty reads
+                if empty_reads >= max_empty_reads and len(data) > 0:
+                    break
+
         return data
 
     def write(self, message):

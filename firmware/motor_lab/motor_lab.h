@@ -160,6 +160,9 @@ class MotorLab
     float   left_velocity_mmps_;
     float   right_velocity_mmps_;
 
+    // Timing for accurate velocity calculation
+    absolute_time_t last_encoder_update_;
+
     int          readSerialLine();
     MotorLabArgs tokenize();
     void         executeCommand(const MotorLabArgs& args);

@@ -39,7 +39,7 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr)
+      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -53,7 +53,7 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr)
+      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -68,7 +68,7 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(robot), left_tof_(left_tof), front_tof_(front_tof),
-      right_tof_(right_tof), line_sensor_(nullptr)
+      right_tof_(right_tof), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -82,7 +82,7 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(line_sensor)
+      right_tof_(nullptr), line_sensor_(line_sensor), last_encoder_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -96,7 +96,7 @@ MotorLab::MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr)
+      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -228,39 +228,48 @@ void MotorLab::resetEncoders()
         left_encoder_->reset();
     if (right_encoder_)
         right_encoder_->reset();
-    prev_left_ticks_     = 0;
-    prev_right_ticks_    = 0;
+
+    // Capture current encoder positions (should be 0 after reset)
+    prev_left_ticks_  = left_encoder_ ? left_encoder_->ticks() : 0;
+    prev_right_ticks_ = right_encoder_ ? right_encoder_->ticks() : 0;
+
     left_velocity_mmps_  = 0.0f;
     right_velocity_mmps_ = 0.0f;
 
-    // Prime encoder state: capture current position to avoid velocity spike on first update
-    updateEncoders(LOOP_INTERVAL_S);
+    // Reset timing reference for next updateEncoders() call
+    last_encoder_update_ = get_absolute_time();
 }
 
-void MotorLab::updateEncoders(float dt)
+void MotorLab::updateEncoders(float /* dt_hint - ignored, we measure actual */)
 {
-    // When using Drivetrain, velocities are updated externally via update()
+    // Measure actual time since last update for accurate velocity calculation
+    absolute_time_t now       = get_absolute_time();
+    float           actual_dt = absolute_time_diff_us(last_encoder_update_, now) * 1e-6f;
+    last_encoder_update_      = now;
+
+    // Avoid division by zero on very fast calls
+    if (actual_dt < 0.001f)
+    {
+        return;
+    }
+
+    // When using Drivetrain, delegate with actual dt
     if (drivetrain_ != nullptr)
     {
-        drivetrain_->update(dt);
+        drivetrain_->update(actual_dt);
         // Cache velocities for display in cmdEncoders
         left_velocity_mmps_  = drivetrain_->velocity(WheelSide::LEFT);
         right_velocity_mmps_ = drivetrain_->velocity(WheelSide::RIGHT);
         return;
     }
 
-    // Standalone mode: calculate velocity from encoder delta
-    if (dt < 0.001f)
-    {
-        return; // Avoid division by zero
-    }
-
+    // Standalone mode: calculate velocity from encoder delta using actual dt
     if (left_encoder_)
     {
         int32_t left_ticks  = left_encoder_->ticks();
         int32_t delta_left  = left_ticks - prev_left_ticks_;
         prev_left_ticks_    = left_ticks;
-        left_velocity_mmps_ = (delta_left * MM_PER_TICK) / dt;
+        left_velocity_mmps_ = (delta_left * MM_PER_TICK) / actual_dt;
     }
 
     if (right_encoder_)
@@ -268,7 +277,7 @@ void MotorLab::updateEncoders(float dt)
         int32_t right_ticks  = right_encoder_->ticks();
         int32_t delta_right  = right_ticks - prev_right_ticks_;
         prev_right_ticks_    = right_ticks;
-        right_velocity_mmps_ = (delta_right * MM_PER_TICK) / dt;
+        right_velocity_mmps_ = (delta_right * MM_PER_TICK) / actual_dt;
     }
 }
 
