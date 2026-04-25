@@ -10,7 +10,6 @@
 
 #include <cstdint>
 
-class Drivetrain;
 class Encoder;
 class Motor;
 class Battery;
@@ -39,10 +38,6 @@ struct MotorLabArgs
 class MotorLab
 {
   public:
-    // Standalone mode: direct motor/encoder access
-    MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
-             Battery* battery);
-
     // Robot mode: direct motor/encoder + Robot access (for yaw/omega)
     MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
              Battery* battery, Robot* robot);
@@ -54,10 +49,6 @@ class MotorLab
     // Robot mode with LineSensor: direct motor/encoder + Robot + LineSensor access
     MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
              Battery* battery, Robot* robot, LineSensor* line_sensor);
-
-    // Integrated mode: use Drivetrain
-    MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right_encoder,
-             Battery* battery);
 
     void init();
     bool processSerial();
@@ -137,7 +128,6 @@ class MotorLab
     Encoder*    left_encoder_;
     Encoder*    right_encoder_;
     Battery*    battery_;
-    Drivetrain* drivetrain_;
     Robot*      robot_;
     ToF*        left_tof_;
     ToF*        front_tof_;
@@ -167,16 +157,8 @@ class MotorLab
     // Timing for accurate velocity calculation
     absolute_time_t last_encoder_update_;
 
-    // Angular velocity tracking (for TURN trials)
-    float           prev_yaw_;
-    float           omega_degps_;
-    absolute_time_t last_yaw_update_;
-
     // Turn helpers
-    float normalizeYawDelta(float delta);
-    void  updateAngularVelocity();
-    void  resetAngularTracking();
-    void  setTurnVoltage(float volts);
+    void setTurnVoltage(float volts);
 
     int          readSerialLine();
     MotorLabArgs tokenize();

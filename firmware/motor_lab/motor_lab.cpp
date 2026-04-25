@@ -1,7 +1,6 @@
 #include "motor_lab/motor_lab.h"
 
 #include "config/config.h"
-#include "control/drivetrain.h"
 #include "control/robot.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
@@ -31,31 +30,15 @@ static const char* MOTORLAB_VERSION = "MOTORLAB v1.0 (Jurababa)";
 // Constructor and Initialization
 // ============================================================================
 
-// Standalone mode: direct motor/encoder access
-MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
-                   Encoder* right_encoder, Battery* battery)
-    : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
-      right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
-      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
-      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
-      right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time()),
-      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
-{
-    clearInput();
-    temp_buffer_[0] = '\0';
-}
-
 // Robot mode: direct motor/encoder + Robot access (for yaw/omega)
 MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                    Encoder* right_encoder, Battery* battery, Robot* robot)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
-      right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
-      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
-      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
+      right_encoder_(right_encoder), battery_(battery), reporter_(10), input_index_(0),
+      echo_enabled_(false), history_count_(0), history_write_idx_(0), history_nav_idx_(-1),
+      prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time()),
-      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
+      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -66,12 +49,11 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                    Encoder* right_encoder, Battery* battery, Robot* robot, ToF* left_tof,
                    ToF* front_tof, ToF* right_tof)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
-      right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
-      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
-      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
+      right_encoder_(right_encoder), battery_(battery), reporter_(10), input_index_(0),
+      echo_enabled_(false), history_count_(0), history_write_idx_(0), history_nav_idx_(-1),
+      prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(robot), left_tof_(left_tof), front_tof_(front_tof),
-      right_tof_(right_tof), line_sensor_(nullptr), last_encoder_update_(get_absolute_time()),
-      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
+      right_tof_(right_tof), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -81,27 +63,11 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
 MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                    Encoder* right_encoder, Battery* battery, Robot* robot, LineSensor* line_sensor)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
-      right_encoder_(right_encoder), battery_(battery), drivetrain_(nullptr), reporter_(10),
-      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
-      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
+      right_encoder_(right_encoder), battery_(battery), reporter_(10), input_index_(0),
+      echo_enabled_(false), history_count_(0), history_write_idx_(0), history_nav_idx_(-1),
+      prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(line_sensor), last_encoder_update_(get_absolute_time()),
-      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
-{
-    clearInput();
-    temp_buffer_[0] = '\0';
-}
-
-// Integrated mode: use Drivetrain for velocity and motor control
-MotorLab::MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right_encoder,
-                   Battery* battery)
-    : left_motor_(nullptr), right_motor_(nullptr), left_encoder_(left_encoder),
-      right_encoder_(right_encoder), battery_(battery), drivetrain_(drivetrain), reporter_(10),
-      input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
-      history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
-      right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time()),
-      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
+      right_tof_(nullptr), line_sensor_(line_sensor), last_encoder_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -124,132 +90,45 @@ void MotorLab::init()
 
 void MotorLab::stopMotors()
 {
-    if (drivetrain_ != nullptr)
-    {
-        drivetrain_->stop();
-    }
-    else
-    {
-        left_motor_->stop();
-        right_motor_->stop();
-    }
+    left_motor_->stop();
+    right_motor_->stop();
 }
 
 void MotorLab::setMotorVoltage(float volts)
 {
-    if (drivetrain_ != nullptr)
-    {
-        drivetrain_->setVoltage(volts, volts);
-    }
-    else
-    {
-        float battery_volts = batteryVoltage();
-        left_motor_->applyVoltage(volts, battery_volts);
-        right_motor_->applyVoltage(volts, battery_volts);
-    }
+    float battery_volts = batteryVoltage();
+    left_motor_->applyVoltage(volts, battery_volts);
+    right_motor_->applyVoltage(volts, battery_volts);
 }
 
 void MotorLab::setLeftMotorVoltage(float volts)
 {
-    if (drivetrain_ != nullptr)
-    {
-        drivetrain_->setVoltage(volts, 0.0f);
-    }
-    else
-    {
-        float battery_volts = batteryVoltage();
-        left_motor_->applyVoltage(volts, battery_volts);
-        right_motor_->applyVoltage(0, battery_volts);
-    }
+    float battery_volts = batteryVoltage();
+    left_motor_->applyVoltage(volts, battery_volts);
+    right_motor_->applyVoltage(0, battery_volts);
 }
 
 void MotorLab::setRightMotorVoltage(float volts)
 {
-    if (drivetrain_ != nullptr)
-    {
-        drivetrain_->setVoltage(0.0f, volts);
-    }
-    else
-    {
-        float battery_volts = batteryVoltage();
-        left_motor_->applyVoltage(0, battery_volts);
-        right_motor_->applyVoltage(volts, battery_volts);
-    }
+    float battery_volts = batteryVoltage();
+    left_motor_->applyVoltage(0, battery_volts);
+    right_motor_->applyVoltage(volts, battery_volts);
 }
 
 // ============================================================================
 // Turn Control Helpers
 // ============================================================================
 
-float MotorLab::normalizeYawDelta(float delta)
-{
-    if (delta > 180.0f)
-        return delta - 360.0f;
-    if (delta < -180.0f)
-        return delta + 360.0f;
-    return delta;
-}
-
-void MotorLab::resetAngularTracking()
-{
-    if (robot_ != nullptr)
-    {
-        robot_->resetYaw();
-    }
-    prev_yaw_        = 0.0f;
-    omega_degps_     = 0.0f;
-    last_yaw_update_ = get_absolute_time();
-}
-
-void MotorLab::updateAngularVelocity()
-{
-    if (robot_ == nullptr)
-        return;
-
-    absolute_time_t now       = get_absolute_time();
-    float           actual_dt = absolute_time_diff_us(last_yaw_update_, now) * 1e-6f;
-    last_yaw_update_          = now;
-
-    // Min 5ms to avoid divide-by-zero spikes
-    if (actual_dt < 0.005f)
-        return;
-
-    float current   = robot_->yaw();
-    float delta     = normalizeYawDelta(current - prev_yaw_);
-    float raw_omega = delta / actual_dt;
-
-    // Clamp to ±1500 deg/s
-    if (raw_omega > 1500.0f)
-        raw_omega = 1500.0f;
-    if (raw_omega < -1500.0f)
-        raw_omega = -1500.0f;
-
-    // EMA filter (alpha = 0.15)
-    omega_degps_ = 0.15f * raw_omega + 0.85f * omega_degps_;
-    prev_yaw_    = current;
-}
-
 void MotorLab::setTurnVoltage(float volts)
 {
     // +volts = turn right (left forward, right backward)
     float batt = batteryVoltage();
-    if (drivetrain_ != nullptr)
-    {
-        drivetrain_->setVoltage(volts, -volts);
-    }
-    else
-    {
-        left_motor_->applyVoltage(volts, batt);
-        right_motor_->applyVoltage(-volts, batt);
-    }
+    left_motor_->applyVoltage(volts, batt);
+    right_motor_->applyVoltage(-volts, batt);
 }
 
 float MotorLab::batteryVoltage() const
 {
-    if (drivetrain_ != nullptr)
-    {
-        return drivetrain_->batteryVoltage();
-    }
     if (battery_ != nullptr)
     {
         return battery_->voltage();
@@ -259,14 +138,6 @@ float MotorLab::batteryVoltage() const
 
 float MotorLab::encoderPositionMM() const
 {
-    if (drivetrain_ != nullptr)
-    {
-        // Use Drivetrain's position tracking (average of both wheels)
-        float left_mm  = drivetrain_->position(WheelSide::LEFT);
-        float right_mm = drivetrain_->position(WheelSide::RIGHT);
-        return (left_mm + right_mm) / 2.0f;
-    }
-    // Standalone mode: calculate from encoder ticks
     int32_t left_ticks   = left_encoder_ ? left_encoder_->ticks() : 0;
     int32_t right_ticks  = right_encoder_ ? right_encoder_->ticks() : 0;
     int     num_encoders = (left_encoder_ ? 1 : 0) + (right_encoder_ ? 1 : 0);
@@ -279,23 +150,11 @@ float MotorLab::encoderPositionMM() const
 
 float MotorLab::encoderVelocityMMps() const
 {
-    if (drivetrain_ != nullptr)
-    {
-        // Use Drivetrain's velocity tracking (returns mm/s, NOT distance!)
-        float left_vel  = drivetrain_->velocity(WheelSide::LEFT);
-        float right_vel = drivetrain_->velocity(WheelSide::RIGHT);
-        return (left_vel + right_vel) / 2.0f;
-    }
-    // Standalone mode: use locally tracked velocity
     return (left_velocity_mmps_ + right_velocity_mmps_) / 2.0f;
 }
 
 void MotorLab::resetEncoders()
 {
-    if (drivetrain_ != nullptr)
-    {
-        drivetrain_->reset();
-    }
     if (left_encoder_)
         left_encoder_->reset();
     if (right_encoder_)
@@ -325,17 +184,7 @@ void MotorLab::updateEncoders(float /* dt_hint - ignored, we measure actual */)
         return;
     }
 
-    // When using Drivetrain, delegate with actual dt
-    if (drivetrain_ != nullptr)
-    {
-        drivetrain_->update(actual_dt);
-        // Cache velocities for display in cmdEncoders
-        left_velocity_mmps_  = drivetrain_->velocity(WheelSide::LEFT);
-        right_velocity_mmps_ = drivetrain_->velocity(WheelSide::RIGHT);
-        return;
-    }
-
-    // Standalone mode: calculate velocity from encoder delta using actual dt
+    // Calculate velocity from encoder delta using actual dt
     if (left_encoder_)
     {
         int32_t left_ticks  = left_encoder_->ticks();
@@ -639,13 +488,6 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
 
 void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
 {
-    if (robot_ == nullptr)
-    {
-        printf("Error: Robot not available (required for IMU)\n");
-        printPrompt();
-        return;
-    }
-
     printf("\n=== Turn Trial ===\n");
     printf("Angle: %.1f deg, Speed: %.1f deg/s, Accel: %.1f deg/s^2\n", degrees, top_omega, alpha);
     printf("TURN_KP: %.4f, TURN_KD: %.4f\n", settings_.turnKP, settings_.turnKD);
@@ -656,7 +498,7 @@ void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
     printf("time_ms,set_yaw,actual_yaw,set_omega,actual_omega,volts\n");
 
     // Reset angular tracking
-    resetAngularTracking();
+    robot_->resetYaw();
 
     // Start motion profile (absolute angle value, direction handled separately)
     float direction = (degrees >= 0.0f) ? 1.0f : -1.0f;
@@ -671,8 +513,8 @@ void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
     {
         uint32_t now = to_ms_since_boot(get_absolute_time());
 
-        // Update angular velocity from IMU
-        updateAngularVelocity();
+        // Update angular velocity from IMU (via Robot's sensor tracking)
+        robot_->update(LOOP_INTERVAL_S);
 
         // Update profile
         profile_.update(LOOP_INTERVAL_S);
@@ -683,7 +525,7 @@ void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
 
         // Get actual values from IMU
         float actual_yaw   = robot_->yaw();
-        float actual_omega = omega_degps_;
+        float actual_omega = robot_->omega();
 
         // PD Control on angular position
         // Incremental error accumulation (mazerunner-core style)
@@ -1344,36 +1186,16 @@ void MotorLab::cmdEncoders()
 
 void MotorLab::cmdYaw()
 {
-    if (robot_ != nullptr)
-    {
-        printf("Yaw: %.2f deg\n", robot_->yaw());
-    }
-    else
-    {
-        printf("Robot not available\n");
-    }
+    printf("Yaw: %.2f deg\n", robot_->yaw());
 }
 
 void MotorLab::cmdYawVel()
 {
-    if (robot_ != nullptr)
-    {
-        printf("Angular velocity: %.2f deg/s\n", robot_->omega());
-    }
-    else
-    {
-        printf("Robot not available\n");
-    }
+    printf("Angular velocity: %.2f deg/s\n", robot_->omega());
 }
 
 void MotorLab::cmdYawContinuous(const MotorLabArgs& args)
 {
-    if (robot_ == nullptr)
-    {
-        printf("Robot not available\n");
-        return;
-    }
-
     uint32_t duration_ms = 5000;
     uint32_t interval_ms = 100;
 
@@ -1418,15 +1240,8 @@ void MotorLab::cmdYawContinuous(const MotorLabArgs& args)
 
 void MotorLab::cmdYawReset()
 {
-    if (robot_ != nullptr)
-    {
-        robot_->resetYaw();
-        printf("Yaw and angular velocity reset to 0\n");
-    }
-    else
-    {
-        printf("Robot not available\n");
-    }
+    robot_->resetYaw();
+    printf("Yaw and angular velocity reset to 0\n");
 }
 
 void MotorLab::cmdLeftTof()
@@ -1499,10 +1314,7 @@ void MotorLab::cmdTofContinuous(const MotorLabArgs& args)
         last_tick           = now;
         elapsed             = to_ms_since_boot(now) - start_time;
 
-        if (robot_ != nullptr)
-        {
-            robot_->update(dt);
-        }
+        robot_->update(dt);
 
         float left_dist  = (left_tof_ != nullptr) ? left_tof_->distanceDirect() : 0.0f;
         float front_dist = (front_tof_ != nullptr) ? front_tof_->distanceDirect() : 0.0f;
@@ -1892,11 +1704,8 @@ void MotorLab::cmdLineContinuous(const MotorLabArgs& args)
         last_tick           = now;
         elapsed             = to_ms_since_boot(now) - start_time;
 
-        // Update robot if available (keeps IMU tracking active)
-        if (robot_ != nullptr)
-        {
-            robot_->update(dt);
-        }
+        // Keep IMU tracking active
+        robot_->update(dt);
 
         // Read and display line sensor
         line_sensor_->read();

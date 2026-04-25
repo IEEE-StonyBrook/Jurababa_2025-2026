@@ -33,6 +33,8 @@ class MotorLabReporter
     void reportStep(uint32_t time_ms, float step_voltage, float speed, float position);
 
     uint32_t sampleCount() const { return sample_count_; }
+    uint32_t startTime() const { return start_time_ms_; }
+    void     incrementSampleCount() { sample_count_++; }
 
   private:
     uint32_t interval_ms_;
