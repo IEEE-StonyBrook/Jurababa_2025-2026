@@ -32,8 +32,12 @@ struct MotorLabSettings
 
     float zeta; // Damping ratio
     float td;   // Derivative time constant
-    float kP;   // Proportional gain
-    float kD;   // Derivative gain
+    float kP;   // Proportional gain (forward)
+    float kD;   // Derivative gain (forward)
+
+    // Rotation PD control
+    float turnKP; // Rotation proportional gain
+    float turnKD; // Rotation derivative gain
 
     uint8_t control_flags;
 
@@ -51,6 +55,10 @@ struct MotorLabSettings
         // Load PID from config/tuning.h (already in Voltage units)
         kP = FWD_KP;
         kD = FWD_KD;
+
+        // Rotation PD gains from config/tuning.h
+        turnKP = ROT_KP;
+        turnKD = ROT_KD;
 
         // Back-calculate zeta/td for display consistency
         td   = (kM > 1e-6f && kP > 1e-6f) ? (1.0f / (kM * kP)) : 0.1f;

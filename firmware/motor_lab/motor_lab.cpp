@@ -39,7 +39,8 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
+      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time()),
+      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -53,7 +54,8 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
+      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time()),
+      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -68,7 +70,8 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(robot), left_tof_(left_tof), front_tof_(front_tof),
-      right_tof_(right_tof), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
+      right_tof_(right_tof), line_sensor_(nullptr), last_encoder_update_(get_absolute_time()),
+      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -82,7 +85,8 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(line_sensor), last_encoder_update_(get_absolute_time())
+      right_tof_(nullptr), line_sensor_(line_sensor), last_encoder_update_(get_absolute_time()),
+      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -96,7 +100,8 @@ MotorLab::MotorLab(Drivetrain* drivetrain, Encoder* left_encoder, Encoder* right
       input_index_(0), echo_enabled_(false), history_count_(0), history_write_idx_(0),
       history_nav_idx_(-1), prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), robot_(nullptr), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
+      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time()),
+      prev_yaw_(0.0f), omega_degps_(0.0f), last_yaw_update_(get_absolute_time())
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -169,6 +174,73 @@ void MotorLab::setRightMotorVoltage(float volts)
         float battery_volts = batteryVoltage();
         left_motor_->applyVoltage(0, battery_volts);
         right_motor_->applyVoltage(volts, battery_volts);
+    }
+}
+
+// ============================================================================
+// Turn Control Helpers
+// ============================================================================
+
+float MotorLab::normalizeYawDelta(float delta)
+{
+    if (delta > 180.0f)
+        return delta - 360.0f;
+    if (delta < -180.0f)
+        return delta + 360.0f;
+    return delta;
+}
+
+void MotorLab::resetAngularTracking()
+{
+    if (robot_ != nullptr)
+    {
+        robot_->resetYaw();
+    }
+    prev_yaw_        = 0.0f;
+    omega_degps_     = 0.0f;
+    last_yaw_update_ = get_absolute_time();
+}
+
+void MotorLab::updateAngularVelocity()
+{
+    if (robot_ == nullptr)
+        return;
+
+    absolute_time_t now       = get_absolute_time();
+    float           actual_dt = absolute_time_diff_us(last_yaw_update_, now) * 1e-6f;
+    last_yaw_update_          = now;
+
+    // Min 5ms to avoid divide-by-zero spikes
+    if (actual_dt < 0.005f)
+        return;
+
+    float current   = robot_->yaw();
+    float delta     = normalizeYawDelta(current - prev_yaw_);
+    float raw_omega = delta / actual_dt;
+
+    // Clamp to ±1500 deg/s
+    if (raw_omega > 1500.0f)
+        raw_omega = 1500.0f;
+    if (raw_omega < -1500.0f)
+        raw_omega = -1500.0f;
+
+    // EMA filter (alpha = 0.15)
+    omega_degps_ = 0.15f * raw_omega + 0.85f * omega_degps_;
+    prev_yaw_    = current;
+}
+
+void MotorLab::setTurnVoltage(float volts)
+{
+    // +volts = turn right (left forward, right backward)
+    float batt = batteryVoltage();
+    if (drivetrain_ != nullptr)
+    {
+        drivetrain_->setVoltage(volts, -volts);
+    }
+    else
+    {
+        left_motor_->applyVoltage(volts, batt);
+        right_motor_->applyVoltage(-volts, batt);
     }
 }
 
@@ -565,6 +637,96 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
     printPrompt();
 }
 
+void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
+{
+    if (robot_ == nullptr)
+    {
+        printf("Error: Robot not available (required for IMU)\n");
+        printPrompt();
+        return;
+    }
+
+    printf("\n=== Turn Trial ===\n");
+    printf("Angle: %.1f deg, Speed: %.1f deg/s, Accel: %.1f deg/s^2\n", degrees, top_omega, alpha);
+    printf("TURN_KP: %.4f, TURN_KD: %.4f\n", settings_.turnKP, settings_.turnKD);
+    printf("Battery: %.2f V\n\n", batteryVoltage());
+
+    reporter_.begin();
+    // Print CSV header for turn data
+    printf("time_ms,set_yaw,actual_yaw,set_omega,actual_omega,volts\n");
+
+    // Reset angular tracking
+    resetAngularTracking();
+
+    // Start motion profile (absolute angle value, direction handled separately)
+    float direction = (degrees >= 0.0f) ? 1.0f : -1.0f;
+    profile_.start(std::fabs(degrees), top_omega, alpha, 0.0f);
+
+    // Initialize error accumulator for PD control
+    float yaw_error  = 0.0f;
+    float prev_error = 0.0f;
+
+    // Control loop
+    while (!profile_.finished())
+    {
+        uint32_t now = to_ms_since_boot(get_absolute_time());
+
+        // Update angular velocity from IMU
+        updateAngularVelocity();
+
+        // Update profile
+        profile_.update(LOOP_INTERVAL_S);
+
+        // Get setpoints (apply direction)
+        float set_yaw   = profile_.position() * direction;
+        float set_omega = profile_.speed() * direction;
+
+        // Get actual values from IMU
+        float actual_yaw   = robot_->yaw();
+        float actual_omega = omega_degps_;
+
+        // PD Control on angular position
+        // Incremental error accumulation (mazerunner-core style)
+        float expected_delta = set_omega * LOOP_INTERVAL_S;
+        float actual_delta   = actual_omega * LOOP_INTERVAL_S;
+        yaw_error += (expected_delta - actual_delta);
+
+        // PD output
+        float derivative = (yaw_error - prev_error) / LOOP_INTERVAL_S;
+        float ctrl_volts = settings_.turnKP * yaw_error + settings_.turnKD * derivative;
+        prev_error       = yaw_error;
+
+        // Clamp to safe limits
+        if (ctrl_volts > MAX_VOLTAGE)
+            ctrl_volts = MAX_VOLTAGE;
+        if (ctrl_volts < -MAX_VOLTAGE)
+            ctrl_volts = -MAX_VOLTAGE;
+
+        // Apply differential to motors
+        setTurnVoltage(ctrl_volts);
+
+        // Report data
+        if (reporter_.isTimeToReport(now))
+        {
+            uint32_t elapsed = now - reporter_.startTime();
+            printf("%lu,%.2f,%.2f,%.2f,%.2f,%.3f\n", static_cast<unsigned long>(elapsed), set_yaw,
+                   actual_yaw, set_omega, actual_omega, ctrl_volts);
+            reporter_.incrementSampleCount();
+        }
+
+        sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
+    }
+
+    // Hold position briefly then stop
+    sleep_ms(200);
+    stopMotors();
+
+    printf("\n=== Trial Complete ===\n");
+    printf("Samples: %lu\n", static_cast<unsigned long>(reporter_.sampleCount()));
+    printf("Final yaw error: %.2f deg\n", (degrees)-robot_->yaw());
+    printPrompt();
+}
+
 // ============================================================================
 // CLI Processing
 // ============================================================================
@@ -806,6 +968,18 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     {
         cmdMove(args);
     }
+    else if (strcmp(cmd, "TURN") == 0)
+    {
+        cmdTurn(args);
+    }
+    else if (strcmp(cmd, "TURN_KP") == 0)
+    {
+        cmdSetTurnKp(args);
+    }
+    else if (strcmp(cmd, "TURN_KD") == 0)
+    {
+        cmdSetTurnKd(args);
+    }
     else if (strcmp(cmd, "VOLTS") == 0 || strcmp(cmd, "V") == 0)
     {
         cmdVoltage(args);
@@ -965,6 +1139,11 @@ void MotorLab::cmdHelp()
     printf("  STEP [volts] [duration_ms]  - Step response (output: mm/s)\n");
     printf("  MOVE [mm] [mm/s] [mm/s^2] [mode] - Move trial\n");
     printf("       mode: 0=FF, 1=PD, 2=FF+PD\n");
+    printf("  TURN [deg] [deg/s] [deg/s^2] - Turn trial (PD control)\n");
+    printf("       +deg=right, -deg=left\n");
+    printf("\nRotation Control (set or get):\n");
+    printf("  TURN_KP [val] - Turn proportional gain\n");
+    printf("  TURN_KD [val] - Turn derivative gain\n");
     printf("\nExport:\n");
     printf("  EXPORT     - Print Config.h constants (mm/s format)\n");
     printf("\n");
@@ -1456,6 +1635,50 @@ void MotorLab::cmdMove(const MotorLabArgs& args)
     runMoveTrial(dist, speed, accel, mode);
 }
 
+void MotorLab::cmdTurn(const MotorLabArgs& args)
+{
+    float degrees = 90.0f;
+    float omega   = ROBOT_MAX_TURN_SPEED_DEGPS;
+    float alpha   = ROBOT_BASE_ANGULAR_ACCEL_DEGPS2;
+
+    if (args.argc > 1)
+        degrees = static_cast<float>(atof(args.argv[1]));
+    if (args.argc > 2)
+        omega = static_cast<float>(atof(args.argv[2]));
+    if (args.argc > 3)
+        alpha = static_cast<float>(atof(args.argv[3]));
+
+    runTurnTrial(degrees, omega, alpha);
+}
+
+void MotorLab::cmdSetTurnKp(const MotorLabArgs& args)
+{
+    float val;
+    if (parseFloat(args, 1, 0.0f, 10.0f, val))
+    {
+        settings_.turnKP = val;
+        printf("TURN_KP = %.4f\n", settings_.turnKP);
+    }
+    else if (args.argc == 1)
+    {
+        printf("TURN_KP = %.4f\n", settings_.turnKP);
+    }
+}
+
+void MotorLab::cmdSetTurnKd(const MotorLabArgs& args)
+{
+    float val;
+    if (parseFloat(args, 1, 0.0f, 10.0f, val))
+    {
+        settings_.turnKD = val;
+        printf("TURN_KD = %.4f\n", settings_.turnKD);
+    }
+    else if (args.argc == 1)
+    {
+        printf("TURN_KD = %.4f\n", settings_.turnKD);
+    }
+}
+
 void MotorLab::cmdVoltage(const MotorLabArgs& args)
 {
     if (args.argc < 2)
@@ -1556,6 +1779,10 @@ void MotorLab::cmdExport()
     printf("//   kM = %.2f mm/s/V\n", settings_.kM);
     printf("//   Tm = %.5f s\n", settings_.tm);
     printf("//   kS = %.3f V\n", settings_.kS);
+    printf("\n");
+    printf("// Rotation PD gains\n");
+    printf("#define ROT_KP %.4ff\n", settings_.turnKP);
+    printf("#define ROT_KD %.4ff\n", settings_.turnKD);
     printf("// ============================================================\n");
     printf("\n");
 }

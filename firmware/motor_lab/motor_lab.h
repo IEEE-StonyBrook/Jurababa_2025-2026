@@ -82,6 +82,7 @@ class MotorLab
     void runStepTrial(float step_voltage = 3.0f, uint32_t duration_ms = 1000);
     void runMoveTrial(float distance = 90.0f, float top_speed = 200.0f, float acceleration = 500.0f,
                       int mode = 2);
+    void runTurnTrial(float degrees, float top_omega, float alpha);
 
     // CLI commands
     void cmdHelp();
@@ -114,6 +115,9 @@ class MotorLab
     void cmdOpenLoop(const MotorLabArgs& args);
     void cmdStep(const MotorLabArgs& args);
     void cmdMove(const MotorLabArgs& args);
+    void cmdTurn(const MotorLabArgs& args);
+    void cmdSetTurnKp(const MotorLabArgs& args);
+    void cmdSetTurnKd(const MotorLabArgs& args);
     void cmdVoltage(const MotorLabArgs& args);
     void cmdVoltageLeft(const MotorLabArgs& args);
     void cmdVoltageRight(const MotorLabArgs& args);
@@ -162,6 +166,17 @@ class MotorLab
 
     // Timing for accurate velocity calculation
     absolute_time_t last_encoder_update_;
+
+    // Angular velocity tracking (for TURN trials)
+    float           prev_yaw_;
+    float           omega_degps_;
+    absolute_time_t last_yaw_update_;
+
+    // Turn helpers
+    float normalizeYawDelta(float delta);
+    void  updateAngularVelocity();
+    void  resetAngularTracking();
+    void  setTurnVoltage(float volts);
 
     int          readSerialLine();
     MotorLabArgs tokenize();
