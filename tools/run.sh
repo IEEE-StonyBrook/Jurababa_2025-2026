@@ -4,4 +4,4 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Use system Python with user packages (more reliable on macOS)
-/usr/bin/python3 "$SCRIPT_DIR/motorlab_dashboard.py"
+/usr/bin/python3 "$SCRIPT_DIR/driverlab_dashboard.py"

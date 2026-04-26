@@ -5,11 +5,11 @@
  *   Normal Mode: Dual-core maze solving
  *     - Core 0: High-level maze solving and path planning
  *     - Core 1: Real-time robot control and sensor management
- *   MotorLab Mode: Single-core motor characterization
+ *   DriverLab Mode: Single-core motor characterization
  *     - Motor calibration CLI for tuning feedforward/PID constants
  *
  * Mode Selection:
- *   Press 'M' within 3 seconds of startup to enter MotorLab mode.
+ *   Press 'M' within 3 seconds of startup to enter DriverLab mode.
  *   Otherwise, Normal mode starts automatically.
  */
 
@@ -28,6 +28,7 @@
 #include "control/drivetrain.h"
 #include "control/line_follower.h"
 #include "control/robot.h"
+#include "driver_lab/driver_lab.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
 #include "drivers/imu.h"
@@ -36,7 +37,6 @@
 #include "drivers/tof.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
-#include "motor_lab/motor_lab.h"
 #include "navigation/a_star.h"
 #include "navigation/flood_fill.h"
 #include "navigation/path_utils.h"
@@ -51,7 +51,7 @@
 enum class OperatingMode
 {
     NORMAL,       // Dual-core maze solving
-    MOTORLAB,     // Single-core motor characterization
+    DRIVERLAB,    // Single-core motor characterization
     LINEFOLLOWING // Single-core line following with event queue
 };
 
@@ -61,14 +61,14 @@ enum class SensorMode
     LINE_SENSOR // Line sensor (I2C0)
 };
 
-// Global mode (set during startup, read by runNormalMode/runMotorLabMode)
+// Global mode (set during startup, read by runNormalMode/runDriverLabMode)
 static OperatingMode g_operating_mode = OperatingMode::NORMAL;
 
 // Global Battery Monitor (shared between cores in Normal mode)
 static Battery* g_battery = nullptr;
 
 // ============================================================================
-// Dual Output printf (USB + Bluetooth UART) for MotorLab mode
+// Dual Output printf (USB + Bluetooth UART) for DriverLab mode
 // ============================================================================
 
 // Custom driver to route stdout to Bluetooth UART
@@ -93,7 +93,7 @@ static stdio_driver_t bt_driver = {
 
 /**
  * Wait for mode selection input during startup.
- * Returns MOTORLAB if 'M' is pressed within timeout, otherwise NORMAL.
+ * Returns DRIVERLAB if 'M' is pressed within timeout, otherwise NORMAL.
  */
 OperatingMode selectOperatingMode(uint32_t timeout_ms)
 {
@@ -101,7 +101,7 @@ OperatingMode selectOperatingMode(uint32_t timeout_ms)
     printf("==========================================\n");
     printf("  Jurababa Micromouse - Mode Selection   \n");
     printf("==========================================\n");
-    printf("  Press 'M' within %lu seconds for MotorLab\n", timeout_ms / 1000);
+    printf("  Press 'M' within %lu seconds for DriverLab\n", timeout_ms / 1000);
     printf("  Press 'L' for Line Following\n");
     printf("  Otherwise, Normal mode starts...\n");
     printf("==========================================\n\n");
@@ -119,8 +119,8 @@ OperatingMode selectOperatingMode(uint32_t timeout_ms)
             char ch = static_cast<char>(c);
             if (ch == 'M' || ch == 'm')
             {
-                printf("\n*** MotorLab mode selected ***\n\n");
-                return OperatingMode::MOTORLAB;
+                printf("\n*** DriverLab mode selected ***\n\n");
+                return OperatingMode::DRIVERLAB;
             }
             if (ch == 'L' || ch == 'l')
             {
@@ -140,12 +140,12 @@ OperatingMode selectOperatingMode(uint32_t timeout_ms)
         }
     }
 
-    printf("\n*** MotorLab mode starting ***\n\n");
-    return OperatingMode::MOTORLAB;
+    printf("\n*** DriverLab mode starting ***\n\n");
+    return OperatingMode::DRIVERLAB;
 }
 
 /**
- * Select sensor mode for MotorLab (ToF vs LineSensor).
+ * Select sensor mode for DriverLab (ToF vs LineSensor).
  * Both use I2C0, so they are mutually exclusive.
  */
 SensorMode selectSensorMode(uint32_t timeout_ms)
@@ -421,15 +421,15 @@ void runNormalMode(Battery& battery)
 }
 
 // ============================================================================
-// MOTORLAB MODE - Motor characterization and tuning interface
+// DRIVERLAB MODE - Motor characterization and tuning interface
 // ============================================================================
 
 /**
- * Run MotorLab mode: single-core motor characterization CLI.
+ * Run DriverLab mode: single-core motor characterization CLI.
  */
-void runMotorLabMode(Battery& battery)
+void runDriverLabMode(Battery& battery)
 {
-    // Set up UART for Bluetooth in MotorLab mode
+    // Set up UART for Bluetooth in DriverLab mode
     uart_init(uart0, 9600);
     gpio_set_function(PIN_BT_TX, GPIO_FUNC_UART);
     gpio_set_function(PIN_BT_RX, GPIO_FUNC_UART);
@@ -442,7 +442,7 @@ void runMotorLabMode(Battery& battery)
 
     printf("\n\n");
     printf("===========================================\n");
-    printf("  MOTORLAB MODE - Motor Characterization  \n");
+    printf("  DRIVERLAB MODE - Driver Characterization  \n");
     printf("===========================================\n");
     printf("Serial I/O: USB (115200) and UART0 (9600)\n");
     printf("Units: mm/s (Config.h compatible)\n\n");
@@ -453,7 +453,7 @@ void runMotorLabMode(Battery& battery)
     SensorMode sensor_mode = selectSensorMode(3000);
 
     // Initialize both encoders
-    Encoder left_encoder(pio0, PIN_ENCODER_L_A, false);  // GP0, GP1 for channel B
+    Encoder left_encoder(pio0, PIN_ENCODER_L_A, false); // GP0, GP1 for channel B
     Encoder right_encoder(pio0, PIN_ENCODER_R_A, true); // GP10, GP11 for channel B
     Motor   left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, true);
@@ -462,8 +462,8 @@ void runMotorLabMode(Battery& battery)
     Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery);
     Robot      robot(&drivetrain, &imu, nullptr, nullptr, nullptr);
 
-    // Create MotorLab with appropriate sensor based on mode selection
-    MotorLab* motorlab = nullptr;
+    // Create DriverLab with appropriate sensor based on mode selection
+    DriverLab* driverlab = nullptr;
 
     if (sensor_mode == SensorMode::LINE_SENSOR)
     {
@@ -473,8 +473,8 @@ void runMotorLabMode(Battery& battery)
 
         printf("Line sensor initialized on I2C0\n");
 
-        motorlab = new MotorLab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery,
-                                &robot, &line_sensor);
+        driverlab = new DriverLab(&left_motor, &right_motor, &left_encoder, &right_encoder,
+                                  &battery, &robot, &line_sensor);
     }
     else
     {
@@ -485,11 +485,11 @@ void runMotorLabMode(Battery& battery)
 
         printf("ToF sensors initialized on I2C0\n");
 
-        motorlab = new MotorLab(&left_motor, &right_motor, &left_encoder, &right_encoder, &battery,
-                                &robot, &left_tof, &front_tof, &right_tof);
+        driverlab = new DriverLab(&left_motor, &right_motor, &left_encoder, &right_encoder,
+                                  &battery, &robot, &left_tof, &front_tof, &right_tof);
     }
 
-    motorlab->init();
+    driverlab->init();
 
     printf("\nHardware initialized. Ready for testing.\n");
     printf("Type '?' for command help.\n\n");
@@ -509,8 +509,8 @@ void runMotorLabMode(Battery& battery)
         last_tick              = now;
 
         robot.update(dt);
-        motorlab->updateEncoders(LOOP_INTERVAL_S);
-        motorlab->processSerial();
+        driverlab->updateEncoders(LOOP_INTERVAL_S);
+        driverlab->processSerial();
 
         if (now_ms - last_battery_update_ms >= BATTERY_UPDATE_INTERVAL_MS)
         {
@@ -685,9 +685,9 @@ int main()
     g_operating_mode = selectOperatingMode(6000);
 
     // Run selected mode
-    if (g_operating_mode == OperatingMode::MOTORLAB)
+    if (g_operating_mode == OperatingMode::DRIVERLAB)
     {
-        runMotorLabMode(battery);
+        runDriverLabMode(battery);
     }
     else if (g_operating_mode == OperatingMode::LINEFOLLOWING)
     {

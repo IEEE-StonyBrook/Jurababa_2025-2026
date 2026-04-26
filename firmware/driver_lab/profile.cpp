@@ -1,14 +1,14 @@
-#include "motor_lab/profile.h"
+#include "driver_lab/profile.h"
 
 #include <cmath>
 
-MotorLabProfile::MotorLabProfile()
-    : state_(MotorLabProfileState::IDLE), target_distance_(0.0f), top_speed_(0.0f),
+DriverLabProfile::DriverLabProfile()
+    : state_(DriverLabProfileState::IDLE), target_distance_(0.0f), top_speed_(0.0f),
       final_speed_(0.0f), acceleration_(0.0f), position_(0.0f), speed_(0.0f), direction_(1.0f)
 {
 }
 
-void MotorLabProfile::start(float distance, float top_speed, float acceleration, float final_speed)
+void DriverLabProfile::start(float distance, float top_speed, float acceleration, float final_speed)
 {
     // Determine direction
     direction_       = (distance >= 0.0f) ? 1.0f : -1.0f;
@@ -22,13 +22,13 @@ void MotorLabProfile::start(float distance, float top_speed, float acceleration,
     speed_    = 0.0f;
 
     // Start accelerating
-    state_ = MotorLabProfileState::ACCELERATING;
+    state_ = DriverLabProfileState::ACCELERATING;
 }
 
-void MotorLabProfile::update(float dt)
+void DriverLabProfile::update(float dt)
 {
-    if (dt <= 0.0f || state_ == MotorLabProfileState::IDLE ||
-        state_ == MotorLabProfileState::FINISHED)
+    if (dt <= 0.0f || state_ == DriverLabProfileState::IDLE ||
+        state_ == DriverLabProfileState::FINISHED)
     {
         return;
     }
@@ -42,28 +42,28 @@ void MotorLabProfile::update(float dt)
 
     switch (state_)
     {
-        case MotorLabProfileState::ACCELERATING:
+        case DriverLabProfileState::ACCELERATING:
             speed_ += acceleration_ * dt;
             if (speed_ >= top_speed_)
             {
                 speed_ = top_speed_;
-                state_ = MotorLabProfileState::CRUISING;
+                state_ = DriverLabProfileState::CRUISING;
             }
             if (remaining <= braking_threshold)
             {
-                state_ = MotorLabProfileState::BRAKING;
+                state_ = DriverLabProfileState::BRAKING;
             }
             break;
 
-        case MotorLabProfileState::CRUISING:
+        case DriverLabProfileState::CRUISING:
             speed_ = top_speed_;
             if (remaining <= braking_threshold)
             {
-                state_ = MotorLabProfileState::BRAKING;
+                state_ = DriverLabProfileState::BRAKING;
             }
             break;
 
-        case MotorLabProfileState::BRAKING:
+        case DriverLabProfileState::BRAKING:
             speed_ -= acceleration_ * dt;
             if (speed_ <= final_speed_)
             {
@@ -73,12 +73,12 @@ void MotorLabProfile::update(float dt)
             {
                 speed_    = final_speed_;
                 position_ = target_distance_;
-                state_    = MotorLabProfileState::FINISHED;
+                state_    = DriverLabProfileState::FINISHED;
             }
             break;
 
-        case MotorLabProfileState::IDLE:
-        case MotorLabProfileState::FINISHED:
+        case DriverLabProfileState::IDLE:
+        case DriverLabProfileState::FINISHED:
             // Already handled at function entry
             break;
     }
@@ -90,15 +90,15 @@ void MotorLabProfile::update(float dt)
     if (position_ >= target_distance_)
     {
         position_ = target_distance_;
-        if (state_ != MotorLabProfileState::FINISHED)
+        if (state_ != DriverLabProfileState::FINISHED)
         {
-            state_ = MotorLabProfileState::FINISHED;
+            state_ = DriverLabProfileState::FINISHED;
             speed_ = final_speed_;
         }
     }
 }
 
-float MotorLabProfile::brakingDistance() const
+float DriverLabProfile::brakingDistance() const
 {
     // Distance = (v^2 - v_final^2) / (2 * a)
     // This is the standard kinematic equation for deceleration
@@ -110,22 +110,22 @@ float MotorLabProfile::brakingDistance() const
     return delta_v_squared / (2.0f * acceleration_);
 }
 
-float MotorLabProfile::acceleration() const
+float DriverLabProfile::acceleration() const
 {
     switch (state_)
     {
-        case MotorLabProfileState::ACCELERATING:
+        case DriverLabProfileState::ACCELERATING:
             return direction_ * acceleration_;
-        case MotorLabProfileState::BRAKING:
+        case DriverLabProfileState::BRAKING:
             return -direction_ * acceleration_;
         default:
             return 0.0f;
     }
 }
 
-void MotorLabProfile::reset()
+void DriverLabProfile::reset()
 {
-    state_           = MotorLabProfileState::IDLE;
+    state_           = DriverLabProfileState::IDLE;
     position_        = 0.0f;
     speed_           = 0.0f;
     target_distance_ = 0.0f;

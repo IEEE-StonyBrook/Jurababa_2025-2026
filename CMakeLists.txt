@@ -65,11 +65,11 @@ set(APP_SOURCES
     firmware/app/api.cpp
 )
 
-set(MOTOR_LAB_SOURCES
-    firmware/motor_lab/motor_lab.cpp
-    firmware/motor_lab/profile.cpp
-    firmware/motor_lab/reporter.cpp
-    firmware/motor_lab/settings.cpp
+set(DRIVER_LAB_SOURCES
+    firmware/driver_lab/driver_lab.cpp
+    firmware/driver_lab/profile.cpp
+    firmware/driver_lab/reporter.cpp
+    firmware/driver_lab/settings.cpp
 )
 
 set(COMMON_SOURCES
@@ -83,7 +83,7 @@ add_executable(Jurababa
     ${MAZE_SOURCES}
     ${NAVIGATION_SOURCES}
     ${APP_SOURCES}
-    ${MOTOR_LAB_SOURCES}
+    ${DRIVER_LAB_SOURCES}
     ${COMMON_SOURCES}
     firmware/main.cpp
 )
@@ -101,7 +101,7 @@ target_compile_definitions(Jurababa PRIVATE
     PICO_DEFAULT_UART_RX_PIN=17
 )
 
-# USB only - UART will be handled manually in MotorLab at 9600 baud
+# USB only - UART will be handled manually in DriverLab at 9600 baud
 pico_enable_stdio_uart(Jurababa 0)
 pico_enable_stdio_usb(Jurababa 1)
 

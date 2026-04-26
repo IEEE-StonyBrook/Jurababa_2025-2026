@@ -36,6 +36,8 @@ class Robot
     float omega();    // Angular velocity (deg/s)
     float yawDelta(); // Change since last call
     void  resetYaw();
+    void  resetHeadingControl();
+    float headingCorrection(float target_omega_degps, float dt);
 
     // === ToF Distances ===
     float frontDistance();

@@ -106,6 +106,23 @@ void Robot::resetYaw()
     omega_degps_        = 0.0f;
 }
 
+void Robot::resetHeadingControl()
+{
+    resetYaw();
+    rotation_error_ = 0.0f;
+    rotation_controller_.reset();
+}
+
+float Robot::headingCorrection(float target_omega_degps, float dt)
+{
+    float rotation_delta    = yawDelta();
+    float expected_rotation = target_omega_degps * dt;
+    rotation_error_ += (expected_rotation - rotation_delta);
+
+    float output = rotation_controller_.compute(rotation_error_, dt);
+    return output * MAX_VOLTAGE;
+}
+
 float Robot::frontDistance()
 {
     return front_tof_->distance();

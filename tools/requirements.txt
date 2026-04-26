@@ -1,4 +1,4 @@
-# MotorLab Dashboard dependencies
+# DriverLab Dashboard dependencies
 # Install with: pip3 install -r requirements.txt
 
 pyserial>=3.5

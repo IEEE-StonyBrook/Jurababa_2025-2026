@@ -1,4 +1,4 @@
-#include "motor_lab/motor_lab.h"
+#include "driver_lab/driver_lab.h"
 
 #include "config/config.h"
 #include "control/robot.h"
@@ -24,15 +24,15 @@
 // ============================================================================
 // Version and identification
 // ============================================================================
-static const char* MOTORLAB_VERSION = "MOTORLAB v1.0 (Jurababa)";
+static const char* DRIVERLAB_VERSION = "DRIVERLAB v2.0 (Jurababa)";
 
 // ============================================================================
 // Constructor and Initialization
 // ============================================================================
 
 // Robot mode: direct motor/encoder + Robot access (for yaw/omega)
-MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
-                   Encoder* right_encoder, Battery* battery, Robot* robot)
+DriverLab::DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
+                     Encoder* right_encoder, Battery* battery, Robot* robot)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), reporter_(10), input_index_(0),
       echo_enabled_(false), history_count_(0), history_write_idx_(0), history_nav_idx_(-1),
@@ -45,9 +45,9 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
 }
 
 // Robot mode with ToF sensors: direct motor/encoder + Robot + ToF access
-MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
-                   Encoder* right_encoder, Battery* battery, Robot* robot, ToF* left_tof,
-                   ToF* front_tof, ToF* right_tof)
+DriverLab::DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
+                     Encoder* right_encoder, Battery* battery, Robot* robot, ToF* left_tof,
+                     ToF* front_tof, ToF* right_tof)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), reporter_(10), input_index_(0),
       echo_enabled_(false), history_count_(0), history_write_idx_(0), history_nav_idx_(-1),
@@ -60,8 +60,9 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
 }
 
 // Robot mode with LineSensor: direct motor/encoder + Robot + LineSensor access
-MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
-                   Encoder* right_encoder, Battery* battery, Robot* robot, LineSensor* line_sensor)
+DriverLab::DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
+                     Encoder* right_encoder, Battery* battery, Robot* robot,
+                     LineSensor* line_sensor)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), reporter_(10), input_index_(0),
       echo_enabled_(false), history_count_(0), history_write_idx_(0), history_nav_idx_(-1),
@@ -73,11 +74,11 @@ MotorLab::MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
     temp_buffer_[0] = '\0';
 }
 
-void MotorLab::init()
+void DriverLab::init()
 {
     settings_.initDefaults();
 
-    printf("\n%s\n", MOTORLAB_VERSION);
+    printf("\n%s\n", DRIVERLAB_VERSION);
     printf("Loop frequency: %.0f Hz\n", LOOP_FREQUENCY_HZ);
     printf("Using mm/s units (MM_PER_TICK = %.4f)\n", MM_PER_TICK);
     printf("Type '?' for help\n\n");
@@ -88,27 +89,27 @@ void MotorLab::init()
 // Motor Control Methods
 // ============================================================================
 
-void MotorLab::stopMotors()
+void DriverLab::stopMotors()
 {
     left_motor_->stop();
     right_motor_->stop();
 }
 
-void MotorLab::setMotorVoltage(float volts)
+void DriverLab::setMotorVoltage(float volts)
 {
     float battery_volts = batteryVoltage();
     left_motor_->applyVoltage(volts, battery_volts);
     right_motor_->applyVoltage(volts, battery_volts);
 }
 
-void MotorLab::setLeftMotorVoltage(float volts)
+void DriverLab::setLeftMotorVoltage(float volts)
 {
     float battery_volts = batteryVoltage();
     left_motor_->applyVoltage(volts, battery_volts);
     right_motor_->applyVoltage(0, battery_volts);
 }
 
-void MotorLab::setRightMotorVoltage(float volts)
+void DriverLab::setRightMotorVoltage(float volts)
 {
     float battery_volts = batteryVoltage();
     left_motor_->applyVoltage(0, battery_volts);
@@ -119,7 +120,7 @@ void MotorLab::setRightMotorVoltage(float volts)
 // Turn Control Helpers
 // ============================================================================
 
-void MotorLab::setTurnVoltage(float volts)
+void DriverLab::setTurnVoltage(float volts)
 {
     // +volts = turn right (left forward, right backward)
     float batt = batteryVoltage();
@@ -127,7 +128,7 @@ void MotorLab::setTurnVoltage(float volts)
     right_motor_->applyVoltage(-volts, batt);
 }
 
-float MotorLab::batteryVoltage() const
+float DriverLab::batteryVoltage() const
 {
     if (battery_ != nullptr)
     {
@@ -136,7 +137,7 @@ float MotorLab::batteryVoltage() const
     return DEFAULT_BATTERY_VOLTAGE;
 }
 
-float MotorLab::encoderPositionMM() const
+float DriverLab::encoderPositionMM() const
 {
     int32_t left_ticks   = left_encoder_ ? left_encoder_->ticks() : 0;
     int32_t right_ticks  = right_encoder_ ? right_encoder_->ticks() : 0;
@@ -148,12 +149,12 @@ float MotorLab::encoderPositionMM() const
     return avg_ticks * MM_PER_TICK;
 }
 
-float MotorLab::encoderVelocityMMps() const
+float DriverLab::encoderVelocityMMps() const
 {
     return (left_velocity_mmps_ + right_velocity_mmps_) / 2.0f;
 }
 
-void MotorLab::resetEncoders()
+void DriverLab::resetEncoders()
 {
     if (left_encoder_)
         left_encoder_->reset();
@@ -171,7 +172,7 @@ void MotorLab::resetEncoders()
     last_encoder_update_ = get_absolute_time();
 }
 
-void MotorLab::updateEncoders(float /* dt_hint - ignored, we measure actual */)
+void DriverLab::updateEncoders(float /* dt_hint - ignored, we measure actual */)
 {
     // Measure actual time since last update for accurate velocity calculation
     absolute_time_t now       = get_absolute_time();
@@ -206,55 +207,86 @@ void MotorLab::updateEncoders(float /* dt_hint - ignored, we measure actual */)
 // Test Routines
 // ============================================================================
 
-void MotorLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t settle_time_ms)
+void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t settle_time_ms)
 {
-    printf("\n=== Open Loop Voltage Sweep ===\n");
+    printf("\n=== Open Loop Voltage Sweep (Stereo + Steering) ===\n");
     printf("Max voltage: %.2f V, Step: %.2f V, Settle time: %lu ms\n", max_voltage, step_voltage,
            static_cast<unsigned long>(settle_time_ms));
-    printf("Battery: %.2f V\n\n", batteryVoltage());
+    printf("Battery: %.2f V\n", batteryVoltage());
+    printf("Steering PD: kP=%.3f, kD=%.3f\n", settings_.turnKP, settings_.turnKD);
+
+    // Countdown to allow USB disconnect
+    for (int i = 3; i > 0; i--)
+    {
+        printf("Starting in %d...\n", i);
+        sleep_ms(1000);
+    }
+    printf("GO!\n\n");
 
     reporter_.begin();
-    reporter_.printOpenLoopHeader();
+    reporter_.printOpenLoopStereoHeader();
 
     resetEncoders();
+    robot_->setRotationGains(settings_.turnKP, 0.0f, settings_.turnKD);
+    robot_->resetHeadingControl();
 
-    // Store data points for linear regression and Tm calculation
-    std::vector<float> voltages;
-    std::vector<float> speeds;
+    // Per-motor steady-state data for independent regression
+    std::vector<float> left_voltages, left_speeds;
+    std::vector<float> right_voltages, right_speeds;
+    std::vector<float> combined_voltages, combined_speeds;
     std::vector<float> tm_samples;
 
-    constexpr float MIN_SPEED_THRESHOLD = 10.0f; // mm/s
-
-    // Skip first N samples after voltage change (avoids transient spikes)
-    constexpr size_t SKIP_SAMPLES = 10; // 100ms at 100Hz
-    constexpr size_t OUTPUT_EVERY = 5;  // Output every 5th sample for plotting
+    constexpr float  MIN_SPEED_THRESHOLD = 10.0f; // mm/s
+    constexpr size_t SKIP_SAMPLES        = 10;    // 100ms at 100Hz transient skip
+    constexpr size_t OUTPUT_EVERY        = 5;     // Output every 5th sample
+    constexpr float  MAX_STEER_VOLTS     = 1.0f;  // Clamp steering correction
 
     // Sweep from 0 to max_voltage
     for (float voltage = step_voltage; voltage <= max_voltage + 0.01f; voltage += step_voltage)
     {
-        // Apply voltage
-        setMotorVoltage(voltage);
+        // Reset heading control at each voltage step to avoid error buildup
+        robot_->resetHeadingControl();
 
-        // Record transient during settle time
-        std::vector<float> step_speeds;
-        uint32_t           step_start   = to_ms_since_boot(get_absolute_time());
-        size_t             sample_count = 0;
+        // Per-step buffers for steady-state averaging
+        std::vector<float> step_left_speeds, step_right_speeds;
+        std::vector<float> step_left_volts, step_right_volts;
+
+        uint32_t step_start   = to_ms_since_boot(get_absolute_time());
+        size_t   sample_count = 0;
 
         while (to_ms_since_boot(get_absolute_time()) - step_start < settle_time_ms)
         {
             updateEncoders(LOOP_INTERVAL_S);
-            float speed = encoderVelocityMMps();
+            robot_->update(LOOP_INTERVAL_S);
 
-            // Skip first N samples (transient spike region)
+            // Get steering correction from Robot's heading controller
+            float steer_volts = robot_->headingCorrection(0.0f, LOOP_INTERVAL_S);
+            if (steer_volts > MAX_STEER_VOLTS)
+                steer_volts = MAX_STEER_VOLTS;
+            if (steer_volts < -MAX_STEER_VOLTS)
+                steer_volts = -MAX_STEER_VOLTS;
+
+            // Apply differential voltage
+            float left_v  = voltage + steer_volts;
+            float right_v = voltage - steer_volts;
+            float batt    = batteryVoltage();
+            left_motor_->applyVoltage(left_v, batt);
+            right_motor_->applyVoltage(right_v, batt);
+
+            // Record after transient settles
             if (sample_count >= SKIP_SAMPLES)
             {
-                step_speeds.push_back(speed);
+                step_left_speeds.push_back(left_velocity_mmps_);
+                step_right_speeds.push_back(right_velocity_mmps_);
+                step_left_volts.push_back(left_v);
+                step_right_volts.push_back(right_v);
 
-                // Output every Nth sample for plotting (reduces data volume)
                 if ((sample_count - SKIP_SAMPLES) % OUTPUT_EVERY == 0)
                 {
                     uint32_t now = to_ms_since_boot(get_absolute_time());
-                    reporter_.reportOpenLoop(now, voltage, speed);
+                    reporter_.reportOpenLoopStereo(now, voltage, left_v, right_v,
+                                                   left_velocity_mmps_, right_velocity_mmps_,
+                                                   steer_volts);
                 }
             }
 
@@ -262,65 +294,101 @@ void MotorLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t 
             sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
         }
 
-        // Use average of last 10 samples as steady-state (more robust than single sample)
-        float  final_speed = 0.0f;
-        size_t avg_count   = std::min(step_speeds.size(), size_t(10));
+        // Average last 10 samples as steady-state
+        size_t avg_count = std::min(step_left_speeds.size(), size_t(10));
+        float  left_ss = 0.0f, right_ss = 0.0f;
+        float  left_v_ss = 0.0f, right_v_ss = 0.0f;
         if (avg_count > 0)
         {
-            for (size_t i = step_speeds.size() - avg_count; i < step_speeds.size(); i++)
-                final_speed += step_speeds[i];
-            final_speed /= static_cast<float>(avg_count);
+            for (size_t i = step_left_speeds.size() - avg_count; i < step_left_speeds.size(); i++)
+            {
+                left_ss += step_left_speeds[i];
+                right_ss += step_right_speeds[i];
+                left_v_ss += step_left_volts[i];
+                right_v_ss += step_right_volts[i];
+            }
+            left_ss /= static_cast<float>(avg_count);
+            right_ss /= static_cast<float>(avg_count);
+            left_v_ss /= static_cast<float>(avg_count);
+            right_v_ss /= static_cast<float>(avg_count);
         }
 
-        // Calculate Tm for this step (time to reach 63.2% of final speed)
-        if (final_speed > MIN_SPEED_THRESHOLD)
+        // Store per-motor steady-state with effective voltages
+        left_voltages.push_back(left_v_ss);
+        left_speeds.push_back(left_ss);
+        right_voltages.push_back(right_v_ss);
+        right_speeds.push_back(right_ss);
+
+        // Combined average for backward compatibility
+        float avg_speed = (left_ss + right_ss) / 2.0f;
+        combined_voltages.push_back(voltage);
+        combined_speeds.push_back(avg_speed);
+
+        // Tm estimation from combined speed
+        if (avg_speed > MIN_SPEED_THRESHOLD && !step_left_speeds.empty())
         {
-            float target_speed = final_speed * 0.632f;
-            // Require 2 consecutive samples above threshold (noise rejection)
-            for (size_t i = 1; i < step_speeds.size(); i++)
+            float target = avg_speed * 0.632f;
+            for (size_t i = 1; i < step_left_speeds.size(); i++)
             {
-                if (step_speeds[i - 1] >= target_speed && step_speeds[i] >= target_speed)
+                float s      = (step_left_speeds[i] + step_right_speeds[i]) / 2.0f;
+                float s_prev = (step_left_speeds[i - 1] + step_right_speeds[i - 1]) / 2.0f;
+                if (s_prev >= target && s >= target)
                 {
-                    float tm_step = (i - 1) * LOOP_INTERVAL_S;
-                    tm_samples.push_back(tm_step);
+                    tm_samples.push_back((i - 1) * LOOP_INTERVAL_S);
                     break;
                 }
             }
         }
-
-        // Store steady-state for kM/kS regression
-        voltages.push_back(voltage);
-        speeds.push_back(final_speed);
     }
 
     stopMotors();
 
-    // Filter out stall points for regression
-    std::vector<float> filtered_voltages;
-    std::vector<float> filtered_speeds;
-    for (size_t i = 0; i < voltages.size(); i++)
+    // Linear regression: speed = kM * voltage + intercept, kS = -intercept / kM
+    auto linRegress = [](const std::vector<float>& v, const std::vector<float>& s, float min_speed,
+                         float& kM_out, float& kS_out, int& n_out)
     {
-        if (speeds[i] > MIN_SPEED_THRESHOLD)
+        float sum_v = 0, sum_s = 0, sum_vs = 0, sum_vv = 0;
+        n_out = 0;
+        for (size_t i = 0; i < v.size(); i++)
         {
-            filtered_voltages.push_back(voltages[i]);
-            filtered_speeds.push_back(speeds[i]);
+            if (s[i] > min_speed)
+            {
+                sum_v += v[i];
+                sum_s += s[i];
+                sum_vs += v[i] * s[i];
+                sum_vv += v[i] * v[i];
+                n_out++;
+            }
         }
-    }
+        if (n_out < 2)
+        {
+            kM_out = 0.0f;
+            kS_out = 0.0f;
+            return;
+        }
+        float denom = n_out * sum_vv - sum_v * sum_v;
+        if (std::fabs(denom) < 1e-12f)
+        {
+            kM_out = 0.0f;
+            kS_out = 0.0f;
+            return;
+        }
+        kM_out          = (n_out * sum_vs - sum_v * sum_s) / denom;
+        float intercept = (sum_s - kM_out * sum_v) / n_out;
+        kS_out          = (std::fabs(kM_out) > 1e-6f) ? (-intercept / kM_out) : 0.0f;
+    };
 
-    // Calculate linear regression: speed = kM * voltage + intercept
-    // kS = x-intercept = -intercept / kM
-    float sum_v = 0, sum_s = 0, sum_vs = 0, sum_vv = 0;
-    int   n = static_cast<int>(filtered_voltages.size());
-    for (int i = 0; i < n; i++)
-    {
-        sum_v += filtered_voltages[i];
-        sum_s += filtered_speeds[i];
-        sum_vs += filtered_voltages[i] * filtered_speeds[i];
-        sum_vv += filtered_voltages[i] * filtered_voltages[i];
-    }
-    float kM_calc   = (n * sum_vs - sum_v * sum_s) / (n * sum_vv - sum_v * sum_v);
-    float intercept = (sum_s - kM_calc * sum_v) / n;
-    float kS_calc   = -intercept / kM_calc;
+    // Combined regression
+    float kM_calc = 0, kS_calc = 0;
+    int   n_combined = 0;
+    linRegress(combined_voltages, combined_speeds, MIN_SPEED_THRESHOLD, kM_calc, kS_calc,
+               n_combined);
+
+    // Per-motor regression
+    float kM_L = 0, kS_L = 0, kM_R = 0, kS_R = 0;
+    int   n_left = 0, n_right = 0;
+    linRegress(left_voltages, left_speeds, MIN_SPEED_THRESHOLD, kM_L, kS_L, n_left);
+    linRegress(right_voltages, right_speeds, MIN_SPEED_THRESHOLD, kM_R, kS_R, n_right);
 
     // Average Tm across all moving steps
     float tm_calc = 0.0f;
@@ -331,25 +399,51 @@ void MotorLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t 
         tm_calc /= static_cast<float>(tm_samples.size());
     }
 
-    printf("\n=== Trial Complete ===\n");
-    printf("Samples: %d (filtered from %zu)\n", n, voltages.size());
-    printf("kM = %.2f mm/s/V\n", kM_calc);
-    printf("kS = %.4f V\n", kS_calc);
-    printf("Tm = %.4f s (%zu samples)\n\n", tm_calc, tm_samples.size());
+    // Update settings with results
+    settings_.kM   = kM_calc;
+    settings_.kS   = kS_calc;
+    settings_.tm   = tm_calc;
+    settings_.kM_L = kM_L;
+    settings_.kM_R = kM_R;
+    settings_.kS_L = kS_L;
+    settings_.kS_R = kS_R;
+    settings_.recalculateDerived();
+
+    printf("\n=== OL Results ===\n");
+    printf("Combined: kM=%.2f mm/s/V, kS=%.4f V (%d points)\n", kM_calc, kS_calc, n_combined);
+    printf("Left:     kM=%.2f mm/s/V, kS=%.4f V (%d points)\n", kM_L, kS_L, n_left);
+    printf("Right:    kM=%.2f mm/s/V, kS=%.4f V (%d points)\n", kM_R, kS_R, n_right);
+    printf("  -> kV = %.7f V/(mm/s)\n", settings_.kV);
+    printf("  -> kA = %.7f V/(mm/s^2)\n", settings_.kA);
+    printf("Yaw drift: %.2f deg\n\n", robot_->yaw());
     printPrompt();
 }
 
-void MotorLab::runStepTrial(float step_voltage, uint32_t duration_ms)
+void DriverLab::runStepTrial(float step_voltage, uint32_t duration_ms)
 {
     printf("\n=== Step Response Trial ===\n");
     printf("Step voltage: %.2f V, Duration: %lu ms\n", step_voltage,
            static_cast<unsigned long>(duration_ms));
-    printf("Battery: %.2f V\n\n", batteryVoltage());
+    printf("Battery: %.2f V\n", batteryVoltage());
+
+    // Countdown to allow USB disconnect
+    for (int i = 3; i > 0; i--)
+    {
+        printf("Starting in %d...\n", i);
+        sleep_ms(1000);
+    }
+    printf("GO!\n\n");
 
     reporter_.begin();
     reporter_.printStepHeader();
 
     resetEncoders();
+
+    // Collect speed samples for Tm calculation
+    static constexpr int MAX_STEP_SAMPLES = 2000;
+    std::vector<float>   step_times(MAX_STEP_SAMPLES);
+    std::vector<float>   step_speeds(MAX_STEP_SAMPLES);
+    int                  n_samples = 0;
 
     // Apply step input
     setMotorVoltage(step_voltage);
@@ -365,9 +459,19 @@ void MotorLab::runStepTrial(float step_voltage, uint32_t duration_ms)
 
         updateEncoders(LOOP_INTERVAL_S);
 
+        float speed = encoderVelocityMMps();
+
         if (reporter_.isTimeToReport(now))
         {
-            reporter_.reportStep(now, step_voltage, encoderVelocityMMps(), encoderPositionMM());
+            reporter_.reportStep(now, step_voltage, speed, encoderPositionMM());
+
+            // Store for Tm calculation
+            if (n_samples < MAX_STEP_SAMPLES)
+            {
+                step_times[n_samples]  = elapsed * 0.001f; // ms → seconds
+                step_speeds[n_samples] = speed;
+                n_samples++;
+            }
         }
 
         sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
@@ -375,19 +479,94 @@ void MotorLab::runStepTrial(float step_voltage, uint32_t duration_ms)
 
     stopMotors();
 
-    printf("\n=== Trial Complete ===\n");
-    printf("Samples: %lu\n", static_cast<unsigned long>(reporter_.sampleCount()));
-    printf("To find Tm: time to reach 63.2%% of final speed\n\n");
+    // === Calculate Tm from collected data ===
+    if (n_samples < 10)
+    {
+        printf("\nNot enough samples to calculate Tm\n");
+        printPrompt();
+        return;
+    }
+
+    // Steady-state speed = average of last 20% of samples
+    int   tail_start  = n_samples - n_samples / 5;
+    float sum_final   = 0.0f;
+    int   final_count = 0;
+    for (int i = tail_start; i < n_samples; i++)
+    {
+        sum_final += step_speeds[i];
+        final_count++;
+    }
+    float v_final = sum_final / final_count;
+
+    // 63.2% threshold
+    float threshold = v_final * 0.632f;
+
+    // Find first sample that crosses threshold
+    float tm_calculated = 0.0f;
+    bool  found         = false;
+    for (int i = 0; i < n_samples; i++)
+    {
+        if (step_speeds[i] >= threshold)
+        {
+            // Linear interpolation between this sample and previous for accuracy
+            if (i > 0 && step_speeds[i - 1] < threshold)
+            {
+                float frac =
+                    (threshold - step_speeds[i - 1]) / (step_speeds[i] - step_speeds[i - 1]);
+                tm_calculated = step_times[i - 1] + frac * (step_times[i] - step_times[i - 1]);
+            }
+            else
+            {
+                tm_calculated = step_times[i];
+            }
+            found = true;
+            break;
+        }
+    }
+
+    // Print results
+    printf("\n=== Step Response Results ===\n");
+    printf("Steady-state speed: %.1f mm/s\n", v_final);
+    printf("63.2%% threshold:    %.1f mm/s\n", threshold);
+
+    if (found && tm_calculated > 0.001f && tm_calculated < 2.0f)
+    {
+        settings_.tm = tm_calculated;
+        settings_.td = tm_calculated / 2.0f; // Standard starting point: Td = Tm/2
+        settings_.recalculateDerived();
+        printf("Tm = %.5f s  (motor time constant)\n", settings_.tm);
+        printf("  -> kA = %.7f V/(mm/s^2)\n", settings_.kA);
+        printf("  -> Td = %.5f s  (= Tm/2)\n", settings_.td);
+        printf("  -> kP = %.5f, kD = %.5f  (recomputed)\n", settings_.kP, settings_.kD);
+    }
+    else
+    {
+        printf("Tm: could not determine (speed may not have settled)\n");
+        if (!found)
+            printf("  Speed never reached 63.2%% of final value\n");
+        else
+            printf("  Tm = %.5f s (out of valid range)\n", tm_calculated);
+    }
+
+    printf("Samples: %d\n\n", n_samples);
     printPrompt();
 }
 
-void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration, int mode)
+void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration, int mode)
 {
     printf("\n=== Move Trial ===\n");
     printf("Distance: %.1f mm, Speed: %.1f mm/s, Accel: %.1f mm/s^2\n", distance, top_speed,
            acceleration);
     printf("Mode: %d (%s)\n", mode, mode == 0 ? "FF only" : (mode == 1 ? "PD only" : "FF+PD"));
-    printf("Battery: %.2f V\n\n", batteryVoltage());
+    printf("Battery: %.2f V\n", batteryVoltage());
+
+    // Countdown to allow USB disconnect
+    for (int i = 3; i > 0; i--)
+    {
+        printf("Starting in %d...\n", i);
+        sleep_ms(1000);
+    }
+    printf("GO!\n\n");
 
     reporter_.begin();
     reporter_.printControllerHeader();
@@ -400,6 +579,16 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
     // Initialize error accumulator for PD control
     float position_error = 0.0f;
     float prev_error     = 0.0f;
+
+    // Diagnostics tracking
+    float max_speed_error    = 0.0f;
+    float sum_speed_error    = 0.0f;
+    float max_pos_error      = 0.0f;
+    float max_ctrl_volts     = 0.0f;
+    float max_ff_volts       = 0.0f;
+    int   diag_count         = 0;
+    float cruising_speed_err = 0.0f;
+    int   cruising_count     = 0;
 
     // Control loop
     while (!profile_.finished())
@@ -466,6 +655,26 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
         // Apply to motors
         setMotorVoltage(total_volts);
 
+        // Track diagnostics
+        float speed_err = std::fabs(set_speed - actual_speed);
+        sum_speed_error += speed_err;
+        diag_count++;
+        if (speed_err > max_speed_error)
+            max_speed_error = speed_err;
+        if (std::fabs(position_error) > max_pos_error)
+            max_pos_error = std::fabs(position_error);
+        if (std::fabs(control_volts) > max_ctrl_volts)
+            max_ctrl_volts = std::fabs(control_volts);
+        if (std::fabs(ff_volts) > max_ff_volts)
+            max_ff_volts = std::fabs(ff_volts);
+
+        // Track cruising phase (accel ~0, speed > 50% target)
+        if (std::fabs(set_accel) < 1.0f && set_speed > top_speed * 0.5f)
+        {
+            cruising_speed_err += speed_err;
+            cruising_count++;
+        }
+
         // Report data
         if (reporter_.isTimeToReport(now))
         {
@@ -480,18 +689,61 @@ void MotorLab::runMoveTrial(float distance, float top_speed, float acceleration,
     sleep_ms(200);
     stopMotors();
 
-    printf("\n=== Trial Complete ===\n");
+    float final_pos_error = distance - encoderPositionMM();
+    float avg_speed_error = (diag_count > 0) ? (sum_speed_error / diag_count) : 0.0f;
+    float cruising_avg    = (cruising_count > 0) ? (cruising_speed_err / cruising_count) : 0.0f;
+
+    printf("\n=== Move Trial Complete ===\n");
     printf("Samples: %lu\n", static_cast<unsigned long>(reporter_.sampleCount()));
-    printf("Final position error: %.2f mm\n", profile_.position() - encoderPositionMM());
+    printf("\n");
+    printf("--- Diagnostics ---\n");
+    printf("  Final position error: %+.2f mm\n", final_pos_error);
+    printf("  Max position error:   %.2f mm\n", max_pos_error);
+    printf("  Max speed error:      %.1f mm/s\n", max_speed_error);
+    printf("  Avg speed error:      %.1f mm/s\n", avg_speed_error);
+    if (cruising_count > 0)
+        printf("  Cruising speed error: %.1f mm/s (avg over %d samples)\n", cruising_avg,
+               cruising_count);
+    printf("  Max FF effort:        %.2f V\n", max_ff_volts);
+    printf("  Max PD effort:        %.2f V\n", max_ctrl_volts);
+    printf("\n");
+    printf("--- Tuning Tips ---\n");
+    if (mode == 0 || mode == 2)
+    {
+        if (cruising_count > 0 && cruising_avg > 20.0f)
+            printf("  ! Cruising error high: kV may be wrong (run OL to recalibrate)\n");
+        if (max_speed_error > top_speed * 0.3f)
+            printf("  ! Large transient error: increase kA or reduce acceleration\n");
+    }
+    if (mode == 1 || mode == 2)
+    {
+        if (max_ctrl_volts > MAX_VOLTAGE * 0.8f)
+            printf("  ! PD near saturation: reduce kP or lower speed/accel\n");
+        if (max_pos_error > 10.0f)
+            printf("  ! Position drift > 10mm: increase kP\n");
+    }
+    if (std::fabs(final_pos_error) > 5.0f)
+        printf("  ! Stopping error > 5mm: check deceleration phase\n");
+    if (max_speed_error < top_speed * 0.1f && std::fabs(final_pos_error) < 3.0f)
+        printf("  Looks good! Speed tracking within 10%%, position error < 3mm.\n");
+    printf("\n");
     printPrompt();
 }
 
-void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
+void DriverLab::runTurnTrial(float degrees, float top_omega, float alpha)
 {
     printf("\n=== Turn Trial ===\n");
     printf("Angle: %.1f deg, Speed: %.1f deg/s, Accel: %.1f deg/s^2\n", degrees, top_omega, alpha);
     printf("TURN_KP: %.4f, TURN_KD: %.4f\n", settings_.turnKP, settings_.turnKD);
-    printf("Battery: %.2f V\n\n", batteryVoltage());
+    printf("Battery: %.2f V\n", batteryVoltage());
+
+    // Countdown to allow USB disconnect
+    for (int i = 3; i > 0; i--)
+    {
+        printf("Starting in %d...\n", i);
+        sleep_ms(1000);
+    }
+    printf("GO!\n\n");
 
     reporter_.begin();
     // Print CSV header for turn data
@@ -507,6 +759,12 @@ void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
     // Initialize error accumulator for PD control
     float yaw_error  = 0.0f;
     float prev_error = 0.0f;
+
+    // Diagnostics tracking
+    float peak_overshoot_deg = 0.0f;
+    float max_ctrl_volts     = 0.0f;
+    float max_yaw_error      = 0.0f;
+    bool  profile_done       = false;
 
     // Control loop
     while (!profile_.finished())
@@ -547,6 +805,23 @@ void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
         // Apply differential to motors
         setTurnVoltage(ctrl_volts);
 
+        // Track diagnostics
+        float abs_error = std::fabs(yaw_error);
+        if (abs_error > max_yaw_error)
+            max_yaw_error = abs_error;
+        if (std::fabs(ctrl_volts) > max_ctrl_volts)
+            max_ctrl_volts = std::fabs(ctrl_volts);
+
+        // Detect overshoot after profile reaches target
+        if (profile_.speed() < 0.1f && !profile_done)
+            profile_done = true;
+        if (profile_done)
+        {
+            float overshoot = std::fabs(actual_yaw) - std::fabs(degrees);
+            if (overshoot > peak_overshoot_deg)
+                peak_overshoot_deg = overshoot;
+        }
+
         // Report data
         if (reporter_.isTimeToReport(now))
         {
@@ -563,9 +838,29 @@ void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
     sleep_ms(200);
     stopMotors();
 
-    printf("\n=== Trial Complete ===\n");
+    float final_error = degrees - robot_->yaw();
+
+    printf("\n=== Turn Trial Complete ===\n");
     printf("Samples: %lu\n", static_cast<unsigned long>(reporter_.sampleCount()));
-    printf("Final yaw error: %.2f deg\n", (degrees)-robot_->yaw());
+    printf("\n");
+    printf("--- Diagnostics ---\n");
+    printf("  Final error:     %+.2f deg\n", final_error);
+    printf("  Peak overshoot:  %.2f deg (%.1f%%)\n", peak_overshoot_deg,
+           (std::fabs(degrees) > 0.1f) ? (peak_overshoot_deg / std::fabs(degrees) * 100.0f) : 0.0f);
+    printf("  Max yaw error:   %.2f deg\n", max_yaw_error);
+    printf("  Max ctrl effort: %.2f V\n", max_ctrl_volts);
+    printf("\n");
+    printf("--- Tuning Tips ---\n");
+    if (peak_overshoot_deg > std::fabs(degrees) * 0.10f)
+        printf("  ! Overshoot > 10%%: increase turnKD or decrease turnKP\n");
+    if (std::fabs(final_error) > 3.0f)
+        printf("  ! Final error > 3 deg: increase turnKP\n");
+    if (max_ctrl_volts > MAX_VOLTAGE * 0.9f)
+        printf("  ! Controller near saturation: reduce speed or lower turnKP\n");
+    if (peak_overshoot_deg < 1.0f && std::fabs(final_error) < 2.0f &&
+        max_ctrl_volts < MAX_VOLTAGE * 0.7f)
+        printf("  Looks good! Gains are well-tuned for this speed.\n");
+    printf("\n");
     printPrompt();
 }
 
@@ -573,13 +868,13 @@ void MotorLab::runTurnTrial(float degrees, float top_omega, float alpha)
 // CLI Processing
 // ============================================================================
 
-bool MotorLab::processSerial()
+bool DriverLab::processSerial()
 {
     int result = readSerialLine();
     if (result == 1)
     {
         // Complete line received
-        MotorLabArgs args = tokenize();
+        DriverLabArgs args = tokenize();
         if (args.argc > 0)
         {
             executeCommand(args);
@@ -591,7 +886,7 @@ bool MotorLab::processSerial()
     return false;
 }
 
-int MotorLab::readSerialLine()
+int DriverLab::readSerialLine()
 {
     while (true)
     {
@@ -654,7 +949,7 @@ int MotorLab::readSerialLine()
             {
                 putchar(ch);
             }
-            if (input_index_ < MOTORLAB_INPUT_BUFFER_SIZE - 1)
+            if (input_index_ < DRIVERLAB_INPUT_BUFFER_SIZE - 1)
             {
                 input_buffer_[input_index_++] = ch;
                 input_buffer_[input_index_]   = '\0';
@@ -663,12 +958,12 @@ int MotorLab::readSerialLine()
     }
 }
 
-MotorLabArgs MotorLab::tokenize()
+DriverLabArgs DriverLab::tokenize()
 {
-    MotorLabArgs args  = {0};
-    char*        token = strtok(input_buffer_, " ,=");
+    DriverLabArgs args  = {0};
+    char*         token = strtok(input_buffer_, " ,=");
 
-    while (token != nullptr && args.argc < MOTORLAB_MAX_ARGC)
+    while (token != nullptr && args.argc < DRIVERLAB_MAX_ARGC)
     {
         args.argv[args.argc++] = token;
         token                  = strtok(nullptr, " ,=");
@@ -677,7 +972,7 @@ MotorLabArgs MotorLab::tokenize()
     return args;
 }
 
-void MotorLab::executeCommand(const MotorLabArgs& args)
+void DriverLab::executeCommand(const DriverLabArgs& args)
 {
     const char* cmd = args.argv[0];
 
@@ -901,19 +1196,19 @@ void MotorLab::executeCommand(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::clearInput()
+void DriverLab::clearInput()
 {
     input_index_     = 0;
     input_buffer_[0] = '\0';
 }
 
-void MotorLab::printPrompt()
+void DriverLab::printPrompt()
 {
     printf("> ");
 }
 
-bool MotorLab::parseFloat(const MotorLabArgs& args, int index, float min_val, float max_val,
-                          float& result)
+bool DriverLab::parseFloat(const DriverLabArgs& args, int index, float min_val, float max_val,
+                           float& result)
 {
     if (index >= args.argc)
     {
@@ -935,82 +1230,55 @@ bool MotorLab::parseFloat(const MotorLabArgs& args, int index, float min_val, fl
 // CLI Command Implementations
 // ============================================================================
 
-void MotorLab::cmdHelp()
+void DriverLab::cmdHelp()
 {
-    printf("\n=== MotorLab Commands ===\n");
-    printf("System:\n");
-    printf("  ?          - Show this help\n");
-    printf("  ID         - Show version info\n");
-    printf("  SETTINGS   - Show all settings\n");
-    printf("  INIT       - Reset to defaults\n");
-    printf("\nMotor Model (set or get):\n");
-    printf("  KM [val]   - Motor velocity constant (mm/s/V)\n");
-    printf("  TM [val]   - Motor time constant (s)\n");
-    printf("\nController (set or get):\n");
-    printf("  ZETA [val] - Damping ratio\n");
-    printf("  TD [val]   - Derivative time constant (s)\n");
-    printf("  KP [val]   - Proportional gain\n");
-    printf("  KD [val]   - Derivative gain\n");
-    printf("\nFeedforward (set or get):\n");
-    printf("  BIAS [val] - Static friction voltage\n");
-    printf("  SPEEDFF    - Speed feedforward (auto from Km)\n");
-    printf("  ACCFF      - Accel feedforward (auto from Km,Tm)\n");
-    printf("\nHardware:\n");
-    printf("  BAT        - Show battery voltage\n");
-    printf("  ENC        - Show encoder values (mm, mm/s)\n");
-    printf("  IMU        - Robot yaw position (degrees)\n");
-    printf("  IMUVEL     - Robot angular velocity (deg/s)\n");
-    printf("  IMUCON [X] [Y] - Print yaw for X ms every Y ms (default 5000 100)\n");
-    printf("  IMURESET   - Reset yaw and angular velocity to 0\n");
-    printf("  LTOF       - Left ToF distance (mm)\n");
-    printf("  FTOF       - Front ToF distance (mm)\n");
-    printf("  RTOF       - Right ToF distance (mm)\n");
-    printf("  TOFCON [X] [Y] - Print all ToF for X ms every Y ms (default 5000 100)\n");
-    printf("  LINPOS     - Line sensor position (-3.5 to +3.5)\n");
-    printf("  LININTER   - Line intersection detected (YES/NO)\n");
-    printf("  LINCON [X] [Y] - Print line data for X ms every Y ms (default 5000 100)\n");
-    printf("  LENC       - Left encoder position (mm)\n");
-    printf("  RENC       - Right encoder position (mm)\n");
-    printf("  ENCRESET   - Reset both encoders to 0\n");
-    printf("  ENCCON [X] [Y] - Print encoders for X ms every Y ms (default 5000 100)\n");
-    printf("  GPIO       - Test raw GPIO pins for encoder channels\n");
-    printf("  V [volts]  - Apply voltage to motors\n");
-    printf("  X          - Stop motors\n");
-    printf("\nTests:\n");
-    printf("  OL [max] [step] [settle_ms] - Open-loop sweep (output: mm/s)\n");
-    printf("  STEP [volts] [duration_ms]  - Step response (output: mm/s)\n");
-    printf("  MOVE [mm] [mm/s] [mm/s^2] [mode] - Move trial\n");
-    printf("       mode: 0=FF, 1=PD, 2=FF+PD\n");
-    printf("  TURN [deg] [deg/s] [deg/s^2] - Turn trial (PD control)\n");
+    printf("\n");
+    printf("=== TRIALS (run in order) ===\n");
+    printf("  OL   [max step settle_ms]      Voltage sweep    (default: 4 1 500)\n");
+    printf("  STEP [volts duration_ms]        Step response    (default: 3 1000)\n");
+    printf("  MOVE [mm mm/s mm/s^2 mode]      Forward motion   (default: 360 500 1000 0)\n");
+    printf("       mode: 0=FF only, 1=PD only, 2=FF+PD\n");
+    printf("  TURN [deg deg/s deg/s^2]        Turn in place    (default: 90 200 500)\n");
     printf("       +deg=right, -deg=left\n");
-    printf("\nRotation Control (set or get):\n");
-    printf("  TURN_KP [val] - Turn proportional gain\n");
-    printf("  TURN_KD [val] - Turn derivative gain\n");
-    printf("\nExport:\n");
-    printf("  EXPORT     - Print Config.h constants (mm/s format)\n");
+    printf("\n");
+    printf("=== TUNING (set/get, omit val to read) ===\n");
+    printf("  Motor:  KM [val]  TM [val]\n");
+    printf("  FF:     BIAS [V]  SPEEDFF [val]  ACCFF [val]\n");
+    printf("  Fwd PD: ZETA [val]  TD [val]  KP [val]  KD [val]\n");
+    printf("  Rot PD: TURN_KP [val]  TURN_KD [val]\n");
+    printf("\n");
+    printf("=== SENSORS ===\n");
+    printf("  BAT  ENC  LENC  RENC  ENCRESET\n");
+    printf("  IMU  IMUVEL  IMURESET\n");
+    printf("  LTOF  FTOF  RTOF\n");
+    printf("  LINPOS  LININTER\n");
+    printf("  Continuous: IMUCON/TOFCON/LINCON/ENCCON [ms] [interval]\n");
+    printf("\n");
+    printf("=== OTHER ===\n");
+    printf("  V [volts]  X(stop)  GPIO  SETTINGS  INIT  EXPORT  ID\n");
     printf("\n");
 }
 
-void MotorLab::cmdId()
+void DriverLab::cmdId()
 {
-    printf("%s\n", MOTORLAB_VERSION);
+    printf("%s\n", DRIVERLAB_VERSION);
     printf("Loop: %.0f Hz (%.1f ms)\n", LOOP_FREQUENCY_HZ, LOOP_INTERVAL_S * 1000.0f);
     printf("Max voltage: %.1f V\n", MAX_VOLTAGE);
     printf("Encoder: %.4f mm/tick\n", MM_PER_TICK);
 }
 
-void MotorLab::cmdSettings()
+void DriverLab::cmdSettings()
 {
     settings_.print();
 }
 
-void MotorLab::cmdInitSettings()
+void DriverLab::cmdInitSettings()
 {
     settings_.initDefaults();
     printf("Settings reset to defaults\n");
 }
 
-void MotorLab::cmdSetKm(const MotorLabArgs& args)
+void DriverLab::cmdSetKm(const DriverLabArgs& args)
 {
     float val;
     if (parseFloat(args, 1, 100.0f, 10000.0f, val))
@@ -1025,7 +1293,7 @@ void MotorLab::cmdSetKm(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdSetTm(const MotorLabArgs& args)
+void DriverLab::cmdSetTm(const DriverLabArgs& args)
 {
     float val;
     if (parseFloat(args, 1, 0.01f, 2.0f, val))
@@ -1041,7 +1309,7 @@ void MotorLab::cmdSetTm(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdSetZeta(const MotorLabArgs& args)
+void DriverLab::cmdSetZeta(const DriverLabArgs& args)
 {
     float val;
     if (parseFloat(args, 1, 0.1f, 2.0f, val))
@@ -1056,7 +1324,7 @@ void MotorLab::cmdSetZeta(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdSetTd(const MotorLabArgs& args)
+void DriverLab::cmdSetTd(const DriverLabArgs& args)
 {
     float val;
     if (parseFloat(args, 1, 0.001f, 1.0f, val))
@@ -1071,7 +1339,7 @@ void MotorLab::cmdSetTd(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdSetKp(const MotorLabArgs& args)
+void DriverLab::cmdSetKp(const DriverLabArgs& args)
 {
     float val;
     if (parseFloat(args, 1, 0.0f, 10.0f, val))
@@ -1085,7 +1353,7 @@ void MotorLab::cmdSetKp(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdSetKd(const MotorLabArgs& args)
+void DriverLab::cmdSetKd(const DriverLabArgs& args)
 {
     float val;
     if (parseFloat(args, 1, 0.0f, 10.0f, val))
@@ -1099,7 +1367,7 @@ void MotorLab::cmdSetKd(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdSetBiasFF(const MotorLabArgs& args)
+void DriverLab::cmdSetBiasFF(const DriverLabArgs& args)
 {
     float val;
     if (parseFloat(args, 1, 0.0f, 3.0f, val))
@@ -1113,7 +1381,7 @@ void MotorLab::cmdSetBiasFF(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdSetSpeedFF(const MotorLabArgs& args)
+void DriverLab::cmdSetSpeedFF(const DriverLabArgs& args)
 {
     // Speed FF is typically derived from Km, but allow override
     float val;
@@ -1128,7 +1396,7 @@ void MotorLab::cmdSetSpeedFF(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdSetAccFF(const MotorLabArgs& args)
+void DriverLab::cmdSetAccFF(const DriverLabArgs& args)
 {
     // Accel FF is typically derived from Km and Tm, but allow override
     float val;
@@ -1143,7 +1411,7 @@ void MotorLab::cmdSetAccFF(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdBattery()
+void DriverLab::cmdBattery()
 {
     if (battery_ != nullptr)
     {
@@ -1155,7 +1423,7 @@ void MotorLab::cmdBattery()
     }
 }
 
-void MotorLab::cmdEncoders()
+void DriverLab::cmdEncoders()
 {
     printf("Position:\n");
     if (left_encoder_)
@@ -1184,17 +1452,17 @@ void MotorLab::cmdEncoders()
     printf("  L: %.1f mm/s  R: %.1f mm/s\n", left_velocity_mmps_, right_velocity_mmps_);
 }
 
-void MotorLab::cmdYaw()
+void DriverLab::cmdYaw()
 {
     printf("Yaw: %.2f deg\n", robot_->yaw());
 }
 
-void MotorLab::cmdYawVel()
+void DriverLab::cmdYawVel()
 {
     printf("Angular velocity: %.2f deg/s\n", robot_->omega());
 }
 
-void MotorLab::cmdYawContinuous(const MotorLabArgs& args)
+void DriverLab::cmdYawContinuous(const DriverLabArgs& args)
 {
     uint32_t duration_ms = 5000;
     uint32_t interval_ms = 100;
@@ -1238,13 +1506,13 @@ void MotorLab::cmdYawContinuous(const MotorLabArgs& args)
     printf("=== Done ===\n");
 }
 
-void MotorLab::cmdYawReset()
+void DriverLab::cmdYawReset()
 {
     robot_->resetYaw();
     printf("Yaw and angular velocity reset to 0\n");
 }
 
-void MotorLab::cmdLeftTof()
+void DriverLab::cmdLeftTof()
 {
     if (left_tof_ != nullptr)
     {
@@ -1256,7 +1524,7 @@ void MotorLab::cmdLeftTof()
     }
 }
 
-void MotorLab::cmdFrontTof()
+void DriverLab::cmdFrontTof()
 {
     if (front_tof_ != nullptr)
     {
@@ -1268,7 +1536,7 @@ void MotorLab::cmdFrontTof()
     }
 }
 
-void MotorLab::cmdRightTof()
+void DriverLab::cmdRightTof()
 {
     if (right_tof_ != nullptr)
     {
@@ -1280,7 +1548,7 @@ void MotorLab::cmdRightTof()
     }
 }
 
-void MotorLab::cmdTofContinuous(const MotorLabArgs& args)
+void DriverLab::cmdTofContinuous(const DriverLabArgs& args)
 {
     if (left_tof_ == nullptr && front_tof_ == nullptr && right_tof_ == nullptr)
     {
@@ -1329,7 +1597,7 @@ void MotorLab::cmdTofContinuous(const MotorLabArgs& args)
     printf("=== Done ===\n");
 }
 
-void MotorLab::cmdLeftEncoder()
+void DriverLab::cmdLeftEncoder()
 {
     if (!left_encoder_)
     {
@@ -1340,7 +1608,7 @@ void MotorLab::cmdLeftEncoder()
     printf("Left: %.2f mm (%ld ticks)\n", left_mm, static_cast<long>(left_encoder_->ticks()));
 }
 
-void MotorLab::cmdRightEncoder()
+void DriverLab::cmdRightEncoder()
 {
     if (!right_encoder_)
     {
@@ -1351,13 +1619,13 @@ void MotorLab::cmdRightEncoder()
     printf("Right: %.2f mm (%ld ticks)\n", right_mm, static_cast<long>(right_encoder_->ticks()));
 }
 
-void MotorLab::cmdEncoderReset()
+void DriverLab::cmdEncoderReset()
 {
     resetEncoders();
     printf("Encoders reset to 0\n");
 }
 
-void MotorLab::cmdEncoderContinuous(const MotorLabArgs& args)
+void DriverLab::cmdEncoderContinuous(const DriverLabArgs& args)
 {
     uint32_t duration_ms = 5000;
     uint32_t interval_ms = 100;
@@ -1398,7 +1666,7 @@ void MotorLab::cmdEncoderContinuous(const MotorLabArgs& args)
     printf("=== Done ===\n");
 }
 
-void MotorLab::cmdOpenLoop(const MotorLabArgs& args)
+void DriverLab::cmdOpenLoop(const DriverLabArgs& args)
 {
     float    max_v     = 6.0f;
     float    step_v    = 0.5f;
@@ -1414,7 +1682,7 @@ void MotorLab::cmdOpenLoop(const MotorLabArgs& args)
     runOpenLoopTrial(max_v, step_v, settle_ms);
 }
 
-void MotorLab::cmdStep(const MotorLabArgs& args)
+void DriverLab::cmdStep(const DriverLabArgs& args)
 {
     float    step_v      = 3.0f;
     uint32_t duration_ms = 1000;
@@ -1427,7 +1695,7 @@ void MotorLab::cmdStep(const MotorLabArgs& args)
     runStepTrial(step_v, duration_ms);
 }
 
-void MotorLab::cmdMove(const MotorLabArgs& args)
+void DriverLab::cmdMove(const DriverLabArgs& args)
 {
     // Default values in mm units (half cell = 90mm, typical micromouse speeds)
     float dist  = 480.0f; // mm (3 cell)
@@ -1447,7 +1715,7 @@ void MotorLab::cmdMove(const MotorLabArgs& args)
     runMoveTrial(dist, speed, accel, mode);
 }
 
-void MotorLab::cmdTurn(const MotorLabArgs& args)
+void DriverLab::cmdTurn(const DriverLabArgs& args)
 {
     float degrees = 90.0f;
     float omega   = ROBOT_MAX_TURN_SPEED_DEGPS;
@@ -1463,7 +1731,7 @@ void MotorLab::cmdTurn(const MotorLabArgs& args)
     runTurnTrial(degrees, omega, alpha);
 }
 
-void MotorLab::cmdSetTurnKp(const MotorLabArgs& args)
+void DriverLab::cmdSetTurnKp(const DriverLabArgs& args)
 {
     float val;
     if (parseFloat(args, 1, 0.0f, 10.0f, val))
@@ -1477,7 +1745,7 @@ void MotorLab::cmdSetTurnKp(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdSetTurnKd(const MotorLabArgs& args)
+void DriverLab::cmdSetTurnKd(const DriverLabArgs& args)
 {
     float val;
     if (parseFloat(args, 1, 0.0f, 10.0f, val))
@@ -1491,7 +1759,7 @@ void MotorLab::cmdSetTurnKd(const MotorLabArgs& args)
     }
 }
 
-void MotorLab::cmdVoltage(const MotorLabArgs& args)
+void DriverLab::cmdVoltage(const DriverLabArgs& args)
 {
     if (args.argc < 2)
     {
@@ -1509,7 +1777,7 @@ void MotorLab::cmdVoltage(const MotorLabArgs& args)
     printf("Applied %.2f V to both motors\n", volts);
 }
 
-void MotorLab::cmdVoltageLeft(const MotorLabArgs& args)
+void DriverLab::cmdVoltageLeft(const DriverLabArgs& args)
 {
     if (args.argc < 2)
     {
@@ -1527,7 +1795,7 @@ void MotorLab::cmdVoltageLeft(const MotorLabArgs& args)
     printf("Applied %.2f V to LEFT motor only\n", volts);
 }
 
-void MotorLab::cmdVoltageRight(const MotorLabArgs& args)
+void DriverLab::cmdVoltageRight(const DriverLabArgs& args)
 {
     if (args.argc < 2)
     {
@@ -1545,52 +1813,52 @@ void MotorLab::cmdVoltageRight(const MotorLabArgs& args)
     printf("Applied %.2f V to RIGHT motor only\n", volts);
 }
 
-void MotorLab::cmdStop()
+void DriverLab::cmdStop()
 {
     stopMotors();
     printf("Motors stopped\n");
 }
 
-void MotorLab::cmdExport()
+void DriverLab::cmdExport()
 {
-    // Convert MotorLab calibration values to Config.h format
-    // MotorLab uses: mm/s, volts
-    // Config.h uses: mm/s, duty cycle
+    // Convert DriverLab calibration values to tuning.h format
+    // DriverLab uses: mm/s, volts
+    // tuning.h uses: mm/s, duty cycle
 
     float battery_volts = batteryVoltage();
 
-    // KV: duty per mm/s
-    // duty = volts / battery, and volts = speed / kM (where kM is mm/s per volt)
-    // So: duty_per_mmps = 1 / (kM * battery_volts)
-    float kv_duty = 1.0f / (settings_.kM * battery_volts);
+    // Per-motor feedforward: duty = 1 / (kM * battery)
+    float kvl_duty =
+        (std::fabs(settings_.kM_L) > 1e-6f) ? (1.0f / (settings_.kM_L * battery_volts)) : 0.0f;
+    float kvr_duty =
+        (std::fabs(settings_.kM_R) > 1e-6f) ? (1.0f / (settings_.kM_R * battery_volts)) : 0.0f;
+    float ksl_duty = settings_.kS_L / battery_volts;
+    float ksr_duty = settings_.kS_R / battery_volts;
 
-    // KS: duty for static friction
-    float ks_duty = settings_.kS / battery_volts;
-
-    // Ka: acceleration feedforward (duty per mm/s^2)
-    // kA is in V/(mm/s^2), convert to duty/(mm/s^2)
+    // Acceleration feedforward from combined model
     float ka_duty = settings_.kA / battery_volts;
 
     printf("\n");
     printf("// ============================================================\n");
-    printf("// MotorLab Export - Copy to Config.h\n");
+    printf("// DriverLab Export - Copy to tuning.h\n");
     printf("// Calibrated at battery voltage: %.2f V\n", battery_volts);
     printf("// ============================================================\n");
     printf("\n");
-    printf("// Feedforward constants (duty-based, for mm/s units)\n");
-    printf("#define FORWARD_KVL %.6ff  // Left velocity gain (duty per mm/s)\n", kv_duty);
-    printf("#define FORWARD_KVR %.6ff  // Right velocity gain (duty per mm/s)\n", kv_duty);
-    printf("#define FORWARD_KSL %.3ff     // Left static friction (duty)\n", ks_duty);
-    printf("#define FORWARD_KSR %.3ff     // Right static friction (duty)\n", ks_duty);
+    printf("// Feedforward constants (duty-based, per-motor)\n");
+    printf("#define FORWARD_KVL %.6ff  // Left velocity gain (duty per mm/s)\n", kvl_duty);
+    printf("#define FORWARD_KVR %.6ff  // Right velocity gain (duty per mm/s)\n", kvr_duty);
+    printf("#define FORWARD_KSL %.3ff     // Left static friction (duty)\n", ksl_duty);
+    printf("#define FORWARD_KSR %.3ff     // Right static friction (duty)\n", ksr_duty);
     printf("\n");
     printf("// Acceleration feedforward (optional, set to 0 if not used)\n");
     printf("#define FORWARD_KAL %.7ff  // Left accel gain (duty per mm/s^2)\n", ka_duty);
     printf("#define FORWARD_KAR %.7ff  // Right accel gain (duty per mm/s^2)\n", ka_duty);
     printf("\n");
-    printf("// Raw MotorLab values (for reference):\n");
-    printf("//   kM = %.2f mm/s/V\n", settings_.kM);
+    printf("// Raw DriverLab values (for reference):\n");
+    printf("//   kM_combined = %.2f mm/s/V\n", settings_.kM);
+    printf("//   kM_L = %.2f mm/s/V, kM_R = %.2f mm/s/V\n", settings_.kM_L, settings_.kM_R);
+    printf("//   kS_L = %.3f V, kS_R = %.3f V\n", settings_.kS_L, settings_.kS_R);
     printf("//   Tm = %.5f s\n", settings_.tm);
-    printf("//   kS = %.3f V\n", settings_.kS);
     printf("\n");
     printf("// Rotation PD gains\n");
     printf("#define ROT_KP %.4ff\n", settings_.turnKP);
@@ -1599,7 +1867,7 @@ void MotorLab::cmdExport()
     printf("\n");
 }
 
-void MotorLab::cmdGpioDiag(const MotorLabArgs& args)
+void DriverLab::cmdGpioDiag(const DriverLabArgs& args)
 {
     printf("\n=== Raw GPIO Diagnostic ===\n");
     printf("Reading GP%d (channel A) and GP%d (channel B)\n", PIN_ENCODER_R_A, PIN_ENCODER_R_B);
@@ -1641,7 +1909,7 @@ void MotorLab::cmdGpioDiag(const MotorLabArgs& args)
 // Line Sensor Commands
 // ============================================================================
 
-void MotorLab::cmdLinePosition()
+void DriverLab::cmdLinePosition()
 {
     if (line_sensor_ == nullptr)
     {
@@ -1656,7 +1924,7 @@ void MotorLab::cmdLinePosition()
     printf("Position: %.2f (%s)\n", position, on_line ? "on line" : "off line");
 }
 
-void MotorLab::cmdLineIntersection()
+void DriverLab::cmdLineIntersection()
 {
     if (line_sensor_ == nullptr)
     {
@@ -1670,7 +1938,7 @@ void MotorLab::cmdLineIntersection()
     printf("Intersection: %s\n", intersection ? "YES" : "NO");
 }
 
-void MotorLab::cmdLineContinuous(const MotorLabArgs& args)
+void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
 {
     if (line_sensor_ == nullptr)
     {
@@ -1725,29 +1993,29 @@ void MotorLab::cmdLineContinuous(const MotorLabArgs& args)
 // Command History
 // ============================================================================
 
-void MotorLab::saveToHistory()
+void DriverLab::saveToHistory()
 {
     // Don't save if same as most recent command
     if (history_count_ > 0)
     {
-        int last_idx = (history_write_idx_ - 1 + MOTORLAB_HISTORY_SIZE) % MOTORLAB_HISTORY_SIZE;
+        int last_idx = (history_write_idx_ - 1 + DRIVERLAB_HISTORY_SIZE) % DRIVERLAB_HISTORY_SIZE;
         if (strcmp(input_buffer_, history_[last_idx]) == 0)
         {
             return;
         }
     }
 
-    strncpy(history_[history_write_idx_], input_buffer_, MOTORLAB_INPUT_BUFFER_SIZE - 1);
-    history_[history_write_idx_][MOTORLAB_INPUT_BUFFER_SIZE - 1] = '\0';
+    strncpy(history_[history_write_idx_], input_buffer_, DRIVERLAB_INPUT_BUFFER_SIZE - 1);
+    history_[history_write_idx_][DRIVERLAB_INPUT_BUFFER_SIZE - 1] = '\0';
 
-    history_write_idx_ = (history_write_idx_ + 1) % MOTORLAB_HISTORY_SIZE;
-    if (history_count_ < MOTORLAB_HISTORY_SIZE)
+    history_write_idx_ = (history_write_idx_ + 1) % DRIVERLAB_HISTORY_SIZE;
+    if (history_count_ < DRIVERLAB_HISTORY_SIZE)
     {
         history_count_++;
     }
 }
 
-void MotorLab::cmdRepeat()
+void DriverLab::cmdRepeat()
 {
     if (history_count_ == 0)
     {
@@ -1756,21 +2024,21 @@ void MotorLab::cmdRepeat()
     }
 
     // Get most recent command
-    int last_idx = (history_write_idx_ - 1 + MOTORLAB_HISTORY_SIZE) % MOTORLAB_HISTORY_SIZE;
+    int last_idx = (history_write_idx_ - 1 + DRIVERLAB_HISTORY_SIZE) % DRIVERLAB_HISTORY_SIZE;
 
     // Copy to input buffer
-    strncpy(input_buffer_, history_[last_idx], MOTORLAB_INPUT_BUFFER_SIZE);
+    strncpy(input_buffer_, history_[last_idx], DRIVERLAB_INPUT_BUFFER_SIZE);
     printf("Repeating: %s\n", input_buffer_);
 
     // Parse and execute
-    MotorLabArgs args = tokenize();
+    DriverLabArgs args = tokenize();
     if (args.argc > 0)
     {
         executeCommand(args);
     }
 }
 
-void MotorLab::cmdHistory()
+void DriverLab::cmdHistory()
 {
     if (history_count_ == 0)
     {
@@ -1782,17 +2050,17 @@ void MotorLab::cmdHistory()
 
     // Print from oldest to newest
     int oldest =
-        (history_write_idx_ - history_count_ + MOTORLAB_HISTORY_SIZE) % MOTORLAB_HISTORY_SIZE;
+        (history_write_idx_ - history_count_ + DRIVERLAB_HISTORY_SIZE) % DRIVERLAB_HISTORY_SIZE;
     for (int i = 0; i < history_count_; i++)
     {
-        int idx = (oldest + i) % MOTORLAB_HISTORY_SIZE;
+        int idx = (oldest + i) % DRIVERLAB_HISTORY_SIZE;
         printf("  %d: %s\n", i + 1, history_[idx]);
     }
 
     printf("Type number (1-%d) and press Enter to execute\n", history_count_);
 }
 
-void MotorLab::executeHistorySelection(int selection)
+void DriverLab::executeHistorySelection(int selection)
 {
     if (selection < 1 || selection > history_count_)
     {
@@ -1802,15 +2070,15 @@ void MotorLab::executeHistorySelection(int selection)
 
     // Calculate index in circular buffer
     int oldest =
-        (history_write_idx_ - history_count_ + MOTORLAB_HISTORY_SIZE) % MOTORLAB_HISTORY_SIZE;
-    int idx = (oldest + selection - 1) % MOTORLAB_HISTORY_SIZE;
+        (history_write_idx_ - history_count_ + DRIVERLAB_HISTORY_SIZE) % DRIVERLAB_HISTORY_SIZE;
+    int idx = (oldest + selection - 1) % DRIVERLAB_HISTORY_SIZE;
 
     // Copy to input buffer
-    strncpy(input_buffer_, history_[idx], MOTORLAB_INPUT_BUFFER_SIZE);
+    strncpy(input_buffer_, history_[idx], DRIVERLAB_INPUT_BUFFER_SIZE);
     printf("Executing: %s\n", input_buffer_);
 
     // Parse and execute
-    MotorLabArgs args = tokenize();
+    DriverLabArgs args = tokenize();
     if (args.argc > 0)
     {
         executeCommand(args);
@@ -1821,7 +2089,7 @@ void MotorLab::executeHistorySelection(int selection)
 // Motor Direction Pin Diagnostic
 // ============================================================================
 
-void MotorLab::cmdDirTest(const MotorLabArgs& args)
+void DriverLab::cmdDirTest(const DriverLabArgs& args)
 {
     printf("\n=== Motor Direction Pin Test ===\n");
     printf("This applies constant 25%% PWM and toggles DIR pins\n");

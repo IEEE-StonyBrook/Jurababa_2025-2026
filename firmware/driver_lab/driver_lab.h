@@ -1,10 +1,10 @@
-#ifndef MOTOR_LAB_MOTOR_LAB_H
-#define MOTOR_LAB_MOTOR_LAB_H
+#ifndef DRIVER_LAB_DRIVER_LAB_H
+#define DRIVER_LAB_DRIVER_LAB_H
 
 #include "config/config.h"
-#include "motor_lab/profile.h"
-#include "motor_lab/reporter.h"
-#include "motor_lab/settings.h"
+#include "driver_lab/profile.h"
+#include "driver_lab/reporter.h"
+#include "driver_lab/settings.h"
 
 #include "pico/stdlib.h"
 
@@ -17,14 +17,14 @@ class Robot;
 class ToF;
 class LineSensor;
 
-constexpr int MOTORLAB_INPUT_BUFFER_SIZE = 64;
-constexpr int MOTORLAB_MAX_ARGC          = 8;
-constexpr int MOTORLAB_HISTORY_SIZE      = 10;
+constexpr int DRIVERLAB_INPUT_BUFFER_SIZE = 64;
+constexpr int DRIVERLAB_MAX_ARGC          = 8;
+constexpr int DRIVERLAB_HISTORY_SIZE      = 10;
 
-struct MotorLabArgs
+struct DriverLabArgs
 {
     int   argc;
-    char* argv[MOTORLAB_MAX_ARGC];
+    char* argv[DRIVERLAB_MAX_ARGC];
 };
 
 /**
@@ -35,25 +35,25 @@ struct MotorLabArgs
  *   - Step response tests (for Tm tuning)
  *   - Closed-loop move trials (for validating feedforward + controller)
  */
-class MotorLab
+class DriverLab
 {
   public:
     // Robot mode: direct motor/encoder + Robot access (for yaw/omega)
-    MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
-             Battery* battery, Robot* robot);
+    DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
+              Battery* battery, Robot* robot);
 
     // Robot mode with ToF sensors: direct motor/encoder + Robot + ToF access
-    MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
-             Battery* battery, Robot* robot, ToF* left_tof, ToF* front_tof, ToF* right_tof);
+    DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
+              Battery* battery, Robot* robot, ToF* left_tof, ToF* front_tof, ToF* right_tof);
 
     // Robot mode with LineSensor: direct motor/encoder + Robot + LineSensor access
-    MotorLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
-             Battery* battery, Robot* robot, LineSensor* line_sensor);
+    DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encoder, Encoder* right_encoder,
+              Battery* battery, Robot* robot, LineSensor* line_sensor);
 
     void init();
     bool processSerial();
 
-    MotorLabSettings& settings() { return settings_; }
+    DriverLabSettings& settings() { return settings_; }
 
     // Motor control
     void stopMotors();
@@ -80,47 +80,47 @@ class MotorLab
     void cmdId();
     void cmdSettings();
     void cmdInitSettings();
-    void cmdSetKm(const MotorLabArgs& args);
-    void cmdSetTm(const MotorLabArgs& args);
-    void cmdSetZeta(const MotorLabArgs& args);
-    void cmdSetTd(const MotorLabArgs& args);
-    void cmdSetKp(const MotorLabArgs& args);
-    void cmdSetKd(const MotorLabArgs& args);
-    void cmdSetBiasFF(const MotorLabArgs& args);
-    void cmdSetSpeedFF(const MotorLabArgs& args);
-    void cmdSetAccFF(const MotorLabArgs& args);
+    void cmdSetKm(const DriverLabArgs& args);
+    void cmdSetTm(const DriverLabArgs& args);
+    void cmdSetZeta(const DriverLabArgs& args);
+    void cmdSetTd(const DriverLabArgs& args);
+    void cmdSetKp(const DriverLabArgs& args);
+    void cmdSetKd(const DriverLabArgs& args);
+    void cmdSetBiasFF(const DriverLabArgs& args);
+    void cmdSetSpeedFF(const DriverLabArgs& args);
+    void cmdSetAccFF(const DriverLabArgs& args);
     void cmdBattery();
     void cmdEncoders();
     void cmdYaw();
     void cmdYawVel();
-    void cmdYawContinuous(const MotorLabArgs& args);
+    void cmdYawContinuous(const DriverLabArgs& args);
     void cmdYawReset();
     void cmdLeftTof();
     void cmdFrontTof();
     void cmdRightTof();
-    void cmdTofContinuous(const MotorLabArgs& args);
+    void cmdTofContinuous(const DriverLabArgs& args);
     void cmdLeftEncoder();
     void cmdRightEncoder();
     void cmdEncoderReset();
-    void cmdEncoderContinuous(const MotorLabArgs& args);
-    void cmdOpenLoop(const MotorLabArgs& args);
-    void cmdStep(const MotorLabArgs& args);
-    void cmdMove(const MotorLabArgs& args);
-    void cmdTurn(const MotorLabArgs& args);
-    void cmdSetTurnKp(const MotorLabArgs& args);
-    void cmdSetTurnKd(const MotorLabArgs& args);
-    void cmdVoltage(const MotorLabArgs& args);
-    void cmdVoltageLeft(const MotorLabArgs& args);
-    void cmdVoltageRight(const MotorLabArgs& args);
+    void cmdEncoderContinuous(const DriverLabArgs& args);
+    void cmdOpenLoop(const DriverLabArgs& args);
+    void cmdStep(const DriverLabArgs& args);
+    void cmdMove(const DriverLabArgs& args);
+    void cmdTurn(const DriverLabArgs& args);
+    void cmdSetTurnKp(const DriverLabArgs& args);
+    void cmdSetTurnKd(const DriverLabArgs& args);
+    void cmdVoltage(const DriverLabArgs& args);
+    void cmdVoltageLeft(const DriverLabArgs& args);
+    void cmdVoltageRight(const DriverLabArgs& args);
     void cmdStop();
     void cmdExport();
-    void cmdGpioDiag(const MotorLabArgs& args);
-    void cmdDirTest(const MotorLabArgs& args);
+    void cmdGpioDiag(const DriverLabArgs& args);
+    void cmdDirTest(const DriverLabArgs& args);
 
     // Line sensor commands
     void cmdLinePosition();
     void cmdLineIntersection();
-    void cmdLineContinuous(const MotorLabArgs& args);
+    void cmdLineContinuous(const DriverLabArgs& args);
 
   private:
     Motor*      left_motor_;
@@ -134,20 +134,20 @@ class MotorLab
     ToF*        right_tof_;
     LineSensor* line_sensor_;
 
-    MotorLabSettings settings_;
-    MotorLabProfile  profile_;
-    MotorLabReporter reporter_;
+    DriverLabSettings settings_;
+    DriverLabProfile  profile_;
+    DriverLabReporter reporter_;
 
-    char input_buffer_[MOTORLAB_INPUT_BUFFER_SIZE];
+    char input_buffer_[DRIVERLAB_INPUT_BUFFER_SIZE];
     int  input_index_;
     bool echo_enabled_;
 
     // Command history (circular buffer)
-    char history_[MOTORLAB_HISTORY_SIZE][MOTORLAB_INPUT_BUFFER_SIZE];
+    char history_[DRIVERLAB_HISTORY_SIZE][DRIVERLAB_INPUT_BUFFER_SIZE];
     int  history_count_;
     int  history_write_idx_;
     int  history_nav_idx_;
-    char temp_buffer_[MOTORLAB_INPUT_BUFFER_SIZE];
+    char temp_buffer_[DRIVERLAB_INPUT_BUFFER_SIZE];
 
     int32_t prev_left_ticks_;
     int32_t prev_right_ticks_;
@@ -160,13 +160,13 @@ class MotorLab
     // Turn helpers
     void setTurnVoltage(float volts);
 
-    int          readSerialLine();
-    MotorLabArgs tokenize();
-    void         executeCommand(const MotorLabArgs& args);
-    void         clearInput();
-    void         printPrompt();
-    bool         parseFloat(const MotorLabArgs& args, int index, float min_val, float max_val,
-                            float& result);
+    int           readSerialLine();
+    DriverLabArgs tokenize();
+    void          executeCommand(const DriverLabArgs& args);
+    void          clearInput();
+    void          printPrompt();
+    bool          parseFloat(const DriverLabArgs& args, int index, float min_val, float max_val,
+                             float& result);
 
     // History commands and helpers
     void cmdRepeat();

@@ -1,50 +1,53 @@
 /**
  * @file tuning.h
- * @brief Motor feedforward and PID controller gains
+ * @brief Calibration values from DriverLab trials
  *
- * These values are empirically tuned. Use MotorLab to characterize
- * motors and determine optimal gains.
+ * Workflow:  OL → STEP → MOVE → TURN
+ *   1. OL    → kM, kS per motor
+ *   2. STEP  → Tm (auto-calculates kV, kA)
+ *   3. MOVE  → tune zeta/Td → auto kP, kD
+ *   4. TURN  → tune ROT_KP, ROT_KD
  */
 #ifndef CONFIG_TUNING_H
 #define CONFIG_TUNING_H
 
-// ================= Feedforward Constants ================= //
-// Duty = Kv * velocity + Ks + Ka * acceleration
-// Determined from MotorLab open-loop trials
+// ===================== Motor Model ===================== //
+#define MOTOR_KM 342.0f // mm/s per volt  (from OL trial)
+#define MOTOR_TM 0.05f  // seconds        (from STEP trial)
 
-// Forward direction
-#define FORWARD_KVL 0.0029239766f // Left velocity gain (duty per mm/s)
-#define FORWARD_KVR 0.0029239766f // Right velocity gain
-#define FORWARD_KSL 0.35f         // Left static friction (duty)
-#define FORWARD_KSR 0.35f         // Right static friction
+// ================ Feedforward (per motor) ============== //
+// V = kV * speed + kS + kA * accel
+#define FORWARD_KVL 0.0029239766f // Left  V/(mm/s)     = 1/kM
+#define FORWARD_KVR 0.0029239766f // Right V/(mm/s)
+#define FORWARD_KSL 0.35f         // Left  static friction (V)
+#define FORWARD_KSR 0.35f         // Right static friction (V)
+#define FORWARD_KAL 0.0f          // Left  V/(mm/s^2)   = Tm/kM
+#define FORWARD_KAR 0.0f          // Right V/(mm/s^2)
 
-// Reverse direction (may differ due to motor asymmetry)
-#define REVERSE_KVL 0.0029239766f // Left velocity gain reverse
-#define REVERSE_KVR 0.0029239766f // Right velocity gain reverse
-#define REVERSE_KSL 0.35f         // Left static friction reverse
-#define REVERSE_KSR 0.35f         // Right static friction reverse
-
-// Acceleration feedforward (tune after step response tests)
-#define FORWARD_KAL 0.0f // Left acceleration gain (duty per mm/s²)
-#define FORWARD_KAR 0.0f // Right acceleration gain
+// Reverse (may differ from forward)
+#define REVERSE_KVL 0.0029239766f
+#define REVERSE_KVR 0.0029239766f
+#define REVERSE_KSL 0.35f
+#define REVERSE_KSR 0.35f
 #define REVERSE_KAL 0.0f
 #define REVERSE_KAR 0.0f
 
-// ================= Position PD Controller ================= //
-// Forward position control (mazerunner-core pattern)
-#define FWD_KP 2.0f // Forward position proportional gain
-#define FWD_KD 1.1f // Forward position derivative gain
+// ================ Forward PD Controller ================ //
+// Design params: pick zeta & Td → auto-derive kP, kD
+//   kP = 1 / (kM * Td)
+//   kD = (2 * zeta * Td - Tm) / kM
+#define FWD_ZETA 0.707f // Damping (0.707 = critical)
+#define FWD_TD   0.025f // Derivative time (start at Tm/2)
+#define FWD_KP   0.5f   // Proportional gain
+#define FWD_KD   0.0f   // Derivative gain
 
-// Rotation position control
-#define ROT_KP 0.15f // Rotation proportional gain
-#define ROT_KD 0.5f  // Rotation derivative gain
+// ================ Rotation PD Controller =============== //
+#define ROT_KP 0.15f // Turn proportional gain
+#define ROT_KD 0.0f  // Turn derivative gain
 
-// ================= Wall Centering ================= //
-#define CENTERING_CORRECTION_GAIN 0.01f // Lateral centering gain
-
-// ================= Line Follower PD ================= //
-#define LINE_KP                     0.3f   // Line position proportional gain
-#define LINE_KD                     0.1f   // Line position derivative gain
-#define LINE_FOLLOW_BASE_SPEED_MMPS 150.0f // Forward speed while following
+// =================== Line Follower ===================== //
+#define LINE_KP                     0.3f
+#define LINE_KD                     0.1f
+#define LINE_FOLLOW_BASE_SPEED_MMPS 150.0f
 
 #endif // CONFIG_TUNING_H

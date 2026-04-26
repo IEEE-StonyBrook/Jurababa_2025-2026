@@ -114,9 +114,9 @@ Core 1:
 
 Claude must be careful with shared state between cores. Any change involving inter-core communication, sensor data sharing, command queues, or timing must consider race conditions and stale data.
 
-## 2. MotorLab Mode
+## 2. DriverLab Mode
 
-MotorLab Mode is a single-core calibration and characterization mode.
+DriverLab Mode is a single-core calibration and characterization mode.
 
 It provides:
 
@@ -125,14 +125,14 @@ It provides:
 * Step response testing.
 * Export of `config.h`/`tuning.h`-compatible constants.
 
-MotorLab is for understanding the physical drivetrain, not for maze solving.
+DriverLab is for understanding the physical drivetrain, not for maze solving.
 
 ## Mode Selection
 
 At startup:
 
 ```text
-Press 'M' within 3 seconds → enter MotorLab mode.
+Press 'M' within 3 seconds → enter DriverLab mode.
 Otherwise → enter Normal Mode automatically.
 ```
 
@@ -194,8 +194,8 @@ firmware/
 │   ├── multicore.h            # Sensor data sharing
 │   └── api.h/cpp              # High-level maze interface
 │
-├── motor_lab/                 # Motor characterization tool
-│   ├── motor_lab.h/cpp        # CLI interface
+├── driver_lab/                 # Motor characterization tool
+│   ├── driver_lab.h/cpp        # CLI interface
 │   ├── profile.h/cpp          # Time-based motion profile
 │   ├── reporter.h/cpp         # CSV data logging
 │   └── settings.h             # Calibration parameters
@@ -447,7 +447,7 @@ PWM:           normalized duty or raw hardware value, must be explicit
 All velocities use **mm/s** throughout the codebase:
 
 * Feedforward constants: duty per mm/s.
-* MotorLab trials: mm, mm/s, mm/s².
+* DriverLab trials: mm, mm/s, mm/s².
 * Robot motion: mm, mm/s.
 
 Preferred suffixes:
@@ -472,7 +472,7 @@ The project follows a Google C++ Style-inspired convention.
 
 | Element          | Convention          | Example                         |
 | ---------------- | ------------------- | ------------------------------- |
-| Files            | `snake_case.h/.cpp` | `flood_fill.cpp`, `motor_lab.h` |
+| Files            | `snake_case.h/.cpp` | `flood_fill.cpp`, `driver_lab.h` |
 | Classes          | `PascalCase`        | `Drivetrain`, `FloodFill`       |
 | Functions        | `camelCase`         | `updateState()`, `wallLeft()`   |
 | Accessors        | No `get` prefix     | `velocity()`                    |
@@ -635,10 +635,10 @@ is compatible with the `mms` Micromouse simulator.
 
 ## Motor Calibration
 
-MotorLab workflow:
+DriverLab workflow:
 
 1. Flash firmware.
-2. Enter MotorLab mode by pressing `M` during startup.
+2. Enter DriverLab mode by pressing `M` during startup.
 3. Run `OL` for open-loop voltage sweep to estimate motor constants.
 4. Run `STEP` for step response to estimate motor time constant.
 5. Run `EXPORT` to generate configuration-compatible constants.
@@ -646,20 +646,20 @@ MotorLab workflow:
 Important files:
 
 ```text
-firmware/motor_lab/motor_lab.h
-firmware/motor_lab/motor_lab.cpp
-firmware/motor_lab/profile.h
-firmware/motor_lab/profile.cpp
-firmware/motor_lab/reporter.h
-firmware/motor_lab/reporter.cpp
-firmware/motor_lab/settings.h
+firmware/driver_lab/driver_lab.h
+firmware/driver_lab/driver_lab.cpp
+firmware/driver_lab/profile.h
+firmware/driver_lab/profile.cpp
+firmware/driver_lab/reporter.h
+firmware/driver_lab/reporter.cpp
+firmware/driver_lab/settings.h
 ```
 
 ## Dashboard
 
 ```bash
 cd tools
-python3 motorlab_dashboard.py
+python3 driverlab_dashboard.py
 ```
 
 The dashboard is used for calibration visualization and analysis.
@@ -864,7 +864,7 @@ Add bidirectional wall detection to simulator
 
 Fix FloodFill exploration loop caused by unidirectional walls
 
-Tune drivetrain feedforward constants from MotorLab export
+Tune drivetrain feedforward constants from DriverLab export
 
 Refactor path conversion into explicit turn commands
 ```

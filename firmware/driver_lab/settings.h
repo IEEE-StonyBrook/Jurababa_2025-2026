@@ -1,5 +1,5 @@
-#ifndef MOTOR_LAB_SETTINGS_H
-#define MOTOR_LAB_SETTINGS_H
+#ifndef DRIVER_LAB_SETTINGS_H
+#define DRIVER_LAB_SETTINGS_H
 
 #include "config/config.h"
 #include <cstdint>
@@ -21,14 +21,20 @@
  *   - Td: Derivative time constant
  *   - kP, kD: Derived PD gains
  */
-struct MotorLabSettings
+struct DriverLabSettings
 {
-    float kM; // Motor velocity constant (mm/s per volt)
+    float kM; // Motor velocity constant (mm/s per volt) - combined average
     float tm; // Motor mechanical time constant (seconds)
 
-    float kS; // Static friction compensation (volts)
+    float kS; // Static friction compensation (volts) - combined average
     float kV; // Speed feedforward (volts per mm/s) = 1/kM
     float kA; // Acceleration feedforward (volts per mm/s^2) = Tm/kM
+
+    // Per-motor characterization (from stereo OL trial)
+    float kM_L; // Left motor velocity constant (mm/s per volt)
+    float kM_R; // Right motor velocity constant (mm/s per volt)
+    float kS_L; // Left static friction (volts)
+    float kS_R; // Right static friction (volts)
 
     float zeta; // Damping ratio
     float td;   // Derivative time constant
@@ -43,26 +49,30 @@ struct MotorLabSettings
 
     void initDefaults()
     {
-        // Load feedforward from config/tuning.h (already in Voltage units)
-        kV = (FORWARD_KVL + FORWARD_KVR) / 2.0f;
+        // Motor model from tuning.h (measured via OL and STEP trials)
+        kM = MOTOR_KM;
+        tm = MOTOR_TM;
+
+        // Feedforward: derived from motor model, with per-motor kS from OL
+        kV = 1.0f / kM;
         kS = (FORWARD_KSL + FORWARD_KSR) / 2.0f;
-        kA = (FORWARD_KAL + FORWARD_KAR) / 2.0f;
+        kA = tm / kM;
 
-        // Derive motor model from feedforward
-        kM = (kV > 1e-6f) ? (1.0f / kV) : 717.0f;
-        tm = kA * kM; // Tm = kA / kV
+        // Per-motor defaults: same as combined until OL trial separates them
+        kM_L = kM;
+        kM_R = kM;
+        kS_L = kS;
+        kS_R = kS;
 
-        // Load PID from config/tuning.h (already in Voltage units)
-        kP = FWD_KP;
-        kD = FWD_KD;
+        // Forward PD: design parameters and gains from tuning.h
+        zeta = FWD_ZETA;
+        td   = FWD_TD;
+        kP   = FWD_KP;
+        kD   = FWD_KD;
 
-        // Rotation PD gains from config/tuning.h
+        // Rotation PD
         turnKP = ROT_KP;
         turnKD = ROT_KD;
-
-        // Back-calculate zeta/td for display consistency
-        td   = (kM > 1e-6f && kP > 1e-6f) ? (1.0f / (kM * kP)) : 0.1f;
-        zeta = (td > 1e-6f) ? ((kD / kM + tm) / (2.0f * td)) : 0.707f;
 
         control_flags = 0;
     }

@@ -1,5 +1,5 @@
-#ifndef MOTOR_LAB_PROFILE_H
-#define MOTOR_LAB_PROFILE_H
+#ifndef DRIVER_LAB_PROFILE_H
+#define DRIVER_LAB_PROFILE_H
 
 /**
  * @brief Time-based trapezoidal profile for motor lab trials
@@ -8,7 +8,7 @@
  * this is purely time-based for generating predictable test waveforms.
  */
 
-enum class MotorLabProfileState
+enum class DriverLabProfileState
 {
     IDLE,
     ACCELERATING,
@@ -17,10 +17,10 @@ enum class MotorLabProfileState
     FINISHED
 };
 
-class MotorLabProfile
+class DriverLabProfile
 {
   public:
-    MotorLabProfile();
+    DriverLabProfile();
 
     void start(float distance, float top_speed, float acceleration, float final_speed = 0.0f);
     void update(float dt);
@@ -31,18 +31,18 @@ class MotorLabProfile
     float acceleration() const;
     float brakingDistance() const;
 
-    bool                 finished() const { return state_ == MotorLabProfileState::FINISHED; }
-    MotorLabProfileState state() const { return state_; }
+    bool                  finished() const { return state_ == DriverLabProfileState::FINISHED; }
+    DriverLabProfileState state() const { return state_; }
 
   private:
-    MotorLabProfileState state_;
-    float                target_distance_;
-    float                top_speed_;
-    float                final_speed_;
-    float                acceleration_;
-    float                position_;
-    float                speed_;
-    float                direction_;
+    DriverLabProfileState state_;
+    float                 target_distance_;
+    float                 top_speed_;
+    float                 final_speed_;
+    float                 acceleration_;
+    float                 position_;
+    float                 speed_;
+    float                 direction_;
 };
 
 #endif

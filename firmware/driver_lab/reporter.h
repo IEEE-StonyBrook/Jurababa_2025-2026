@@ -1,5 +1,5 @@
-#ifndef MOTOR_LAB_REPORTER_H
-#define MOTOR_LAB_REPORTER_H
+#ifndef DRIVER_LAB_REPORTER_H
+#define DRIVER_LAB_REPORTER_H
 
 #include <cstdint>
 
@@ -8,10 +8,10 @@
  *
  * Outputs CSV-compatible data for analysis in spreadsheets or Python.
  */
-class MotorLabReporter
+class DriverLabReporter
 {
   public:
-    explicit MotorLabReporter(uint32_t interval_ms = 10);
+    explicit DriverLabReporter(uint32_t interval_ms = 10);
 
     void setInterval(uint32_t interval_ms);
     void begin();
@@ -28,6 +28,11 @@ class MotorLabReporter
 
     void printOpenLoopHeader();
     void reportOpenLoop(uint32_t time_ms, float voltage, float speed);
+
+    void printOpenLoopStereoHeader();
+    void reportOpenLoopStereo(uint32_t time_ms, float cmd_voltage, float left_voltage,
+                              float right_voltage, float left_speed, float right_speed,
+                              float steer_volts);
 
     void printStepHeader();
     void reportStep(uint32_t time_ms, float step_voltage, float speed, float position);
