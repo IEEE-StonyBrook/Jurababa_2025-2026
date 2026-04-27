@@ -177,7 +177,6 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
 
         while (to_ms_since_boot(get_absolute_time()) - step_start < settle_time_ms)
         {
-            dt->update(LOOP_INTERVAL_S);
             robot_->update(LOOP_INTERVAL_S);
 
             float left_speed  = dt->velocity(WheelSide::LEFT);

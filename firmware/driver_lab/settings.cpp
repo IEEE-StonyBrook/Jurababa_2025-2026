@@ -5,44 +5,31 @@
 void DriverLabSettings::print() const
 {
     printf("\n");
-    printf("=== DriverLab Settings ===\n");
-    printf("\n");
+    printf("=== Settings ===\n");
 
-    printf("--- Motor Model (Combined) ---\n");
-    printf("  kM = %8.2f mm/s/V    (velocity constant)\n", kM);
-    printf("  kS = %8.4f V         (static friction)\n", kS);
-    printf("  Tm = %8.5f s         (time constant)\n", tm);
-    printf("\n");
+    // Motor model
+    printf("kM   = %8.2f  mm/s/V\n", kM);
+    printf("Tm   = %8.5f  s\n", tm);
+    printf("kS   = %8.4f  V\n", kS);
 
-    printf("--- Motor Model (Per-Motor) ---\n");
-    printf("  kM_L = %8.2f mm/s/V  kM_R = %8.2f mm/s/V\n", kM_L, kM_R);
-    printf("  kS_L = %8.4f V       kS_R = %8.4f V\n", kS_L, kS_R);
-    printf("\n");
+    // Per-motor (only show if they differ from combined)
+    if (kM_L != kM || kM_R != kM || kS_L != kS || kS_R != kS)
+    {
+        printf("  L: kM=%.1f kS=%.4f  R: kM=%.1f kS=%.4f\n", kM_L, kS_L, kM_R, kS_R);
+    }
 
-    printf("--- Feedforward ---\n");
-    printf("  kV = %.7f V/(mm/s)    (speed FF = 1/kM)\n", kV);
-    printf("  kA = %.7f V/(mm/s^2)  (accel FF = Tm/kM)\n", kA);
-    printf("\n");
+    // Feedforward
+    printf("kV   = %.7f  V/(mm/s)\n", kV);
+    printf("kA   = %.7f  V/(mm/s^2)\n", kA);
 
-    printf("--- Forward PD Controller ---\n");
-    printf("  kP   = %.5f\n", kP);
-    printf("  kD   = %.5f\n", kD);
-    printf("  zeta = %.4f           (damping ratio)\n", zeta);
-    printf("  Td   = %.5f s         (derivative time)\n", td);
-    printf("\n");
+    // Forward PD
+    printf("zeta = %8.4f\n", zeta);
+    printf("Td   = %8.5f  s\n", td);
+    printf("kP   = %8.5f\n", kP);
+    printf("kD   = %8.5f\n", kD);
 
-    printf("--- Rotation PD Controller ---\n");
-    printf("  turnKP = %.4f\n", turnKP);
-    printf("  turnKD = %.4f\n", turnKD);
+    // Rotation PD
+    printf("turnKP = %.4f\n", turnKP);
+    printf("turnKD = %.4f\n", turnKD);
     printf("\n");
-
-    printf("--- Control Mode ---\n");
-    printf("  flags = 0x%02X", control_flags);
-    if (control_flags & 0x01)
-        printf(" [FF]");
-    if (control_flags & 0x02)
-        printf(" [PD]");
-    if (control_flags == 0)
-        printf(" [none]");
-    printf("\n\n");
 }

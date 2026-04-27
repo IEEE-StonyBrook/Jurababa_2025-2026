@@ -24,7 +24,7 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtCore import Qt, QThread, pyqtSignal as Signal, pyqtSlot as Slot, QTimer
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow,
-    QStatusBar,
+    QStatusBar, QScrollArea,
     QSpacerItem, QMessageBox, QSizePolicy,
     QWidget, QGroupBox, QFrame,
     QDoubleSpinBox, QComboBox,
@@ -419,7 +419,8 @@ class Dashboard(QMainWindow):
         self.mode_button_group.addButton(self.rb_onlyff)
 
         # ========== SIDEBAR ==========
-        self.side_bar = QWidget()
+        # Inner widget holds all sidebar content
+        side_inner = QWidget()
         side_layout = QVBoxLayout()
         side_layout.addWidget(port_group)
         side_layout.addWidget(self.text_box)
@@ -428,8 +429,14 @@ class Dashboard(QMainWindow):
         side_layout.addWidget(trials_group)
         side_layout.addLayout(option_layout)
         side_layout.addWidget(settings_group)
-        self.side_bar.setLayout(side_layout)
-        self.side_bar.setMinimumWidth(250)
+        side_inner.setLayout(side_layout)
+
+        # Scroll area wraps the inner widget so it scrolls when too small
+        self.side_bar = QScrollArea()
+        self.side_bar.setWidget(side_inner)
+        self.side_bar.setWidgetResizable(True)
+        self.side_bar.setMinimumWidth(270)
+        self.side_bar.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
         # ========== STATUS BAR ==========
         self.status_bar = QStatusBar()
@@ -828,21 +835,32 @@ class Dashboard(QMainWindow):
             self.set_safely(self.spin_turn_kd, self.parameters['turnKD'])
 
     def write_parameters(self):
-        """Send all parameter values to device."""
-        # Send kM and Tm if we have them (from OL calculation)
+        """Send all parameter values to device.
+
+        Must be called with the monitor thread stopped — otherwise the monitor
+        eats the firmware's response bytes and commands silently fail.
+        """
+        cmds = []
         if 'kM' in self.parameters:
-            self.write(f"KM {self.parameters['kM']}\n")
+            cmds.append(f"KM {self.parameters['kM']}")
         if 'Tm' in self.parameters:
-            self.write(f"TM {self.parameters['Tm']}\n")
-        self.write(f"BIAS {self.spin_biasff.value()}\n")
-        self.write(f"SPEEDFF {self.spin_speedff.value()}\n")
-        self.write(f"ACCFF {self.spin_accff.value()}\n")
-        self.write(f"ZETA {self.spin_zeta.value()}\n")
-        self.write(f"TD {self.spin_td.value()}\n")
-        self.write(f"KP {self.spin_kp.value()}\n")
-        self.write(f"KD {self.spin_kd.value()}\n")
-        self.write(f"TURN_KP {self.spin_turn_kp.value()}\n")
-        self.write(f"TURN_KD {self.spin_turn_kd.value()}\n")
+            cmds.append(f"TM {self.parameters['Tm']}")
+        cmds.append(f"BIAS {self.spin_biasff.value()}")
+        cmds.append(f"SPEEDFF {self.spin_speedff.value()}")
+        cmds.append(f"ACCFF {self.spin_accff.value()}")
+        cmds.append(f"ZETA {self.spin_zeta.value()}")
+        cmds.append(f"TD {self.spin_td.value()}")
+        cmds.append(f"KP {self.spin_kp.value()}")
+        cmds.append(f"KD {self.spin_kd.value()}")
+        cmds.append(f"TURN_KP {self.spin_turn_kp.value()}")
+        cmds.append(f"TURN_KD {self.spin_turn_kd.value()}")
+
+        for cmd in cmds:
+            self.serial.write((cmd + '\n').encode('ascii'))
+            # Wait for firmware to process + drain its response
+            time.sleep(0.05)
+            if self.serial.in_waiting:
+                self.serial.read(self.serial.in_waiting)
 
     def target_reset(self):
         self.output_plot.clear()
@@ -911,11 +929,48 @@ class Dashboard(QMainWindow):
     def write_settings(self):
         if not self.device:
             return
-        self.log_message('Save Settings')
+        self.log_message('Writing settings...')
+
+        # Stop monitor so it doesn't steal response bytes during writes
+        was_monitoring = self.monitoring
+        if was_monitoring:
+            self.stop_monitoring()
+
+        self.serial.flushInput()
         self.write_parameters()
-        self.data = self.query("SETTINGS\n")
+
+        # Now read back settings to confirm
+        self.serial.write(b"SETTINGS\n")
+        self.data = self.get_response()
         self.log_data()
-        self.log_message('----------------')
+
+        # Parse the response to update dashboard
+        for line in self.data:
+            if '=' in line:
+                parts = line.split('=')
+                if len(parts) >= 2:
+                    raw_key = parts[0].strip()
+                    if '(' in raw_key:
+                        raw_key = raw_key.split('(')[0].strip()
+                    key_lower = raw_key.lower()
+                    key_mapping = {
+                        'km': 'kM', 'tm': 'Tm', 'ks': 'kS', 'kv': 'kV', 'ka': 'kA',
+                        'zeta': 'zeta', 'td': 'Td', 'kp': 'kP', 'kd': 'kD',
+                        'turnkp': 'turnKP', 'turnkd': 'turnKD',
+                    }
+                    key = key_mapping.get(key_lower, raw_key)
+                    val_parts = parts[1].strip().split()
+                    if val_parts:
+                        try:
+                            self.parameters[key] = float(val_parts[0])
+                        except ValueError:
+                            pass
+        self.update_parameters()
+
+        self.log_message('Settings written OK')
+
+        if was_monitoring:
+            self.start_monitoring()
 
     def reset_settings(self):
         if not self.device:
