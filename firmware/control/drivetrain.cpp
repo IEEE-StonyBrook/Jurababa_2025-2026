@@ -10,9 +10,7 @@ Drivetrain::Drivetrain(Motor* left_motor, Motor* right_motor, Encoder* left_enco
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery),
       ff_fwd_left_{FORWARD_KVL, FORWARD_KSL, FORWARD_KAL},
-      ff_fwd_right_{FORWARD_KVR, FORWARD_KSR, FORWARD_KAR},
-      ff_rev_left_{REVERSE_KVL, REVERSE_KSL, REVERSE_KAL},
-      ff_rev_right_{REVERSE_KVR, REVERSE_KSR, REVERSE_KAR}
+      ff_fwd_right_{FORWARD_KVR, FORWARD_KSR, FORWARD_KAR}
 {
 }
 
@@ -73,33 +71,17 @@ float Drivetrain::feedforward(WheelSide side, float speed_mmps, float accel_mmps
     if (std::fabs(speed_mmps) < DRIVETRAIN_FF_DEADZONE_MMPS)
         return 0.0f;
 
-    bool is_left = (side == WheelSide::LEFT);
-
-    if (speed_mmps > 0.0f)
-    {
-        const FFCoeffs& c = is_left ? ff_fwd_left_ : ff_fwd_right_;
-        return c.kv * speed_mmps + c.ks + c.ka * accel_mmps2;
-    }
-    else
-    {
-        const FFCoeffs& c = is_left ? ff_rev_left_ : ff_rev_right_;
-        return c.kv * speed_mmps - c.ks + c.ka * accel_mmps2;
-    }
+    bool            is_left = (side == WheelSide::LEFT);
+    const FFCoeffs& c       = is_left ? ff_fwd_left_ : ff_fwd_right_;
+    return c.kv * speed_mmps + std::copysign(c.ks, speed_mmps) + c.ka * accel_mmps2;
 }
 
 void Drivetrain::setFeedforward(WheelSide side, float kv, float ks, float ka)
 {
-    bool is_left = (side == WheelSide::LEFT);
-    if (is_left)
-    {
+    if (side == WheelSide::LEFT)
         ff_fwd_left_ = {kv, ks, ka};
-        ff_rev_left_ = {kv, ks, ka};
-    }
     else
-    {
         ff_fwd_right_ = {kv, ks, ka};
-        ff_rev_right_ = {kv, ks, ka};
-    }
 }
 
 void Drivetrain::update(float dt)

@@ -24,14 +24,6 @@
 #define FORWARD_KAL 0.0f          // Left  V/(mm/s^2)   = Tm/kM
 #define FORWARD_KAR 0.0f          // Right V/(mm/s^2)
 
-// Reverse (may differ from forward)
-#define REVERSE_KVL 0.0029239766f
-#define REVERSE_KVR 0.0029239766f
-#define REVERSE_KSL 0.35f
-#define REVERSE_KSR 0.35f
-#define REVERSE_KAL 0.0f
-#define REVERSE_KAR 0.0f
-
 // ================ Forward PD Controller ================ //
 // Design params: pick zeta & Td → auto-derive kP, kD
 //   kP = 1 / (kM * Td)
@@ -42,7 +34,7 @@
 #define FWD_KD   0.0f   // Derivative gain
 
 // ================ Rotation PD Controller =============== //
-#define ROT_KP 0.15f // Turn proportional gain
+#define ROT_KP 0.01f // Turn proportional gain
 #define ROT_KD 0.0f  // Turn derivative gain
 
 // =================== Line Follower ===================== //

@@ -105,7 +105,6 @@ class Drivetrain
         float kv, ks, ka;
     };
     FFCoeffs ff_fwd_left_, ff_fwd_right_;
-    FFCoeffs ff_rev_left_, ff_rev_right_;
 };
 
 #endif
