@@ -87,6 +87,9 @@ void IMU::parsePacketAndExtractYaw()
     int16_t raw_yaw     = (packet_buffer_[IMU_IDX_YAW_H] << 8) | packet_buffer_[IMU_IDX_YAW_L];
     float   yaw_degrees = static_cast<float>(raw_yaw) / IMU_RAW_TO_DEGREES_DIVISOR;
 
+    // Apply mounting-orientation sign correction so positive yaw = CCW (left).
+    yaw_degrees *= IMU_YAW_SIGN;
+
     // Normalize to [-180, 180]
     yaw_degrees = fmodf(yaw_degrees + 180.0f, 360.0f) - 180.0f;
 

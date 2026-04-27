@@ -109,8 +109,9 @@ class Dashboard(QMainWindow):
         # Enable mouse interaction for zoom/pan
         self.output_plot.setMouseEnabled(x=True, y=True)
         self.output_plot.enableAutoRange(enable=True)
-        ax = self.output_plot.getPlotItem().getAxis('left')
-        ax.setWidth(60)
+        plot_item = self.output_plot.getPlotItem()
+        if plot_item is not None:
+            plot_item.getAxis('left').setWidth(60)
 
         # Motion plot (speed)
         self.motion_plot = pg.PlotWidget()
@@ -122,8 +123,9 @@ class Dashboard(QMainWindow):
         # Enable mouse interaction for zoom/pan
         self.motion_plot.setMouseEnabled(x=True, y=True)
         self.motion_plot.enableAutoRange(enable=True)
-        ax = self.motion_plot.getPlotItem().getAxis('left')
-        ax.setWidth(60)
+        plot_item = self.motion_plot.getPlotItem()
+        if plot_item is not None:
+            plot_item.getAxis('left').setWidth(60)
         self.motion_plot.addLegend(offset=(-5, 20))
 
         # ========== PORT SELECTION GROUP ==========
@@ -135,7 +137,9 @@ class Dashboard(QMainWindow):
         self.port_combo = QComboBox()
         self.port_combo.setEditable(True)
         self.port_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.port_combo.lineEdit().setPlaceholderText("Select or enter port...")
+        port_line_edit = self.port_combo.lineEdit()
+        if port_line_edit is not None:
+            port_line_edit.setPlaceholderText("Select or enter port...")
         self.port_combo.setMinimumWidth(150)
         port_select_layout.addWidget(self.port_combo)
 
@@ -396,22 +400,27 @@ class Dashboard(QMainWindow):
         option_layout = QHBoxLayout()
         self.rb_full = QRadioButton("Full")
         self.rb_full.setToolTip("FF + PD")
-        self.rb_full.mode = FULL_CONTROL
         self.rb_full.toggled.connect(self.option_select)
         option_layout.addWidget(self.rb_full)
 
         self.rb_noff = QRadioButton("PD Only")
         self.rb_noff.setToolTip("PD feedback only, no feedforward")
-        self.rb_noff.mode = NO_FF
         self.rb_noff.toggled.connect(self.option_select)
         option_layout.addWidget(self.rb_noff)
 
         self.rb_onlyff = QRadioButton("FF Only")
         self.rb_onlyff.setToolTip("Feedforward only, no PD feedback")
-        self.rb_onlyff.mode = ONLY_FF
         self.rb_onlyff.toggled.connect(self.option_select)
         option_layout.addWidget(self.rb_onlyff)
         self.rb_onlyff.setChecked(True)
+
+        # Map each radio button to its control mode. Replaces a dynamic
+        # `.mode` attribute on QRadioButton, which the type checker rejects.
+        self.mode_for_button = {
+            self.rb_full: FULL_CONTROL,
+            self.rb_noff: NO_FF,
+            self.rb_onlyff: ONLY_FF,
+        }
 
         self.mode_button_group = QButtonGroup(self)
         self.mode_button_group.addButton(self.rb_full)
@@ -592,8 +601,9 @@ class Dashboard(QMainWindow):
     def disconnect_device(self):
         """Disconnect from current device."""
         self.stop_monitoring()
-        if self.serial and self.serial.is_open:
-            self.serial.close()
+        ser = self.serial
+        if ser is not None and ser.is_open:
+            ser.close()
         self.device = None
         self.serial = None
         self.btn_connect.setText("Connect")
@@ -625,6 +635,8 @@ class Dashboard(QMainWindow):
 
     def parameter_change(self):
         spinner = self.sender()
+        if spinner is None:
+            return
         if spinner.objectName() == "zeta" or spinner.objectName() == "Td":
             if "Tm" in self.parameters and "kM" in self.parameters:
                 tm = self.parameters["Tm"]
@@ -639,12 +651,17 @@ class Dashboard(QMainWindow):
                 self.set_safely(self.spin_kd, kd)
 
     def option_select(self):
-        radioButton = self.sender()
-        if radioButton.isChecked():
-            self.move_mode = radioButton.mode
+        radio_button = self.sender()
+        if not isinstance(radio_button, QRadioButton):
+            return
+        if radio_button.isChecked() and radio_button in self.mode_for_button:
+            self.move_mode = self.mode_for_button[radio_button]
 
     def center_window(self):
-        screen = QApplication.primaryScreen().availableGeometry()
+        primary = QApplication.primaryScreen()
+        if primary is None:
+            return
+        screen = primary.availableGeometry()
         qr = self.frameGeometry()
         qr.moveCenter(screen.center())
         self.move(qr.topLeft())
@@ -688,8 +705,9 @@ class Dashboard(QMainWindow):
 
     def closeEvent(self, unused_event):
         self.stop_monitoring()
-        if self.serial and self.serial.is_open:
-            self.serial.close()
+        ser = self.serial
+        if ser is not None and ser.is_open:
+            ser.close()
 
     @Slot(str, str, str)
     def show_dialog(self, title, message, details):
@@ -701,8 +719,13 @@ class Dashboard(QMainWindow):
         msg_box.setText(title)
         msg_box.setInformativeText('<font face=Arial>' + message + '</font>')
         horizontalSpacer = QSpacerItem(550, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        # QMessageBox uses a QGridLayout internally; widen its first column
+        # by parking a tall spacer in the unused last row.
         layout = msg_box.layout()
-        layout.addItem(horizontalSpacer, layout.rowCount(), 0, 1, layout.columnCount())
+        if isinstance(layout, QGridLayout):
+            row = layout.rowCount()
+            cols = layout.columnCount()
+            layout.addItem(horizontalSpacer, row, 0, 1, cols)
         msg_box.exec()
 
     # ========== PLOTTING ==========
@@ -741,6 +764,9 @@ class Dashboard(QMainWindow):
         Uses empty-read counting to handle variable data rates without
         truncating data that's still being transmitted.
         """
+        if self.serial is None:
+            return []
+        ser = self.serial
         data = []
         empty_reads = 0
         max_empty_reads = 50  # Allow ~50 empty reads (each ~10ms) before giving up
@@ -752,8 +778,8 @@ class Dashboard(QMainWindow):
                 break
 
             # Non-blocking check for available data
-            if self.serial.in_waiting > 0:
-                line = self.serial.readline().decode('ascii', errors='ignore').strip()
+            if ser.in_waiting > 0:
+                line = ser.readline().decode('ascii', errors='ignore').strip()
                 empty_reads = 0  # Reset empty counter on successful read
 
                 if line == '>':
@@ -773,10 +799,11 @@ class Dashboard(QMainWindow):
 
     def write(self, message):
         """Send a message and throw away the response."""
-        if not self.device:
+        if not self.device or self.serial is None:
             return
-        self.serial.flushInput()
-        self.serial.write(message.encode('ascii'))
+        ser = self.serial
+        ser.reset_input_buffer()
+        ser.write(message.encode('ascii'))
 
     def query(self, message):
         """Send a message and return the response.
@@ -784,7 +811,7 @@ class Dashboard(QMainWindow):
         Stops the monitor thread to avoid serial read conflicts,
         then restarts it after the response is collected.
         """
-        if not self.device:
+        if not self.device or self.serial is None:
             return []
 
         # Stop monitor thread so it doesn't steal our response bytes
@@ -792,8 +819,9 @@ class Dashboard(QMainWindow):
         if was_monitoring:
             self.stop_monitoring()
 
-        self.serial.flushInput()
-        self.serial.write(message.encode('ascii'))
+        ser = self.serial
+        ser.reset_input_buffer()
+        ser.write(message.encode('ascii'))
         response = self.get_response()
 
         # Restart monitor
@@ -840,6 +868,9 @@ class Dashboard(QMainWindow):
         Must be called with the monitor thread stopped — otherwise the monitor
         eats the firmware's response bytes and commands silently fail.
         """
+        if self.serial is None:
+            return
+        ser = self.serial
         cmds = []
         if 'kM' in self.parameters:
             cmds.append(f"KM {self.parameters['kM']}")
@@ -856,22 +887,23 @@ class Dashboard(QMainWindow):
         cmds.append(f"TURN_KD {self.spin_turn_kd.value()}")
 
         for cmd in cmds:
-            self.serial.write((cmd + '\n').encode('ascii'))
+            ser.write((cmd + '\n').encode('ascii'))
             # Wait for firmware to process + drain its response
             time.sleep(0.05)
-            if self.serial.in_waiting:
-                self.serial.read(self.serial.in_waiting)
+            if ser.in_waiting:
+                ser.read(ser.in_waiting)
 
     def target_reset(self):
         self.output_plot.clear()
         self.motion_plot.clear()
         self.log_message('Device Reset')
-        if self.serial:
+        ser = self.serial
+        if ser is not None:
             try:
                 # Try DTR reset (works for real USB serial ports)
-                self.serial.setDTR(0)
+                ser.dtr = False
                 time.sleep(0.1)
-                self.serial.setDTR(1)
+                ser.dtr = True
             except (OSError, AttributeError):
                 # Ignore for virtual ports like /tmp/ttyBLE that don't support DTR
                 pass
@@ -927,8 +959,9 @@ class Dashboard(QMainWindow):
         self.log_message('----------------')
 
     def write_settings(self):
-        if not self.device:
+        if not self.device or self.serial is None:
             return
+        ser = self.serial
         self.log_message('Writing settings...')
 
         # Stop monitor so it doesn't steal response bytes during writes
@@ -936,11 +969,11 @@ class Dashboard(QMainWindow):
         if was_monitoring:
             self.stop_monitoring()
 
-        self.serial.flushInput()
+        ser.reset_input_buffer()
         self.write_parameters()
 
         # Now read back settings to confirm
-        self.serial.write(b"SETTINGS\n")
+        ser.write(b"SETTINGS\n")
         self.data = self.get_response()
         self.log_data()
 
@@ -1059,18 +1092,20 @@ class Dashboard(QMainWindow):
 
     def run_trial(self, cmd):
         """Send a trial command via the serial monitor path (button-initiated)."""
-        if not self.device:
+        if not self.device or self.serial is None:
             self.log_message("Not connected")
             return
+        ser = self.serial
         self.clear_monitor()
         self.text_box.appendPlainText(f"> {cmd}")
-        self.serial.write((cmd + '\n').encode('ascii'))
+        ser.write((cmd + '\n').encode('ascii'))
 
     def send_command(self):
         """Send a command from the input field with local echo."""
         cmd = self.cmd_input.text().strip()
-        if not cmd or not self.device:
+        if not cmd or not self.device or self.serial is None:
             return
+        ser = self.serial
 
         # Clear graphs for trial commands (fresh plot for each trial)
         cmd_upper = cmd.split()[0].upper() if cmd.split() else ""
@@ -1081,7 +1116,7 @@ class Dashboard(QMainWindow):
         self.text_box.appendPlainText(f"> {cmd}")
 
         # Send with newline
-        self.serial.write((cmd + '\n').encode('ascii'))
+        ser.write((cmd + '\n').encode('ascii'))
 
         # Clear input
         self.cmd_input.clear()
@@ -1216,18 +1251,23 @@ class Dashboard(QMainWindow):
 
                 if 'steer_v' in headings_str:
                     # Stereo OL: time_ms,cmd_v,left_v,right_v,left_speed,right_speed,steer_v,yaw
-                    # Output plot: left motor voltage, right motor voltage
+                    # Output plot: left motor voltage, right motor voltage, steering correction
                     if len(self.plot_curves['output']) == 0:
                         pen_left_v = pg.mkPen(color=palette[1], width=2)
                         pen_right_v = pg.mkPen(color=palette[5], width=2)
+                        pen_steer = pg.mkPen(color=palette[3], width=2, style=Qt.PenStyle.DashLine)
                         self.plot_curves['output'].append(self.output_plot.plot(name='Left V', pen=pen_left_v))
                         self.plot_curves['output'].append(self.output_plot.plot(name='Right V', pen=pen_right_v))
+                        self.plot_curves['output'].append(self.output_plot.plot(name='Steer V', pen=pen_steer))
 
                     x, y = self._get_valid_data(0, 2)  # left_v
                     self.plot_curves['output'][0].setData(x, y)
                     x, y = self._get_valid_data(0, 3)  # right_v
                     if len(self.plot_curves['output']) > 1:
                         self.plot_curves['output'][1].setData(x, y)
+                    x, y = self._get_valid_data(0, 6)  # steer_v
+                    if len(self.plot_curves['output']) > 2:
+                        self.plot_curves['output'][2].setData(x, y)
                     self.output_plot.enableAutoRange()
 
                     # Motion plot: left speed vs right speed
@@ -1397,8 +1437,9 @@ class SerialMonitor(QThread):
         """Read serial data continuously."""
         while self.running:
             try:
-                if self.serial and self.serial.is_open and self.serial.in_waiting:
-                    line = self.serial.readline().decode('ascii', errors='ignore').strip()
+                ser = self.serial
+                if ser is not None and ser.is_open and ser.in_waiting:
+                    line = ser.readline().decode('ascii', errors='ignore').strip()
                     if line:
                         self.data_received.emit(line)
                 else:

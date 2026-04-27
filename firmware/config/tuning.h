@@ -12,15 +12,15 @@
 #define CONFIG_TUNING_H
 
 // ===================== Motor Model ===================== //
-#define MOTOR_KM 342.0f // mm/s per volt  (from OL trial)
+#define MOTOR_KM 130.0f // mm/s per volt  (from OL trial)
 #define MOTOR_TM 0.05f  // seconds        (from STEP trial)
 
 // ================ Feedforward (per motor) ============== //
 // V = kV * speed + kS + kA * accel
 #define FORWARD_KVL 0.0029239766f // Left  V/(mm/s)     = 1/kM
 #define FORWARD_KVR 0.0029239766f // Right V/(mm/s)
-#define FORWARD_KSL 0.35f         // Left  static friction (V)
-#define FORWARD_KSR 0.35f         // Right static friction (V)
+#define FORWARD_KSL 0.40f         // Left  static friction (V)
+#define FORWARD_KSR 0.40f         // Right static friction (V)
 #define FORWARD_KAL 0.0f          // Left  V/(mm/s^2)   = Tm/kM
 #define FORWARD_KAR 0.0f          // Right V/(mm/s^2)
 

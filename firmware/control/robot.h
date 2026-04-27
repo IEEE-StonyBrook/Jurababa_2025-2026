@@ -50,7 +50,7 @@ class Robot
     float omega();    // Angular velocity (deg/s)
     float yawDelta(); // Change since last call
     void  resetYaw();
-    void  resetHeadingControl();
+    void  resetHeadingControl(); // Full reset: zeros yaw + clears PD state. Use at trial start.
     float headingCorrection(float target_omega_degps, float dt);
 
     // === ToF Distances ===

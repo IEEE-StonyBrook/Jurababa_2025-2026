@@ -77,12 +77,27 @@ struct DriverLabSettings
         control_flags = 0;
     }
 
-    void recalculateDerived()
+    // Recompute feedforward (kV, kA) from motor model (kM, tm).
+    // Only call when kM or tm changes, since these can also be manually overridden.
+    void recalculateFeedforward()
     {
         kV = 1.0f / kM;
         kA = tm / kM;
+    }
+
+    // Recompute PD gains (kP, kD) from controller design parameters.
+    // Safe to call on any change to zeta, td, kM, or tm — does not clobber kV/kA.
+    void recalculatePD()
+    {
         kP = 1.0f / (kM * td);
         kD = (2.0f * zeta * td - tm) / kM;
+    }
+
+    // Recompute everything. Use only when motor model parameters change.
+    void recalculateDerived()
+    {
+        recalculateFeedforward();
+        recalculatePD();
     }
 
     void print() const;

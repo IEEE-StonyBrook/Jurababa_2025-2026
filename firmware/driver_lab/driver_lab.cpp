@@ -149,7 +149,7 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
     Drivetrain* dt = robot_->drivetrain();
     dt->reset();
     robot_->setRotationGains(settings_.turnKP, 0.0f, settings_.turnKD);
-    robot_->resetHeadingControl();
+    robot_->resetHeadingControl(); // Trial start: zero yaw + clear PD state.
 
     // Per-motor steady-state data for independent regression
     std::vector<float> left_voltages, left_speeds;
@@ -165,9 +165,6 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
     // Sweep from 0 to max_voltage
     for (float voltage = step_voltage; voltage <= max_voltage + 0.01f; voltage += step_voltage)
     {
-        // Reset heading control at each voltage step to avoid error buildup
-        robot_->resetHeadingControl();
-
         // Per-step buffers for steady-state averaging
         std::vector<float> step_left_speeds, step_right_speeds;
         std::vector<float> step_left_volts, step_right_volts;
@@ -1148,7 +1145,7 @@ void DriverLab::cmdSetZeta(const DriverLabArgs& args)
     if (parseFloat(args, 1, 0.1f, 2.0f, val))
     {
         settings_.zeta = val;
-        settings_.recalculateDerived();
+        settings_.recalculatePD();
         printf("zeta = %.5f (Kp, Kd updated)\n", settings_.zeta);
     }
     else if (args.argc == 1)
@@ -1163,7 +1160,7 @@ void DriverLab::cmdSetTd(const DriverLabArgs& args)
     if (parseFloat(args, 1, 0.001f, 1.0f, val))
     {
         settings_.td = val;
-        settings_.recalculateDerived();
+        settings_.recalculatePD();
         printf("Td = %.5f (Kp, Kd updated)\n", settings_.td);
     }
     else if (args.argc == 1)
