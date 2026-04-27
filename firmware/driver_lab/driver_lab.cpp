@@ -492,8 +492,13 @@ void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration
 
     // Sync DriverLab settings → Robot/Drivetrain
     robot_->setForwardGains(settings_.kP, 0.0f, settings_.kD);
-    robot_->setFeedforward(WheelSide::LEFT, settings_.kV, settings_.kS, settings_.kA);
-    robot_->setFeedforward(WheelSide::RIGHT, settings_.kV, settings_.kS, settings_.kA);
+
+    // Per-motor FF: kV from OL-fitted kM_L/kM_R, kS_L/kS_R from per-motor
+    // regression, kA_L/kA_R already derived (or manually set via ACCFF).
+    const float kV_L = 1.0f / settings_.kM_L;
+    const float kV_R = 1.0f / settings_.kM_R;
+    robot_->setFeedforward(WheelSide::LEFT, kV_L, settings_.kS_L, settings_.kA_L);
+    robot_->setFeedforward(WheelSide::RIGHT, kV_R, settings_.kS_R, settings_.kA_R);
 
     // Set control mode: 0=FF only, 1=PD only, 2=FF+PD
     if (mode == 0)
@@ -1113,9 +1118,20 @@ void DriverLab::cmdSetKm(const DriverLabArgs& args)
     float val;
     if (parseFloat(args, 1, 100.0f, 10000.0f, val))
     {
-        settings_.kM = val;
+        // Only propagate to per-motor when the user is actually changing the value.
+        // Echoing the same combined value back (READ -> WRITE round-trip) must NOT
+        // clobber per-motor calibration produced by OL.
+        const bool propagate = std::fabs(val - settings_.kM) > 1e-3f;
+        settings_.kM         = val;
+        if (propagate)
+        {
+            settings_.kM_L = val;
+            settings_.kM_R = val;
+        }
         settings_.recalculateDerived();
-        printf("kM = %.2f (derived updated)\n", settings_.kM);
+        printf("kM = %.2f (%s)\n", settings_.kM,
+               propagate ? "kM_L=kM_R propagated, derived updated"
+                         : "per-motor preserved, derived updated");
     }
     else if (args.argc == 1)
     {
@@ -1202,8 +1218,18 @@ void DriverLab::cmdSetBiasFF(const DriverLabArgs& args)
     float val;
     if (parseFloat(args, 1, 0.0f, 3.0f, val))
     {
-        settings_.kS = val;
-        printf("kS = %.5f V\n", settings_.kS);
+        // See cmdSetKm: only propagate when the value actually changes, so a
+        // READ -> WRITE round-trip from the dashboard cannot overwrite per-motor
+        // kS calibrated by OL.
+        const bool propagate = std::fabs(val - settings_.kS) > 1e-6f;
+        settings_.kS         = val;
+        if (propagate)
+        {
+            settings_.kS_L = val;
+            settings_.kS_R = val;
+        }
+        printf("kS = %.5f V (%s)\n", settings_.kS,
+               propagate ? "kS_L=kS_R propagated" : "per-motor preserved");
     }
     else if (args.argc == 1)
     {
@@ -1213,12 +1239,30 @@ void DriverLab::cmdSetBiasFF(const DriverLabArgs& args)
 
 void DriverLab::cmdSetSpeedFF(const DriverLabArgs& args)
 {
-    // Speed FF is typically derived from Km, but allow override
+    // kV and kM are mathematical inverses; MOVE's per-wheel FF is derived from
+    // kM_L / kM_R, so an SPEEDFF override must update kM (and per-motor) too.
+    // Like cmdSetKm/cmdSetBiasFF, only propagate to per-motor when the value
+    // actually changes — a READ -> WRITE echo must not clobber OL data.
     float val;
     if (parseFloat(args, 1, 0.0f, 0.1f, val))
     {
-        settings_.kV = val;
-        printf("kV = %.7f V/(mm/s) (manual override)\n", settings_.kV);
+        const bool propagate = std::fabs(val - settings_.kV) > 1e-6f;
+        if (val > 1e-9f)
+        {
+            settings_.kM = 1.0f / val;
+            if (propagate)
+            {
+                settings_.kM_L = settings_.kM;
+                settings_.kM_R = settings_.kM;
+            }
+            settings_.recalculateFeedforward(); // refreshes kV, kA, kA_L, kA_R
+        }
+        else
+        {
+            settings_.kV = val; // pathological 0 input — keep override visible
+        }
+        printf("kV = %.7f V/(mm/s) (kM=%.2f, kA=%.7f, %s)\n", settings_.kV, settings_.kM,
+               settings_.kA, propagate ? "kM_L=kM_R propagated" : "per-motor preserved");
     }
     else if (args.argc == 1)
     {
@@ -1228,12 +1272,25 @@ void DriverLab::cmdSetSpeedFF(const DriverLabArgs& args)
 
 void DriverLab::cmdSetAccFF(const DriverLabArgs& args)
 {
-    // Accel FF is typically derived from Km and Tm, but allow override
+    // Mirrors cmdSetKm/cmdSetBiasFF/cmdSetSpeedFF: an override propagates to
+    // per-motor only when the value actually changes, so a READ -> WRITE echo
+    // cannot clobber per-motor kA derived from per-motor kM_L / kM_R.
+    //
+    // Note: this override is "sticky until Tm or kM changes" — a subsequent
+    // TM or KM/SPEEDFF call invokes recalculateFeedforward(), which re-derives
+    // kA, kA_L, kA_R from tm / kM_L|R and overwrites the manual values.
     float val;
     if (parseFloat(args, 1, 0.0f, 0.01f, val))
     {
-        settings_.kA = val;
-        printf("kA = %.7f V/(mm/s^2) (manual override)\n", settings_.kA);
+        const bool propagate = std::fabs(val - settings_.kA) > 1e-9f;
+        settings_.kA         = val;
+        if (propagate)
+        {
+            settings_.kA_L = val;
+            settings_.kA_R = val;
+        }
+        printf("kA = %.7f V/(mm/s^2) (%s)\n", settings_.kA,
+               propagate ? "kA_L=kA_R propagated" : "per-motor preserved");
     }
     else if (args.argc == 1)
     {
@@ -1668,8 +1725,9 @@ void DriverLab::cmdExport()
     float ksl_duty = settings_.kS_L / battery_volts;
     float ksr_duty = settings_.kS_R / battery_volts;
 
-    // Acceleration feedforward from combined model
-    float ka_duty = settings_.kA / battery_volts;
+    // Per-motor acceleration feedforward = kA_L|R / battery
+    float kal_duty = settings_.kA_L / battery_volts;
+    float kar_duty = settings_.kA_R / battery_volts;
 
     printf("\n");
     printf("// ============================================================\n");
@@ -1683,14 +1741,15 @@ void DriverLab::cmdExport()
     printf("#define FORWARD_KSL %.3ff     // Left static friction (duty)\n", ksl_duty);
     printf("#define FORWARD_KSR %.3ff     // Right static friction (duty)\n", ksr_duty);
     printf("\n");
-    printf("// Acceleration feedforward (optional, set to 0 if not used)\n");
-    printf("#define FORWARD_KAL %.7ff  // Left accel gain (duty per mm/s^2)\n", ka_duty);
-    printf("#define FORWARD_KAR %.7ff  // Right accel gain (duty per mm/s^2)\n", ka_duty);
+    printf("// Acceleration feedforward (per-motor, derived from Tm / kM_L|R)\n");
+    printf("#define FORWARD_KAL %.7ff  // Left accel gain (duty per mm/s^2)\n", kal_duty);
+    printf("#define FORWARD_KAR %.7ff  // Right accel gain (duty per mm/s^2)\n", kar_duty);
     printf("\n");
     printf("// Raw DriverLab values (for reference):\n");
     printf("//   kM_combined = %.2f mm/s/V\n", settings_.kM);
     printf("//   kM_L = %.2f mm/s/V, kM_R = %.2f mm/s/V\n", settings_.kM_L, settings_.kM_R);
     printf("//   kS_L = %.3f V, kS_R = %.3f V\n", settings_.kS_L, settings_.kS_R);
+    printf("//   kA_L = %.7f V/(mm/s^2), kA_R = %.7f V/(mm/s^2)\n", settings_.kA_L, settings_.kA_R);
     printf("//   Tm = %.5f s\n", settings_.tm);
     printf("\n");
     printf("// Rotation PD gains\n");

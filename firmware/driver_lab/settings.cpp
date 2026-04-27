@@ -12,10 +12,11 @@ void DriverLabSettings::print() const
     printf("Tm   = %8.5f  s\n", tm);
     printf("kS   = %8.4f  V\n", kS);
 
-    // Per-motor (only show if they differ from combined)
-    if (kM_L != kM || kM_R != kM || kS_L != kS || kS_R != kS)
+    // Per-motor (only show if any per-motor field diverges from combined)
+    if (kM_L != kM || kM_R != kM || kS_L != kS || kS_R != kS || kA_L != kA || kA_R != kA)
     {
-        printf("  L: kM=%.1f kS=%.4f  R: kM=%.1f kS=%.4f\n", kM_L, kS_L, kM_R, kS_R);
+        printf("  L: kM=%.1f kS=%.4f kA=%.7f  R: kM=%.1f kS=%.4f kA=%.7f\n", kM_L, kS_L, kA_L, kM_R,
+               kS_R, kA_R);
     }
 
     // Feedforward

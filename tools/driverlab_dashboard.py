@@ -229,6 +229,41 @@ class Dashboard(QMainWindow):
         motor_grid.addWidget(lbl, 1, 0)
         motor_grid.addWidget(self.lbl_tm_val, 1, 1)
 
+        # Per-motor breakdown (from OL trial's separate L/R regressions)
+        per_motor_tip = "Per-motor values from OL trial.\nLeft and right motors fit independently — asymmetry shows here when motors differ."
+
+        lbl = QLabel("kM  L | R:")
+        lbl.setAlignment(RA)
+        lbl.setToolTip(per_motor_tip)
+        self.lbl_km_lr_val = QLabel("--")
+        self.lbl_km_lr_val.setStyleSheet("font-weight: bold; font-size: 13px;")
+        motor_grid.addWidget(lbl, 2, 0)
+        motor_grid.addWidget(self.lbl_km_lr_val, 2, 1)
+
+        lbl = QLabel("kS  L | R:")
+        lbl.setAlignment(RA)
+        lbl.setToolTip("Per-motor static friction (V).\nDriverLab uses kS_L on left motor, kS_R on right.")
+        self.lbl_ks_lr_val = QLabel("--")
+        self.lbl_ks_lr_val.setStyleSheet("font-weight: bold; font-size: 13px;")
+        motor_grid.addWidget(lbl, 3, 0)
+        motor_grid.addWidget(self.lbl_ks_lr_val, 3, 1)
+
+        lbl = QLabel("kV  L | R:")
+        lbl.setAlignment(RA)
+        lbl.setToolTip("Per-motor speed feedforward = 1/kM.\nDerived in the dashboard from kM_L / kM_R.")
+        self.lbl_kv_lr_val = QLabel("--")
+        self.lbl_kv_lr_val.setStyleSheet("font-weight: bold; font-size: 13px;")
+        motor_grid.addWidget(lbl, 4, 0)
+        motor_grid.addWidget(self.lbl_kv_lr_val, 4, 1)
+
+        lbl = QLabel("kA  L | R:")
+        lbl.setAlignment(RA)
+        lbl.setToolTip("Per-motor acceleration feedforward (V per mm/s²).\nDerived from Tm / kM_L|R, or set manually via ACCFF.")
+        self.lbl_ka_lr_val = QLabel("--")
+        self.lbl_ka_lr_val.setStyleSheet("font-weight: bold; font-size: 13px;")
+        motor_grid.addWidget(lbl, 5, 0)
+        motor_grid.addWidget(self.lbl_ka_lr_val, 5, 1)
+
         motor_group.setLayout(motor_grid)
         settings_layout.addWidget(motor_group)
 
@@ -512,8 +547,27 @@ class Dashboard(QMainWindow):
         kM = defines.get('MOTOR_KM', 342.0)
         tm = defines.get('MOTOR_TM', 0.05)
         kV = 1.0 / kM if kM > 1e-6 else 0.003
-        kS = (defines.get('FORWARD_KSL', 0) + defines.get('FORWARD_KSR', 0)) / 2.0
+        kSL = defines.get('FORWARD_KSL', 0.0)
+        kSR = defines.get('FORWARD_KSR', 0.0)
+        kS = (kSL + kSR) / 2.0
         kA = tm / kM if kM > 1e-6 else 0.0
+
+        # Per-motor: tuning.h has only one MOTOR_KM, so seed both wheels
+        # with the combined kM until OL writes separate values.
+        kVL = defines.get('FORWARD_KVL', kV)
+        kVR = defines.get('FORWARD_KVR', kV)
+        kML = (1.0 / kVL) if kVL > 1e-9 else kM
+        kMR = (1.0 / kVR) if kVR > 1e-9 else kM
+        # Per-motor kA: derived (tm / kM_L|R) — same fallback shape as kV.
+        kAL = (tm / kML) if kML > 1e-6 else kA
+        kAR = (tm / kMR) if kMR > 1e-6 else kA
+        self.parameters['kM_L'] = kML
+        self.parameters['kM_R'] = kMR
+        self.parameters['kS_L'] = kSL
+        self.parameters['kS_R'] = kSR
+        self.parameters['kA_L'] = kAL
+        self.parameters['kA_R'] = kAR
+        self._update_per_motor_labels()
 
         zeta = defines.get('FWD_ZETA', 0.707)
         td = defines.get('FWD_TD', 0.025)
@@ -632,6 +686,25 @@ class Dashboard(QMainWindow):
         widget.blockSignals(True)
         widget.setValue(value)
         widget.blockSignals(False)
+
+    def _update_per_motor_labels(self):
+        """Refresh the per-motor (kM, kS, kV, kA) display labels from self.parameters."""
+        kM_L = self.parameters.get('kM_L')
+        kM_R = self.parameters.get('kM_R')
+        kS_L = self.parameters.get('kS_L')
+        kS_R = self.parameters.get('kS_R')
+        kA_L = self.parameters.get('kA_L')
+        kA_R = self.parameters.get('kA_R')
+
+        if kM_L is not None and kM_R is not None:
+            self.lbl_km_lr_val.setText(f"{kM_L:.2f}  |  {kM_R:.2f}")
+            kV_L = (1.0 / kM_L) if kM_L > 1e-6 else 0.0
+            kV_R = (1.0 / kM_R) if kM_R > 1e-6 else 0.0
+            self.lbl_kv_lr_val.setText(f"{kV_L:.5f}  |  {kV_R:.5f}")
+        if kS_L is not None and kS_R is not None:
+            self.lbl_ks_lr_val.setText(f"{kS_L:.4f}  |  {kS_R:.4f}")
+        if kA_L is not None and kA_R is not None:
+            self.lbl_ka_lr_val.setText(f"{kA_L:.7f}  |  {kA_R:.7f}")
 
     def parameter_change(self):
         spinner = self.sender()
@@ -934,7 +1007,29 @@ class Dashboard(QMainWindow):
         }
 
         # Parse settings response
+        per_motor_seen = False
         for line in self.data:
+            # Per-motor line, both formats accepted:
+            #   "  L: kM=342.0 kS=0.4000 kA=0.0001234  R: kM=338.5 kS=0.3500 kA=0.0001456"
+            # (kA fields are optional, since firmware print may have been compiled
+            # without them on an older binary). Must be checked before the generic
+            # key=value loop, because that loop would mis-parse it into junk keys.
+            if 'L: kM=' in line and 'R: kM=' in line:
+                try:
+                    left_part, right_part = line.split('R: kM=')
+                    self.parameters['kM_L'] = float(left_part.split('L: kM=')[1].split()[0])
+                    self.parameters['kS_L'] = float(left_part.split('kS=')[1].split()[0])
+                    self.parameters['kM_R'] = float(right_part.split()[0])
+                    self.parameters['kS_R'] = float(right_part.split('kS=')[1].split()[0])
+                    if 'kA=' in left_part:
+                        self.parameters['kA_L'] = float(left_part.split('kA=')[1].split()[0])
+                    if 'kA=' in right_part:
+                        self.parameters['kA_R'] = float(right_part.split('kA=')[1].split()[0])
+                    per_motor_seen = True
+                except (ValueError, IndexError):
+                    pass
+                continue
+
             # Handle format: "key = value" or "key (description) = value unit"
             if '=' in line:
                 parts = line.split('=')
@@ -955,7 +1050,23 @@ class Dashboard(QMainWindow):
                         self.parameters[key] = float(val_parts[0])
                     except ValueError:
                         pass
+
+        # Firmware omits the per-motor line when L==R==combined (settings.cpp).
+        # In that case, mirror combined → per-motor so the labels reflect the
+        # actual runtime state instead of stale values from a previous read.
+        if not per_motor_seen:
+            if 'kM' in self.parameters:
+                self.parameters['kM_L'] = self.parameters['kM']
+                self.parameters['kM_R'] = self.parameters['kM']
+            if 'kS' in self.parameters:
+                self.parameters['kS_L'] = self.parameters['kS']
+                self.parameters['kS_R'] = self.parameters['kS']
+            if 'kA' in self.parameters:
+                self.parameters['kA_L'] = self.parameters['kA']
+                self.parameters['kA_R'] = self.parameters['kA']
+
         self.update_parameters()
+        self._update_per_motor_labels()
         self.log_message('----------------')
 
     def write_settings(self):
@@ -1178,6 +1289,40 @@ class Dashboard(QMainWindow):
                         self.set_safely(self.spin_biasff, val)
                     except (ValueError, IndexError):
                         pass
+        # OL trial per-motor: "Left:  kM=342.00 mm/s/V, kS=0.4000 V (12 points)"
+        #                     "Right: kM=338.50 mm/s/V, kS=0.3500 V (12 points)"
+        elif line.startswith('Left:') or line.startswith('Right:'):
+            side = 'L' if line.startswith('Left:') else 'R'
+            for part in line.split(','):
+                part = part.strip()
+                if 'kM=' in part:
+                    try:
+                        self.parameters[f'kM_{side}'] = float(part.split('kM=')[1].split()[0])
+                    except (ValueError, IndexError):
+                        pass
+                elif 'kS=' in part:
+                    try:
+                        self.parameters[f'kS_{side}'] = float(part.split('kS=')[1].split()[0])
+                    except (ValueError, IndexError):
+                        pass
+            self._update_per_motor_labels()
+        # SETTINGS readback (when any per-motor field differs from combined):
+        # "  L: kM=342.0 kS=0.4000 kA=0.0001234  R: kM=338.5 kS=0.3500 kA=0.0001456"
+        # kA fields optional (older firmware may omit them).
+        elif 'L: kM=' in line and 'R: kM=' in line:
+            try:
+                left_part, right_part = line.split('R: kM=')
+                self.parameters['kM_L'] = float(left_part.split('L: kM=')[1].split()[0])
+                self.parameters['kS_L'] = float(left_part.split('kS=')[1].split()[0])
+                self.parameters['kM_R'] = float(right_part.split()[0])
+                self.parameters['kS_R'] = float(right_part.split('kS=')[1].split()[0])
+                if 'kA=' in left_part:
+                    self.parameters['kA_L'] = float(left_part.split('kA=')[1].split()[0])
+                if 'kA=' in right_part:
+                    self.parameters['kA_R'] = float(right_part.split('kA=')[1].split()[0])
+                self._update_per_motor_labels()
+            except (ValueError, IndexError):
+                pass
         # STEP/OL derived: "  -> kA = 0.0001234 V/(mm/s^2)"
         elif line.strip().startswith('-> kA ='):
             try:

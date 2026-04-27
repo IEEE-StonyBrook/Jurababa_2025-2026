@@ -35,6 +35,8 @@ struct DriverLabSettings
     float kM_R; // Right motor velocity constant (mm/s per volt)
     float kS_L; // Left static friction (volts)
     float kS_R; // Right static friction (volts)
+    float kA_L; // Left  acceleration FF (V per mm/s^2) = Tm / kM_L
+    float kA_R; // Right acceleration FF (V per mm/s^2) = Tm / kM_R
 
     float zeta; // Damping ratio
     float td;   // Derivative time constant
@@ -63,6 +65,8 @@ struct DriverLabSettings
         kM_R = kM;
         kS_L = kS;
         kS_R = kS;
+        kA_L = kA;
+        kA_R = kA;
 
         // Forward PD: design parameters and gains from tuning.h
         zeta = FWD_ZETA;
@@ -77,12 +81,15 @@ struct DriverLabSettings
         control_flags = 0;
     }
 
-    // Recompute feedforward (kV, kA) from motor model (kM, tm).
-    // Only call when kM or tm changes, since these can also be manually overridden.
+    // Recompute feedforward (kV, kA) and per-motor kA_L/kA_R from the motor
+    // model (kM, kM_L, kM_R, tm). Only call when those source values change,
+    // since the feedforward terms can also be manually overridden.
     void recalculateFeedforward()
     {
-        kV = 1.0f / kM;
-        kA = tm / kM;
+        kV   = 1.0f / kM;
+        kA   = tm / kM;
+        kA_L = tm / kM_L;
+        kA_R = tm / kM_R;
     }
 
     // Recompute PD gains (kP, kD) from controller design parameters.
