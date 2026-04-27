@@ -22,13 +22,13 @@ LineFollower::LineFollower(Drivetrain* drivetrain, LineSensor* line_sensor, IMU*
 
 void LineFollower::reset()
 {
-    state_               = State::Idle;
-    prev_position_error_ = 0.0f;
-    target_yaw_          = 0.0f;
-    turn_start_yaw_      = 0.0f;
-    turn_degrees_        = 0.0f;
-    turn_done_           = true;
-    prev_intersection_   = false;
+    state_                = State::Idle;
+    prev_position_error_  = 0.0f;
+    target_yaw_           = 0.0f;
+    turn_start_yaw_       = 0.0f;
+    turn_degrees_         = 0.0f;
+    turn_done_            = true;
+    prev_intersection_    = false;
     last_intersection_ms_ = 0;
 
     drivetrain_->stop();
@@ -82,13 +82,12 @@ void LineFollower::followLine(float dt)
     // Base forward speed with differential steering
     float base_speed = LINE_FOLLOW_BASE_SPEED_MMPS;
 
-    // Compute feedforward voltages for both wheels at base speed
-    float left_ff =
-        drivetrain_->feedforward(WheelSide::LEFT, base_speed, 0.0f) * MAX_VOLTAGE;
-    float right_ff =
-        drivetrain_->feedforward(WheelSide::RIGHT, base_speed, 0.0f) * MAX_VOLTAGE;
+    // Feedforward returns volts directly (kV V/(mm/s), kS V, kA V/(mm/s^2))
+    float left_ff  = drivetrain_->feedforward(WheelSide::LEFT, base_speed, 0.0f);
+    float right_ff = drivetrain_->feedforward(WheelSide::RIGHT, base_speed, 0.0f);
 
-    // Apply steering as differential voltage
+    // `steering` is normalized [-1, 1] from LINE_KP/LINE_KD applied to line
+    // sensor position; scale to volts with a 30%-of-rail steering authority cap.
     float steering_volts = steering * MAX_VOLTAGE * 0.3f;
 
     float left_volts  = left_ff - steering_volts;
@@ -152,11 +151,10 @@ void LineFollower::updateTurn(float dt)
     float current_yaw = imu_->yaw();
     float yaw_error   = normalizeYawDelta(target_yaw_ - current_yaw);
 
-    // Simple proportional turn control
-    float turn_output = ROT_KP * yaw_error;
-    turn_output       = utils::clampAbs(turn_output, 1.0f);
-
-    float turn_volts = turn_output * MAX_VOLTAGE * 0.5f;
+    // Simple proportional turn (ROT_KP in V/deg → output is volts).
+    // Cap at 50% of rail to keep line-follower turns gentle.
+    float turn_volts = ROT_KP * yaw_error;
+    turn_volts       = utils::clampAbs(turn_volts, MAX_VOLTAGE * 0.5f);
 
     // Differential drive: spin in place
     drivetrain_->setVoltage(-turn_volts, turn_volts);
@@ -165,8 +163,8 @@ void LineFollower::updateTurn(float dt)
     if (std::fabs(yaw_error) < ROBOT_YAW_TOLERANCE_DEG)
     {
         drivetrain_->stop();
-        turn_done_ = true;
-        state_     = State::FollowingLine;
+        turn_done_           = true;
+        state_               = State::FollowingLine;
         prev_position_error_ = 0.0f;
         LOG_DEBUG("LineFollower: Turn complete, resuming line follow");
     }

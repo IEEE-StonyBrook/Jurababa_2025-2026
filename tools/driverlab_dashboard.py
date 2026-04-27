@@ -447,10 +447,12 @@ class Dashboard(QMainWindow):
         self.rb_onlyff.setToolTip("Feedforward only, no PD feedback")
         self.rb_onlyff.toggled.connect(self.option_select)
         option_layout.addWidget(self.rb_onlyff)
-        self.rb_onlyff.setChecked(True)
 
         # Map each radio button to its control mode. Replaces a dynamic
         # `.mode` attribute on QRadioButton, which the type checker rejects.
+        # MUST be defined before any setChecked() call below — setChecked
+        # fires the `toggled` signal synchronously, and option_select reads
+        # this dict.
         self.mode_for_button = {
             self.rb_full: FULL_CONTROL,
             self.rb_noff: NO_FF,
@@ -461,6 +463,9 @@ class Dashboard(QMainWindow):
         self.mode_button_group.addButton(self.rb_full)
         self.mode_button_group.addButton(self.rb_noff)
         self.mode_button_group.addButton(self.rb_onlyff)
+
+        # Set the default mode now that mode_for_button exists.
+        self.rb_onlyff.setChecked(True)
 
         # ========== SIDEBAR ==========
         # Inner widget holds all sidebar content
@@ -1431,30 +1436,35 @@ class Dashboard(QMainWindow):
                     self.motion_plot.enableAutoRange()
                     self.output_plot.setXLink(self.motion_plot)
 
-                elif 'set_yaw' in headings_str:
-                    # Turn: time_ms,set_yaw,actual_yaw,set_omega,actual_omega,volts
-                    # Output plot: control voltage
+                elif 'set_omega' in headings_str and 'actual_yaw' in headings_str:
+                    # Turn: time_ms,set_omega,actual_yaw,actual_omega,error,left_v,right_v
+                    # Output plot: left/right motor voltage
                     if len(self.plot_curves['output']) == 0:
-                        pen_volts = pg.mkPen(color=palette[3], width=2)
-                        self.plot_curves['output'].append(self.output_plot.plot(name='Ctrl Volts', pen=pen_volts))
+                        pen_left_v = pg.mkPen(color=palette[1], width=2)
+                        pen_right_v = pg.mkPen(color=palette[5], width=2)
+                        self.plot_curves['output'].append(self.output_plot.plot(name='Left V', pen=pen_left_v))
+                        self.plot_curves['output'].append(self.output_plot.plot(name='Right V', pen=pen_right_v))
 
-                    x, y = self._get_valid_data(0, 5)  # volts
+                    x, y = self._get_valid_data(0, 5)  # left_v
                     self.plot_curves['output'][0].setData(x, y)
+                    x, y = self._get_valid_data(0, 6)  # right_v
+                    if len(self.plot_curves['output']) > 1:
+                        self.plot_curves['output'][1].setData(x, y)
                     self.output_plot.enableAutoRange()
 
-                    # Motion plot: set yaw vs actual yaw
+                    # Motion plot: actual yaw + actual omega (dashed)
                     if len(self.plot_curves['motion']) == 0:
-                        pen_set = pg.mkPen(color=palette[4], width=2, style=Qt.PenStyle.DashLine)
-                        pen_actual = pg.mkPen(color=palette[5], width=2)
-                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Set Yaw', pen=pen_set))
-                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Yaw', pen=pen_actual))
+                        pen_yaw = pg.mkPen(color=palette[5], width=2)
+                        pen_omega = pg.mkPen(color=palette[3], width=2, style=Qt.PenStyle.DashLine)
+                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Yaw', pen=pen_yaw))
+                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Omega', pen=pen_omega))
 
-                    x, y = self._get_valid_data(0, 1)  # set_yaw
-                    self.plot_curves['motion'][0].setData(x, y)
                     x, y = self._get_valid_data(0, 2)  # actual_yaw
+                    self.plot_curves['motion'][0].setData(x, y)
+                    x, y = self._get_valid_data(0, 3)  # actual_omega
                     if len(self.plot_curves['motion']) > 1:
                         self.plot_curves['motion'][1].setData(x, y)
-                    self.motion_plot.setLabel('left', 'Angle (deg)')
+                    self.motion_plot.setLabel('left', 'Angle (deg) / Omega (deg/s)')
                     self.motion_plot.enableAutoRange()
                     self.output_plot.setXLink(self.motion_plot)
 
@@ -1478,6 +1488,50 @@ class Dashboard(QMainWindow):
                         self.motion_plot.setLabel('left', 'Speed (mm/s)')
                         self.motion_plot.enableAutoRange()
                         self.output_plot.setXLink(self.motion_plot)
+
+                elif 'set_speed' in headings_str and 'actual_speed' in headings_str and 'left_v' in headings_str:
+                    # Move (current firmware): time_ms,set_speed,actual_speed,error,left_v,right_v[,left_speed,right_speed]
+                    # Output plot: left/right motor voltage
+                    if len(self.plot_curves['output']) == 0:
+                        pen_left_v = pg.mkPen(color=palette[1], width=2)
+                        pen_right_v = pg.mkPen(color=palette[5], width=2)
+                        self.plot_curves['output'].append(self.output_plot.plot(name='Left V', pen=pen_left_v))
+                        self.plot_curves['output'].append(self.output_plot.plot(name='Right V', pen=pen_right_v))
+
+                    x, y = self._get_valid_data(0, 4)  # left_v
+                    self.plot_curves['output'][0].setData(x, y)
+                    x, y = self._get_valid_data(0, 5)  # right_v
+                    if len(self.plot_curves['output']) > 1:
+                        self.plot_curves['output'][1].setData(x, y)
+                    self.output_plot.enableAutoRange()
+
+                    # Motion plot: set_speed (dashed) + actual_speed; overlay per-wheel speeds when present
+                    has_per_wheel = ('left_speed' in headings_str and 'right_speed' in headings_str
+                                     and len(values) > 7)
+                    if len(self.plot_curves['motion']) == 0:
+                        pen_set = pg.mkPen(color=palette[4], width=2, style=Qt.PenStyle.DashLine)
+                        pen_actual = pg.mkPen(color=palette[5], width=2)
+                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Set Speed', pen=pen_set))
+                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Speed', pen=pen_actual))
+                        if has_per_wheel:
+                            pen_left_s = pg.mkPen(color=palette[1], width=1)
+                            pen_right_s = pg.mkPen(color=palette[2], width=1)
+                            self.plot_curves['motion'].append(self.motion_plot.plot(name='Left Speed', pen=pen_left_s))
+                            self.plot_curves['motion'].append(self.motion_plot.plot(name='Right Speed', pen=pen_right_s))
+
+                    x, y = self._get_valid_data(0, 1)  # set_speed
+                    self.plot_curves['motion'][0].setData(x, y)
+                    x, y = self._get_valid_data(0, 2)  # actual_speed
+                    if len(self.plot_curves['motion']) > 1:
+                        self.plot_curves['motion'][1].setData(x, y)
+                    if has_per_wheel and len(self.plot_curves['motion']) > 3:
+                        x, y = self._get_valid_data(0, 6)  # left_speed
+                        self.plot_curves['motion'][2].setData(x, y)
+                        x, y = self._get_valid_data(0, 7)  # right_speed
+                        self.plot_curves['motion'][3].setData(x, y)
+                    self.motion_plot.setLabel('left', 'Speed (mm/s)')
+                    self.motion_plot.enableAutoRange()
+                    self.output_plot.setXLink(self.motion_plot)
 
                 elif 'ctrl_v' in headings_str or 'ff_v' in headings_str:
                     # Move controller: time_ms,set_pos,actual_pos,set_speed,actual_speed,ctrl_v,ff_v,total_v

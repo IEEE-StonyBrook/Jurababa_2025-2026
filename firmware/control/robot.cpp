@@ -119,8 +119,8 @@ float Robot::headingCorrection(float target_omega_degps, float dt)
     float expected_rotation = target_omega_degps * dt;
     rotation_error_ += (expected_rotation - rotation_delta);
 
-    float output = rotation_controller_.compute(rotation_error_, dt);
-    return output * MAX_VOLTAGE;
+    // PID output is already in volts (kP units = V/deg, kD units = V/(deg/s))
+    return rotation_controller_.compute(rotation_error_, dt);
 }
 
 float Robot::frontDistance()
@@ -522,8 +522,8 @@ void Robot::runPositionControl(float dt)
     {
         float forward_output  = forward_controller_.compute(forward_error_, dt);
         float rotation_output = rotation_controller_.compute(rotation_error_, dt);
-        left_volts            = (forward_output - rotation_output) * MAX_VOLTAGE;
-        right_volts           = (forward_output + rotation_output) * MAX_VOLTAGE;
+        left_volts            = forward_output - rotation_output;
+        right_volts           = forward_output + rotation_output;
     }
 
     // Feedforward (skip if FeedbackOnly)
@@ -542,10 +542,8 @@ void Robot::runPositionControl(float dt)
         prev_left_vel               = left_vel;
         prev_right_vel              = right_vel;
 
-        float ff_left =
-            drivetrain_->feedforward(WheelSide::LEFT, left_vel, left_accel) * MAX_VOLTAGE;
-        float ff_right =
-            drivetrain_->feedforward(WheelSide::RIGHT, right_vel, right_accel) * MAX_VOLTAGE;
+        float ff_left  = drivetrain_->feedforward(WheelSide::LEFT, left_vel, left_accel);
+        float ff_right = drivetrain_->feedforward(WheelSide::RIGHT, right_vel, right_accel);
 
         left_volts += ff_left;
         right_volts += ff_right;

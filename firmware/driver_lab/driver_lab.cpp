@@ -514,7 +514,7 @@ void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration
     robot_->moveDistance(distance, top_speed, acceleration);
 
     reporter_.begin();
-    printf("time_ms,set_speed,actual_speed,error,left_v,right_v\n");
+    printf("time_ms,set_speed,actual_speed,error,left_v,right_v,left_speed,right_speed\n");
 
     // Diagnostics tracking
     float max_speed_error = 0.0f;
@@ -529,12 +529,13 @@ void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration
         uint32_t now = to_ms_since_boot(get_absolute_time());
         robot_->updateControl(LOOP_INTERVAL_S);
 
-        float set_speed = robot_->targetForwardVel();
-        float actual_speed =
-            (dt->velocity(WheelSide::LEFT) + dt->velocity(WheelSide::RIGHT)) / 2.0f;
-        float pos_error = robot_->forwardError();
-        float left_v    = robot_->lastLeftVolts();
-        float right_v   = robot_->lastRightVolts();
+        float set_speed    = robot_->targetForwardVel();
+        float left_speed   = dt->velocity(WheelSide::LEFT);
+        float right_speed  = dt->velocity(WheelSide::RIGHT);
+        float actual_speed = (left_speed + right_speed) / 2.0f;
+        float pos_error    = robot_->forwardError();
+        float left_v       = robot_->lastLeftVolts();
+        float right_v      = robot_->lastRightVolts();
 
         // Track diagnostics
         float speed_err = std::fabs(set_speed - actual_speed);
@@ -552,8 +553,8 @@ void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration
         if (reporter_.isTimeToReport(now))
         {
             uint32_t elapsed = now - reporter_.startTime();
-            printf("%lu,%.2f,%.2f,%.2f,%.3f,%.3f\n", static_cast<unsigned long>(elapsed), set_speed,
-                   actual_speed, pos_error, left_v, right_v);
+            printf("%lu,%.2f,%.2f,%.2f,%.3f,%.3f,%.2f,%.2f\n", static_cast<unsigned long>(elapsed),
+                   set_speed, actual_speed, pos_error, left_v, right_v, left_speed, right_speed);
             reporter_.incrementSampleCount();
         }
 
