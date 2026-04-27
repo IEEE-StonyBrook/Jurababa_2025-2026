@@ -82,16 +82,17 @@ void DriverLabReporter::reportOpenLoop(uint32_t time_ms, float voltage, float sp
 
 void DriverLabReporter::printOpenLoopStereoHeader()
 {
-    printf("time_ms,cmd_v,left_v,right_v,left_speed,right_speed,steer_v\n");
+    printf("time_ms,cmd_v,left_v,right_v,left_speed,right_speed,steer_v,yaw\n");
 }
 
 void DriverLabReporter::reportOpenLoopStereo(uint32_t time_ms, float cmd_voltage,
                                              float left_voltage, float right_voltage,
-                                             float left_speed, float right_speed, float steer_volts)
+                                             float left_speed, float right_speed, float steer_volts,
+                                             float yaw_deg)
 {
     uint32_t elapsed = time_ms - start_time_ms_;
-    printf("%lu,%.3f,%.3f,%.3f,%.2f,%.2f,%.3f\n", static_cast<unsigned long>(elapsed), cmd_voltage,
-           left_voltage, right_voltage, left_speed, right_speed, steer_volts);
+    printf("%lu,%.3f,%.3f,%.3f,%.2f,%.2f,%.3f,%.2f\n", static_cast<unsigned long>(elapsed),
+           cmd_voltage, left_voltage, right_voltage, left_speed, right_speed, steer_volts, yaw_deg);
     sample_count_++;
 }
 

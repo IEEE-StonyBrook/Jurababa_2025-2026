@@ -32,7 +32,7 @@ class DriverLabReporter
     void printOpenLoopStereoHeader();
     void reportOpenLoopStereo(uint32_t time_ms, float cmd_voltage, float left_voltage,
                               float right_voltage, float left_speed, float right_speed,
-                              float steer_volts);
+                              float steer_volts, float yaw_deg);
 
     void printStepHeader();
     void reportStep(uint32_t time_ms, float step_voltage, float speed, float position);

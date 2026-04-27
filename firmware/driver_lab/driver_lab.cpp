@@ -208,7 +208,7 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
                 {
                     uint32_t now = to_ms_since_boot(get_absolute_time());
                     reporter_.reportOpenLoopStereo(now, voltage, left_v, right_v, left_speed,
-                                                   right_speed, steer_volts);
+                                                   right_speed, steer_volts, robot_->yaw());
                 }
             }
 
