@@ -92,12 +92,17 @@ struct DriverLabSettings
         kA_R = tm / kM_R;
     }
 
-    // Recompute PD gains (kP, kD) from controller design parameters.
-    // Safe to call on any change to zeta, td, kM, or tm — does not clobber kV/kA.
+    // Recompute PD gains (kP, kD) from controller design parameters using the
+    // standard 2nd-order pole-placement form, with td as the closed-loop natural
+    // period (1/omega_n) and zeta as the damping ratio:
+    //   kP = omega_n^2 * Tm / kM           = Tm / (kM * td^2)
+    //   kD = (2*zeta*omega_n*Tm - 1) / kM  = (2*zeta*Tm/td - 1) / kM
+    // kD stays positive whenever td < 2*zeta*Tm. Safe to call on any change to
+    // zeta, td, kM, or tm — does not clobber kV/kA.
     void recalculatePD()
     {
-        kP = 1.0f / (kM * td);
-        kD = (2.0f * zeta * td - tm) / kM;
+        kP = tm / (kM * td * td);
+        kD = (2.0f * zeta * tm / td - 1.0f) / kM;
     }
 
     // Recompute everything. Use only when motor model parameters change.

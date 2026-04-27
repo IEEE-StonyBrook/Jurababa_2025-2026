@@ -517,8 +517,9 @@ class Dashboard(QMainWindow):
         self.setCentralWidget(main_widget)
         self.setMinimumSize(1200, 1000)
         self.resize(1200, 1050)
-        self.show()
-        self.center_window()
+        # Launch maximized (fills the screen but keeps title bar / dock / menu bar).
+        # Skip center_window() since move() on a maximized window demaximizes it.
+        self.showMaximized()
         self.setFocus()
 
         # Initial port scan
