@@ -48,7 +48,7 @@
 #define IMU_RAW_TO_DEGREES_DIVISOR 100.0f
 
 // ================= IMU Filtering ================= //
-#define IMU_YAW_FILTER_ALPHA         0.3f  // EMA filter for yaw (0.3 = moderate smoothing)
+#define IMU_YAW_FILTER_ALPHA         1.0f  // EMA filter for yaw (0.3 = moderate smoothing)
 #define IMU_MAX_YAW_DELTA_PER_SAMPLE 20.0f // Max degrees change per 10ms (2000°/s physical limit)
 
 // ================= Angular Velocity Filtering ================= //

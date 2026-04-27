@@ -189,9 +189,10 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
             if (steer_volts < -MAX_STEER_VOLTS)
                 steer_volts = -MAX_STEER_VOLTS;
 
-            // Apply differential voltage
-            float left_v  = voltage + steer_volts;
-            float right_v = voltage - steer_volts;
+            // Apply differential voltage (sign convention matches runPositionControl:
+            // left = forward - rotation, right = forward + rotation)
+            float left_v  = voltage - steer_volts;
+            float right_v = voltage + steer_volts;
             float batt    = batteryVoltage();
             left_motor_->applyVoltage(left_v, batt);
             right_motor_->applyVoltage(right_v, batt);
