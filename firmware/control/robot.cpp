@@ -508,37 +508,48 @@ void Robot::runPositionControl(float dt)
 
     float rotation_delta = yawDelta();
 
+    // Error accumulation — always runs (needed for diagnostics even in FF-only mode)
     float expected_forward = target_forward_vel_mmps_ * dt;
     forward_error_ += (expected_forward - forward_delta);
 
     float expected_rotation = target_angular_vel_degps_ * dt;
     rotation_error_ += (expected_rotation - rotation_delta);
 
-    float forward_output  = forward_controller_.compute(forward_error_, dt);
-    float rotation_output = rotation_controller_.compute(rotation_error_, dt);
+    // PD feedback (skip if FeedforwardOnly)
+    float left_volts  = 0.0f;
+    float right_volts = 0.0f;
+    if (control_mode_ != ControlMode::FeedforwardOnly)
+    {
+        float forward_output  = forward_controller_.compute(forward_error_, dt);
+        float rotation_output = rotation_controller_.compute(rotation_error_, dt);
+        left_volts            = (forward_output - rotation_output) * MAX_VOLTAGE;
+        right_volts           = (forward_output + rotation_output) * MAX_VOLTAGE;
+    }
 
-    float left_volts  = (forward_output - rotation_output) * MAX_VOLTAGE;
-    float right_volts = (forward_output + rotation_output) * MAX_VOLTAGE;
+    // Feedforward (skip if FeedbackOnly)
+    if (control_mode_ != ControlMode::FeedbackOnly)
+    {
+        float wheelbase_radius = WHEEL_BASE_MM / 2.0f;
+        float tangential_vel   = target_angular_vel_degps_ * (M_PI / 180.0f) * wheelbase_radius;
 
-    float wheelbase_radius = WHEEL_BASE_MM / 2.0f;
-    float tangential_vel   = target_angular_vel_degps_ * (M_PI / 180.0f) * wheelbase_radius;
+        float left_vel  = target_forward_vel_mmps_ - tangential_vel;
+        float right_vel = target_forward_vel_mmps_ + tangential_vel;
 
-    float left_vel  = target_forward_vel_mmps_ - tangential_vel;
-    float right_vel = target_forward_vel_mmps_ + tangential_vel;
+        static float prev_left_vel  = 0.0f;
+        static float prev_right_vel = 0.0f;
+        float        left_accel     = (left_vel - prev_left_vel) / dt;
+        float        right_accel    = (right_vel - prev_right_vel) / dt;
+        prev_left_vel               = left_vel;
+        prev_right_vel              = right_vel;
 
-    static float prev_left_vel  = 0.0f;
-    static float prev_right_vel = 0.0f;
-    float        left_accel     = (left_vel - prev_left_vel) / dt;
-    float        right_accel    = (right_vel - prev_right_vel) / dt;
-    prev_left_vel               = left_vel;
-    prev_right_vel              = right_vel;
+        float ff_left =
+            drivetrain_->feedforward(WheelSide::LEFT, left_vel, left_accel) * MAX_VOLTAGE;
+        float ff_right =
+            drivetrain_->feedforward(WheelSide::RIGHT, right_vel, right_accel) * MAX_VOLTAGE;
 
-    float ff_left = drivetrain_->feedforward(WheelSide::LEFT, left_vel, left_accel) * MAX_VOLTAGE;
-    float ff_right =
-        drivetrain_->feedforward(WheelSide::RIGHT, right_vel, right_accel) * MAX_VOLTAGE;
-
-    left_volts += ff_left;
-    right_volts += ff_right;
+        left_volts += ff_left;
+        right_volts += ff_right;
+    }
 
     left_volts  = utils::clampAbs(left_volts, MAX_VOLTAGE);
     right_volts = utils::clampAbs(right_volts, MAX_VOLTAGE);
@@ -593,6 +604,16 @@ void Robot::setForwardGains(float kp, float ki, float kd)
 void Robot::setRotationGains(float kp, float ki, float kd)
 {
     rotation_controller_.setGains(kp, ki, kd);
+}
+
+void Robot::setControlMode(ControlMode mode)
+{
+    control_mode_ = mode;
+}
+
+void Robot::setFeedforward(WheelSide side, float kv, float ks, float ka)
+{
+    drivetrain_->setFeedforward(side, kv, ks, ka);
 }
 
 void Robot::update(float dt)

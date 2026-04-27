@@ -2,7 +2,6 @@
 #define DRIVER_LAB_DRIVER_LAB_H
 
 #include "config/config.h"
-#include "driver_lab/profile.h"
 #include "driver_lab/reporter.h"
 #include "driver_lab/settings.h"
 
@@ -62,10 +61,6 @@ class DriverLab
     void setRightMotorVoltage(float volts);
 
     float batteryVoltage() const;
-    float encoderPositionMM() const;
-    float encoderVelocityMMps() const;
-    void  resetEncoders();
-    void  updateEncoders(float dt);
 
     // Test routines
     void runOpenLoopTrial(float max_voltage = 6.0f, float step_voltage = 0.5f,
@@ -135,7 +130,6 @@ class DriverLab
     LineSensor* line_sensor_;
 
     DriverLabSettings settings_;
-    DriverLabProfile  profile_;
     DriverLabReporter reporter_;
 
     char input_buffer_[DRIVERLAB_INPUT_BUFFER_SIZE];
@@ -148,17 +142,6 @@ class DriverLab
     int  history_write_idx_;
     int  history_nav_idx_;
     char temp_buffer_[DRIVERLAB_INPUT_BUFFER_SIZE];
-
-    int32_t prev_left_ticks_;
-    int32_t prev_right_ticks_;
-    float   left_velocity_mmps_;
-    float   right_velocity_mmps_;
-
-    // Timing for accurate velocity calculation
-    absolute_time_t last_encoder_update_;
-
-    // Turn helpers
-    void setTurnVoltage(float volts);
 
     int           readSerialLine();
     DriverLabArgs tokenize();

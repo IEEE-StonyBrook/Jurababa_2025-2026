@@ -127,6 +127,18 @@ It provides:
 
 DriverLab is for understanding the physical drivetrain, not for maze solving.
 
+### DriverLab Architecture
+
+DriverLab is a **pure testing wrapper** — it must not reimplement control logic.
+
+* **OL and STEP trials** use raw motor commands (no control loop) for motor characterization.
+* **MOVE and TURN trials** delegate to Robot's control loop (`turnInPlace()`, `moveDistance()`, `updateControl()`). DriverLab only:
+  - Syncs tuning parameters to Robot before the trial
+  - Polls `updateControl()` in a sleep loop
+  - Logs CSV from Robot's diagnostic accessors
+  - Prints diagnostics summary
+* When adding new motion types to DriverLab (e.g. smooth turns), use Robot's existing methods — never reimplement control.
+
 ## Mode Selection
 
 At startup:
@@ -663,6 +675,13 @@ python3 driverlab_dashboard.py
 ```
 
 The dashboard is used for calibration visualization and analysis.
+
+## MCP Tools
+
+Configured in `.mcp.json`:
+
+* **context7** — Library/framework documentation lookup. Use for Pico SDK, PyQt6, or other library APIs.
+* **sequential-thinking** — Step-by-step reasoning for complex debugging or design decisions.
 
 ---
 

@@ -1,6 +1,7 @@
 #include "driver_lab/driver_lab.h"
 
 #include "config/config.h"
+#include "control/drivetrain.h"
 #include "control/robot.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
@@ -36,9 +37,8 @@ DriverLab::DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encode
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), reporter_(10), input_index_(0),
       echo_enabled_(false), history_count_(0), history_write_idx_(0), history_nav_idx_(-1),
-      prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
-      right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
+      robot_(robot), left_tof_(nullptr), front_tof_(nullptr), right_tof_(nullptr),
+      line_sensor_(nullptr)
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -51,9 +51,8 @@ DriverLab::DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encode
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), reporter_(10), input_index_(0),
       echo_enabled_(false), history_count_(0), history_write_idx_(0), history_nav_idx_(-1),
-      prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
-      right_velocity_mmps_(0.0f), robot_(robot), left_tof_(left_tof), front_tof_(front_tof),
-      right_tof_(right_tof), line_sensor_(nullptr), last_encoder_update_(get_absolute_time())
+      robot_(robot), left_tof_(left_tof), front_tof_(front_tof), right_tof_(right_tof),
+      line_sensor_(nullptr)
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -66,9 +65,8 @@ DriverLab::DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encode
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), battery_(battery), reporter_(10), input_index_(0),
       echo_enabled_(false), history_count_(0), history_write_idx_(0), history_nav_idx_(-1),
-      prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
-      right_velocity_mmps_(0.0f), robot_(robot), left_tof_(nullptr), front_tof_(nullptr),
-      right_tof_(nullptr), line_sensor_(line_sensor), last_encoder_update_(get_absolute_time())
+      robot_(robot), left_tof_(nullptr), front_tof_(nullptr), right_tof_(nullptr),
+      line_sensor_(line_sensor)
 {
     clearInput();
     temp_buffer_[0] = '\0';
@@ -116,18 +114,6 @@ void DriverLab::setRightMotorVoltage(float volts)
     right_motor_->applyVoltage(volts, battery_volts);
 }
 
-// ============================================================================
-// Turn Control Helpers
-// ============================================================================
-
-void DriverLab::setTurnVoltage(float volts)
-{
-    // +volts = turn right (left forward, right backward)
-    float batt = batteryVoltage();
-    left_motor_->applyVoltage(volts, batt);
-    right_motor_->applyVoltage(-volts, batt);
-}
-
 float DriverLab::batteryVoltage() const
 {
     if (battery_ != nullptr)
@@ -135,72 +121,6 @@ float DriverLab::batteryVoltage() const
         return battery_->voltage();
     }
     return DEFAULT_BATTERY_VOLTAGE;
-}
-
-float DriverLab::encoderPositionMM() const
-{
-    int32_t left_ticks   = left_encoder_ ? left_encoder_->ticks() : 0;
-    int32_t right_ticks  = right_encoder_ ? right_encoder_->ticks() : 0;
-    int     num_encoders = (left_encoder_ ? 1 : 0) + (right_encoder_ ? 1 : 0);
-    if (num_encoders == 0)
-        return 0.0f;
-    float avg_ticks =
-        static_cast<float>(left_ticks + right_ticks) / static_cast<float>(num_encoders);
-    return avg_ticks * MM_PER_TICK;
-}
-
-float DriverLab::encoderVelocityMMps() const
-{
-    return (left_velocity_mmps_ + right_velocity_mmps_) / 2.0f;
-}
-
-void DriverLab::resetEncoders()
-{
-    if (left_encoder_)
-        left_encoder_->reset();
-    if (right_encoder_)
-        right_encoder_->reset();
-
-    // Capture current encoder positions (should be 0 after reset)
-    prev_left_ticks_  = left_encoder_ ? left_encoder_->ticks() : 0;
-    prev_right_ticks_ = right_encoder_ ? right_encoder_->ticks() : 0;
-
-    left_velocity_mmps_  = 0.0f;
-    right_velocity_mmps_ = 0.0f;
-
-    // Reset timing reference for next updateEncoders() call
-    last_encoder_update_ = get_absolute_time();
-}
-
-void DriverLab::updateEncoders(float /* dt_hint - ignored, we measure actual */)
-{
-    // Measure actual time since last update for accurate velocity calculation
-    absolute_time_t now       = get_absolute_time();
-    float           actual_dt = absolute_time_diff_us(last_encoder_update_, now) * 1e-6f;
-    last_encoder_update_      = now;
-
-    // Avoid division by zero on very fast calls
-    if (actual_dt < 0.001f)
-    {
-        return;
-    }
-
-    // Calculate velocity from encoder delta using actual dt
-    if (left_encoder_)
-    {
-        int32_t left_ticks  = left_encoder_->ticks();
-        int32_t delta_left  = left_ticks - prev_left_ticks_;
-        prev_left_ticks_    = left_ticks;
-        left_velocity_mmps_ = (delta_left * MM_PER_TICK) / actual_dt;
-    }
-
-    if (right_encoder_)
-    {
-        int32_t right_ticks  = right_encoder_->ticks();
-        int32_t delta_right  = right_ticks - prev_right_ticks_;
-        prev_right_ticks_    = right_ticks;
-        right_velocity_mmps_ = (delta_right * MM_PER_TICK) / actual_dt;
-    }
 }
 
 // ============================================================================
@@ -226,7 +146,8 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
     reporter_.begin();
     reporter_.printOpenLoopStereoHeader();
 
-    resetEncoders();
+    Drivetrain* dt = robot_->drivetrain();
+    dt->reset();
     robot_->setRotationGains(settings_.turnKP, 0.0f, settings_.turnKD);
     robot_->resetHeadingControl();
 
@@ -256,8 +177,11 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
 
         while (to_ms_since_boot(get_absolute_time()) - step_start < settle_time_ms)
         {
-            updateEncoders(LOOP_INTERVAL_S);
+            dt->update(LOOP_INTERVAL_S);
             robot_->update(LOOP_INTERVAL_S);
+
+            float left_speed  = dt->velocity(WheelSide::LEFT);
+            float right_speed = dt->velocity(WheelSide::RIGHT);
 
             // Get steering correction from Robot's heading controller
             float steer_volts = robot_->headingCorrection(0.0f, LOOP_INTERVAL_S);
@@ -276,17 +200,16 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
             // Record after transient settles
             if (sample_count >= SKIP_SAMPLES)
             {
-                step_left_speeds.push_back(left_velocity_mmps_);
-                step_right_speeds.push_back(right_velocity_mmps_);
+                step_left_speeds.push_back(left_speed);
+                step_right_speeds.push_back(right_speed);
                 step_left_volts.push_back(left_v);
                 step_right_volts.push_back(right_v);
 
                 if ((sample_count - SKIP_SAMPLES) % OUTPUT_EVERY == 0)
                 {
                     uint32_t now = to_ms_since_boot(get_absolute_time());
-                    reporter_.reportOpenLoopStereo(now, voltage, left_v, right_v,
-                                                   left_velocity_mmps_, right_velocity_mmps_,
-                                                   steer_volts);
+                    reporter_.reportOpenLoopStereo(now, voltage, left_v, right_v, left_speed,
+                                                   right_speed, steer_volts);
                 }
             }
 
@@ -437,7 +360,8 @@ void DriverLab::runStepTrial(float step_voltage, uint32_t duration_ms)
     reporter_.begin();
     reporter_.printStepHeader();
 
-    resetEncoders();
+    Drivetrain* dt = robot_->drivetrain();
+    dt->reset();
 
     // Collect speed samples for Tm calculation
     static constexpr int MAX_STEP_SAMPLES = 2000;
@@ -457,13 +381,14 @@ void DriverLab::runStepTrial(float step_voltage, uint32_t duration_ms)
         uint32_t now = to_ms_since_boot(get_absolute_time());
         elapsed      = now - start_time;
 
-        updateEncoders(LOOP_INTERVAL_S);
+        dt->update(LOOP_INTERVAL_S);
 
-        float speed = encoderVelocityMMps();
+        float speed = (dt->velocity(WheelSide::LEFT) + dt->velocity(WheelSide::RIGHT)) / 2.0f;
+        float pos   = (dt->position(WheelSide::LEFT) + dt->position(WheelSide::RIGHT)) / 2.0f;
 
         if (reporter_.isTimeToReport(now))
         {
-            reporter_.reportStep(now, step_voltage, speed, encoderPositionMM());
+            reporter_.reportStep(now, step_voltage, speed, pos);
 
             // Store for Tm calculation
             if (n_samples < MAX_STEP_SAMPLES)
@@ -560,7 +485,7 @@ void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration
     printf("Mode: %d (%s)\n", mode, mode == 0 ? "FF only" : (mode == 1 ? "PD only" : "FF+PD"));
     printf("Battery: %.2f V\n", batteryVoltage());
 
-    // Countdown to allow USB disconnect
+    // Countdown
     for (int i = 3; i > 0; i--)
     {
         printf("Starting in %d...\n", i);
@@ -568,92 +493,46 @@ void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration
     }
     printf("GO!\n\n");
 
+    // Sync DriverLab settings → Robot/Drivetrain
+    robot_->setForwardGains(settings_.kP, 0.0f, settings_.kD);
+    robot_->setFeedforward(WheelSide::LEFT, settings_.kV, settings_.kS, settings_.kA);
+    robot_->setFeedforward(WheelSide::RIGHT, settings_.kV, settings_.kS, settings_.kA);
+
+    // Set control mode: 0=FF only, 1=PD only, 2=FF+PD
+    if (mode == 0)
+        robot_->setControlMode(ControlMode::FeedforwardOnly);
+    else if (mode == 1)
+        robot_->setControlMode(ControlMode::FeedbackOnly);
+    else
+        robot_->setControlMode(ControlMode::Full);
+
+    // Delegate motion to Robot
+    Drivetrain* dt = robot_->drivetrain();
+    dt->reset();
+    robot_->moveDistance(distance, top_speed, acceleration);
+
     reporter_.begin();
-    reporter_.printControllerHeader();
-
-    resetEncoders();
-
-    // Start motion profile (in mm units)
-    profile_.start(distance, top_speed, acceleration, 0.0f);
-
-    // Initialize error accumulator for PD control
-    float position_error = 0.0f;
-    float prev_error     = 0.0f;
+    printf("time_ms,set_speed,actual_speed,error,left_v,right_v\n");
 
     // Diagnostics tracking
-    float max_speed_error    = 0.0f;
-    float sum_speed_error    = 0.0f;
-    float max_pos_error      = 0.0f;
-    float max_ctrl_volts     = 0.0f;
-    float max_ff_volts       = 0.0f;
-    int   diag_count         = 0;
-    float cruising_speed_err = 0.0f;
-    int   cruising_count     = 0;
+    float max_speed_error = 0.0f;
+    float sum_speed_error = 0.0f;
+    float max_pos_error   = 0.0f;
+    float max_volts       = 0.0f;
+    int   diag_count      = 0;
 
-    // Control loop
-    while (!profile_.finished())
+    // Poll loop — Robot does all control, DriverLab just logs
+    while (!robot_->motionComplete())
     {
         uint32_t now = to_ms_since_boot(get_absolute_time());
+        robot_->updateControl(LOOP_INTERVAL_S);
 
-        // Update sensors
-        updateEncoders(LOOP_INTERVAL_S);
-
-        // Update profile
-        profile_.update(LOOP_INTERVAL_S);
-
-        // Get setpoints (in mm, mm/s, mm/s^2)
-        float set_position = profile_.position();
-        float set_speed    = profile_.speed();
-        float set_accel    = profile_.acceleration();
-
-        // Get actual values (in mm, mm/s)
-        float actual_position = encoderPositionMM();
-        float actual_speed    = encoderVelocityMMps();
-
-        // Calculate control output
-        float ff_volts      = 0.0f;
-        float control_volts = 0.0f;
-
-        // Feedforward (if enabled)
-        if (mode == 0 || mode == 2)
-        {
-            ff_volts = settings_.kS;
-            if (set_speed > 0.0f)
-            {
-                ff_volts += settings_.kV * set_speed;
-            }
-            else if (set_speed < 0.0f)
-            {
-                ff_volts = -settings_.kS + settings_.kV * set_speed;
-            }
-            ff_volts += settings_.kA * set_accel;
-        }
-
-        // PD Controller (if enabled)
-        if (mode == 1 || mode == 2)
-        {
-            // Incremental error accumulation (mazerunner-core style)
-            float expected_delta = set_speed * LOOP_INTERVAL_S;
-            float actual_delta   = actual_speed * LOOP_INTERVAL_S;
-            position_error += (expected_delta - actual_delta);
-
-            // PD output
-            float derivative = (position_error - prev_error) / LOOP_INTERVAL_S;
-            control_volts    = settings_.kP * position_error + settings_.kD * derivative;
-            prev_error       = position_error;
-        }
-
-        // Total output
-        float total_volts = ff_volts + control_volts;
-
-        // Clamp to safe limits
-        if (total_volts > MAX_VOLTAGE)
-            total_volts = MAX_VOLTAGE;
-        if (total_volts < -MAX_VOLTAGE)
-            total_volts = -MAX_VOLTAGE;
-
-        // Apply to motors
-        setMotorVoltage(total_volts);
+        float set_speed = robot_->targetForwardVel();
+        float actual_speed =
+            (dt->velocity(WheelSide::LEFT) + dt->velocity(WheelSide::RIGHT)) / 2.0f;
+        float pos_error = robot_->forwardError();
+        float left_v    = robot_->lastLeftVolts();
+        float right_v   = robot_->lastRightVolts();
 
         // Track diagnostics
         float speed_err = std::fabs(set_speed - actual_speed);
@@ -661,64 +540,51 @@ void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration
         diag_count++;
         if (speed_err > max_speed_error)
             max_speed_error = speed_err;
-        if (std::fabs(position_error) > max_pos_error)
-            max_pos_error = std::fabs(position_error);
-        if (std::fabs(control_volts) > max_ctrl_volts)
-            max_ctrl_volts = std::fabs(control_volts);
-        if (std::fabs(ff_volts) > max_ff_volts)
-            max_ff_volts = std::fabs(ff_volts);
+        if (std::fabs(pos_error) > max_pos_error)
+            max_pos_error = std::fabs(pos_error);
+        float abs_volts = std::max(std::fabs(left_v), std::fabs(right_v));
+        if (abs_volts > max_volts)
+            max_volts = abs_volts;
 
-        // Track cruising phase (accel ~0, speed > 50% target)
-        if (std::fabs(set_accel) < 1.0f && set_speed > top_speed * 0.5f)
-        {
-            cruising_speed_err += speed_err;
-            cruising_count++;
-        }
-
-        // Report data
+        // CSV output
         if (reporter_.isTimeToReport(now))
         {
-            reporter_.reportController(now, set_position, actual_position, set_speed, actual_speed,
-                                       control_volts, ff_volts, total_volts);
+            uint32_t elapsed = now - reporter_.startTime();
+            printf("%lu,%.2f,%.2f,%.2f,%.3f,%.3f\n", static_cast<unsigned long>(elapsed), set_speed,
+                   actual_speed, pos_error, left_v, right_v);
+            reporter_.incrementSampleCount();
         }
 
         sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
     }
 
-    // Hold position briefly then stop
-    sleep_ms(200);
     stopMotors();
+    robot_->setControlMode(ControlMode::Full); // restore default
 
-    float final_pos_error = distance - encoderPositionMM();
+    float actual_dist     = (dt->position(WheelSide::LEFT) + dt->position(WheelSide::RIGHT)) / 2.0f;
+    float final_pos_error = distance - actual_dist;
     float avg_speed_error = (diag_count > 0) ? (sum_speed_error / diag_count) : 0.0f;
-    float cruising_avg    = (cruising_count > 0) ? (cruising_speed_err / cruising_count) : 0.0f;
 
     printf("\n=== Move Trial Complete ===\n");
     printf("Samples: %lu\n", static_cast<unsigned long>(reporter_.sampleCount()));
-    printf("\n");
-    printf("--- Diagnostics ---\n");
+    printf("\n--- Diagnostics ---\n");
     printf("  Final position error: %+.2f mm\n", final_pos_error);
     printf("  Max position error:   %.2f mm\n", max_pos_error);
     printf("  Max speed error:      %.1f mm/s\n", max_speed_error);
     printf("  Avg speed error:      %.1f mm/s\n", avg_speed_error);
-    if (cruising_count > 0)
-        printf("  Cruising speed error: %.1f mm/s (avg over %d samples)\n", cruising_avg,
-               cruising_count);
-    printf("  Max FF effort:        %.2f V\n", max_ff_volts);
-    printf("  Max PD effort:        %.2f V\n", max_ctrl_volts);
-    printf("\n");
-    printf("--- Tuning Tips ---\n");
+    printf("  Max motor volts:      %.2f V\n", max_volts);
+    printf("\n--- Tuning Tips ---\n");
     if (mode == 0 || mode == 2)
     {
-        if (cruising_count > 0 && cruising_avg > 20.0f)
-            printf("  ! Cruising error high: kV may be wrong (run OL to recalibrate)\n");
+        if (avg_speed_error > 20.0f)
+            printf("  ! Steady-state error high: kV may be wrong (run OL to recalibrate)\n");
         if (max_speed_error > top_speed * 0.3f)
             printf("  ! Large transient error: increase kA or reduce acceleration\n");
     }
     if (mode == 1 || mode == 2)
     {
-        if (max_ctrl_volts > MAX_VOLTAGE * 0.8f)
-            printf("  ! PD near saturation: reduce kP or lower speed/accel\n");
+        if (max_volts > MAX_VOLTAGE * 0.8f)
+            printf("  ! Near voltage saturation: reduce kP or lower speed/accel\n");
         if (max_pos_error > 10.0f)
             printf("  ! Position drift > 10mm: increase kP\n");
     }
@@ -737,7 +603,7 @@ void DriverLab::runTurnTrial(float degrees, float top_omega, float alpha)
     printf("TURN_KP: %.4f, TURN_KD: %.4f\n", settings_.turnKP, settings_.turnKD);
     printf("Battery: %.2f V\n", batteryVoltage());
 
-    // Countdown to allow USB disconnect
+    // Countdown
     for (int i = 3; i > 0; i--)
     {
         printf("Starting in %d...\n", i);
@@ -745,120 +611,87 @@ void DriverLab::runTurnTrial(float degrees, float top_omega, float alpha)
     }
     printf("GO!\n\n");
 
-    reporter_.begin();
-    // Print CSV header for turn data
-    printf("time_ms,set_yaw,actual_yaw,set_omega,actual_omega,volts\n");
+    // Sync DriverLab gains → Robot's controllers
+    robot_->setRotationGains(settings_.turnKP, 0.0f, settings_.turnKD);
+    robot_->setControlMode(ControlMode::Full);
 
-    // Reset angular tracking
+    // Delegate motion to Robot
     robot_->resetYaw();
+    robot_->turnInPlace(degrees, top_omega, alpha);
 
-    // Start motion profile (absolute angle value, direction handled separately)
-    float direction = (degrees >= 0.0f) ? 1.0f : -1.0f;
-    profile_.start(std::fabs(degrees), top_omega, alpha, 0.0f);
-
-    // Initialize error accumulator for PD control
-    float yaw_error  = 0.0f;
-    float prev_error = 0.0f;
+    reporter_.begin();
+    printf("time_ms,set_omega,actual_yaw,actual_omega,error,left_v,right_v\n");
 
     // Diagnostics tracking
     float peak_overshoot_deg = 0.0f;
-    float max_ctrl_volts     = 0.0f;
     float max_yaw_error      = 0.0f;
-    bool  profile_done       = false;
+    float max_volts          = 0.0f;
+    bool  past_target        = false;
 
-    // Control loop
-    while (!profile_.finished())
+    // Poll loop — Robot does all control, DriverLab just logs
+    while (!robot_->motionComplete())
     {
         uint32_t now = to_ms_since_boot(get_absolute_time());
+        robot_->updateControl(LOOP_INTERVAL_S);
 
-        // Update angular velocity from IMU (via Robot's sensor tracking)
-        robot_->update(LOOP_INTERVAL_S);
-
-        // Update profile
-        profile_.update(LOOP_INTERVAL_S);
-
-        // Get setpoints (apply direction)
-        float set_yaw   = profile_.position() * direction;
-        float set_omega = profile_.speed() * direction;
-
-        // Get actual values from IMU
         float actual_yaw   = robot_->yaw();
         float actual_omega = robot_->omega();
-
-        // PD Control on angular position
-        // Incremental error accumulation (mazerunner-core style)
-        float expected_delta = set_omega * LOOP_INTERVAL_S;
-        float actual_delta   = actual_omega * LOOP_INTERVAL_S;
-        yaw_error += (expected_delta - actual_delta);
-
-        // PD output
-        float derivative = (yaw_error - prev_error) / LOOP_INTERVAL_S;
-        float ctrl_volts = settings_.turnKP * yaw_error + settings_.turnKD * derivative;
-        prev_error       = yaw_error;
-
-        // Clamp to safe limits
-        if (ctrl_volts > MAX_VOLTAGE)
-            ctrl_volts = MAX_VOLTAGE;
-        if (ctrl_volts < -MAX_VOLTAGE)
-            ctrl_volts = -MAX_VOLTAGE;
-
-        // Apply differential to motors
-        setTurnVoltage(ctrl_volts);
+        float rot_error    = robot_->rotationError();
+        float left_v       = robot_->lastLeftVolts();
+        float right_v      = robot_->lastRightVolts();
 
         // Track diagnostics
-        float abs_error = std::fabs(yaw_error);
+        float abs_error = std::fabs(rot_error);
         if (abs_error > max_yaw_error)
             max_yaw_error = abs_error;
-        if (std::fabs(ctrl_volts) > max_ctrl_volts)
-            max_ctrl_volts = std::fabs(ctrl_volts);
+        float abs_volts = std::max(std::fabs(left_v), std::fabs(right_v));
+        if (abs_volts > max_volts)
+            max_volts = abs_volts;
 
-        // Detect overshoot after profile reaches target
-        if (profile_.speed() < 0.1f && !profile_done)
-            profile_done = true;
-        if (profile_done)
+        // Detect overshoot
+        if (std::fabs(actual_yaw) >= std::fabs(degrees) * 0.95f)
+            past_target = true;
+        if (past_target)
         {
             float overshoot = std::fabs(actual_yaw) - std::fabs(degrees);
             if (overshoot > peak_overshoot_deg)
                 peak_overshoot_deg = overshoot;
         }
 
-        // Report data
+        // CSV output
         if (reporter_.isTimeToReport(now))
         {
             uint32_t elapsed = now - reporter_.startTime();
-            printf("%lu,%.2f,%.2f,%.2f,%.2f,%.3f\n", static_cast<unsigned long>(elapsed), set_yaw,
-                   actual_yaw, set_omega, actual_omega, ctrl_volts);
+            printf("%lu,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f\n", static_cast<unsigned long>(elapsed),
+                   robot_->targetAngularVel(), actual_yaw, actual_omega, rot_error, left_v,
+                   right_v);
             reporter_.incrementSampleCount();
         }
 
         sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
     }
 
-    // Hold position briefly then stop
-    sleep_ms(200);
     stopMotors();
 
     float final_error = degrees - robot_->yaw();
 
     printf("\n=== Turn Trial Complete ===\n");
     printf("Samples: %lu\n", static_cast<unsigned long>(reporter_.sampleCount()));
-    printf("\n");
-    printf("--- Diagnostics ---\n");
+    printf("\n--- Diagnostics ---\n");
     printf("  Final error:     %+.2f deg\n", final_error);
     printf("  Peak overshoot:  %.2f deg (%.1f%%)\n", peak_overshoot_deg,
            (std::fabs(degrees) > 0.1f) ? (peak_overshoot_deg / std::fabs(degrees) * 100.0f) : 0.0f);
     printf("  Max yaw error:   %.2f deg\n", max_yaw_error);
-    printf("  Max ctrl effort: %.2f V\n", max_ctrl_volts);
-    printf("\n");
-    printf("--- Tuning Tips ---\n");
+    printf("  Max motor volts: %.2f V\n", max_volts);
+    printf("\n--- Tuning Tips ---\n");
     if (peak_overshoot_deg > std::fabs(degrees) * 0.10f)
         printf("  ! Overshoot > 10%%: increase turnKD or decrease turnKP\n");
     if (std::fabs(final_error) > 3.0f)
         printf("  ! Final error > 3 deg: increase turnKP\n");
-    if (max_ctrl_volts > MAX_VOLTAGE * 0.9f)
-        printf("  ! Controller near saturation: reduce speed or lower turnKP\n");
+    if (max_volts > MAX_VOLTAGE * 0.9f)
+        printf("  ! Near voltage saturation: reduce speed or lower turnKP\n");
     if (peak_overshoot_deg < 1.0f && std::fabs(final_error) < 2.0f &&
-        max_ctrl_volts < MAX_VOLTAGE * 0.7f)
+        max_volts < MAX_VOLTAGE * 0.7f)
         printf("  Looks good! Gains are well-tuned for this speed.\n");
     printf("\n");
     printPrompt();
@@ -1447,9 +1280,12 @@ void DriverLab::cmdEncoders()
         printf("  Right: N/A (not connected)\n");
     }
 
+    Drivetrain* dt = robot_->drivetrain();
     printf("Velocity:\n");
-    printf("  Avg: %.1f mm/s\n", encoderVelocityMMps());
-    printf("  L: %.1f mm/s  R: %.1f mm/s\n", left_velocity_mmps_, right_velocity_mmps_);
+    printf("  Avg: %.1f mm/s\n",
+           (dt->velocity(WheelSide::LEFT) + dt->velocity(WheelSide::RIGHT)) / 2.0f);
+    printf("  L: %.1f mm/s  R: %.1f mm/s\n", dt->velocity(WheelSide::LEFT),
+           dt->velocity(WheelSide::RIGHT));
 }
 
 void DriverLab::cmdYaw()
@@ -1621,7 +1457,7 @@ void DriverLab::cmdRightEncoder()
 
 void DriverLab::cmdEncoderReset()
 {
-    resetEncoders();
+    robot_->drivetrain()->reset();
     printf("Encoders reset to 0\n");
 }
 
@@ -1653,10 +1489,10 @@ void DriverLab::cmdEncoderContinuous(const DriverLabArgs& args)
         last_tick           = now;
         elapsed             = to_ms_since_boot(now) - start_time;
 
-        updateEncoders(dt);
+        robot_->drivetrain()->update(dt);
 
-        float left_mm  = left_encoder_ ? left_encoder_->ticks() * MM_PER_TICK : 0.0f;
-        float right_mm = right_encoder_ ? right_encoder_->ticks() * MM_PER_TICK : 0.0f;
+        float left_mm  = robot_->drivetrain()->position(WheelSide::LEFT);
+        float right_mm = robot_->drivetrain()->position(WheelSide::RIGHT);
 
         printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed), left_mm, right_mm);
 

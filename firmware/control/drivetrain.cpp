@@ -8,7 +8,11 @@
 Drivetrain::Drivetrain(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                        Encoder* right_encoder, Battery* battery)
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
-      right_encoder_(right_encoder), battery_(battery)
+      right_encoder_(right_encoder), battery_(battery),
+      ff_fwd_left_{FORWARD_KVL, FORWARD_KSL, FORWARD_KAL},
+      ff_fwd_right_{FORWARD_KVR, FORWARD_KSR, FORWARD_KAR},
+      ff_rev_left_{REVERSE_KVL, REVERSE_KSL, REVERSE_KAL},
+      ff_rev_right_{REVERSE_KVR, REVERSE_KSR, REVERSE_KAR}
 {
 }
 
@@ -73,17 +77,28 @@ float Drivetrain::feedforward(WheelSide side, float speed_mmps, float accel_mmps
 
     if (speed_mmps > 0.0f)
     {
-        float kv = is_left ? FORWARD_KVL : FORWARD_KVR;
-        float ks = is_left ? FORWARD_KSL : FORWARD_KSR;
-        float ka = is_left ? FORWARD_KAL : FORWARD_KAR;
-        return kv * speed_mmps + ks + ka * accel_mmps2;
+        const FFCoeffs& c = is_left ? ff_fwd_left_ : ff_fwd_right_;
+        return c.kv * speed_mmps + c.ks + c.ka * accel_mmps2;
     }
     else
     {
-        float kv = is_left ? REVERSE_KVL : REVERSE_KVR;
-        float ks = is_left ? REVERSE_KSL : REVERSE_KSR;
-        float ka = is_left ? REVERSE_KAL : REVERSE_KAR;
-        return kv * speed_mmps - ks + ka * accel_mmps2;
+        const FFCoeffs& c = is_left ? ff_rev_left_ : ff_rev_right_;
+        return c.kv * speed_mmps - c.ks + c.ka * accel_mmps2;
+    }
+}
+
+void Drivetrain::setFeedforward(WheelSide side, float kv, float ks, float ka)
+{
+    bool is_left = (side == WheelSide::LEFT);
+    if (is_left)
+    {
+        ff_fwd_left_ = {kv, ks, ka};
+        ff_rev_left_ = {kv, ks, ka};
+    }
+    else
+    {
+        ff_fwd_right_ = {kv, ks, ka};
+        ff_rev_right_ = {kv, ks, ka};
     }
 }
 
@@ -94,17 +109,17 @@ void Drivetrain::update(float dt)
 
     if (left_encoder_)
     {
-        int32_t curr_left = left_encoder_->ticks();
-        int32_t d_left    = curr_left - prev_left_ticks_;
-        prev_left_ticks_  = curr_left;
+        int32_t curr_left   = left_encoder_->ticks();
+        int32_t d_left      = curr_left - prev_left_ticks_;
+        prev_left_ticks_    = curr_left;
         left_velocity_mmps_ = (d_left * MM_PER_TICK) / dt;
     }
 
     if (right_encoder_)
     {
-        int32_t curr_right = right_encoder_->ticks();
-        int32_t d_right    = curr_right - prev_right_ticks_;
-        prev_right_ticks_  = curr_right;
+        int32_t curr_right   = right_encoder_->ticks();
+        int32_t d_right      = curr_right - prev_right_ticks_;
+        prev_right_ticks_    = curr_right;
         right_velocity_mmps_ = (d_right * MM_PER_TICK) / dt;
     }
 

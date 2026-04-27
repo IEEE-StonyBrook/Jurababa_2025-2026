@@ -371,8 +371,8 @@ class Dashboard(QMainWindow):
         trials_layout.setSpacing(4)
 
         self.btn_ol = QPushButton('1. OL  —  Measure kM, kS')
-        self.btn_ol.setToolTip("Open-loop voltage sweep → finds motor gain (kM) and static friction (kS)\nDefault: OL 4 1 500")
-        self.btn_ol.clicked.connect(lambda: self.run_trial("OL 4 1 500"))
+        self.btn_ol.setToolTip("Open-loop voltage sweep → finds motor gain (kM) and static friction (kS)\nDefault: OL 6 1 2000  (1V–6V, 2s per step)")
+        self.btn_ol.clicked.connect(lambda: self.run_trial("OL 6 1 2000"))
         trials_layout.addWidget(self.btn_ol)
 
         self.btn_step = QPushButton('2. STEP  —  Measure Tm')

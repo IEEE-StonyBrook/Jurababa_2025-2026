@@ -13,6 +13,20 @@ class IMU;
 class ToF;
 
 /**
+ * @brief Control mode for selecting which parts of the control loop are active.
+ *
+ * Full:             FF + PD (default, used in Normal Mode)
+ * FeedforwardOnly:  FF only, PD zeroed (for characterization)
+ * FeedbackOnly:     PD only, FF zeroed (for characterization)
+ */
+enum class ControlMode
+{
+    Full,
+    FeedforwardOnly,
+    FeedbackOnly
+};
+
+/**
  * @brief High-level robot controller with position-based control
  *
  * Implements mazerunner-core style dual PD controllers for position and
@@ -73,6 +87,17 @@ class Robot
     // === Controller Tuning ===
     void setForwardGains(float kp, float ki, float kd);
     void setRotationGains(float kp, float ki, float kd);
+    void setControlMode(ControlMode mode);
+    void setFeedforward(WheelSide side, float kv, float ks, float ka);
+
+    // === Diagnostic Accessors (for DriverLab CSV logging) ===
+    float       targetForwardVel() const { return target_forward_vel_mmps_; }
+    float       targetAngularVel() const { return target_angular_vel_degps_; }
+    float       forwardError() const { return forward_error_; }
+    float       rotationError() const { return rotation_error_; }
+    float       lastLeftVolts() const { return prev_left_volts_; }
+    float       lastRightVolts() const { return prev_right_volts_; }
+    Drivetrain* drivetrain() const { return drivetrain_; }
 
     // Legacy API
     bool isMotionDone() const;
@@ -87,7 +112,8 @@ class Robot
         Stopping
     };
 
-    MotionState state_ = MotionState::Idle;
+    MotionState state_        = MotionState::Idle;
+    ControlMode control_mode_ = ControlMode::Full;
 
     void updateSensors(float dt);
     void updateForwardProfile(float dt);

@@ -54,6 +54,13 @@ class Drivetrain
     float feedforward(WheelSide side, float speed_mmps, float accel_mmps2 = 0.0f);
 
     /**
+     * @brief Overrides feedforward coefficients for runtime tuning (DriverLab)
+     *
+     * Sets both forward and reverse coefficients for the given wheel side.
+     */
+    void setFeedforward(WheelSide side, float kv, float ks, float ka);
+
+    /**
      * @brief Updates velocity estimates from encoder readings
      * @param dt Time step in seconds since last update
      */
@@ -91,6 +98,14 @@ class Drivetrain
 
     float last_left_pos_mm_  = 0.0f;
     float last_right_pos_mm_ = 0.0f;
+
+    // Feedforward coefficients (initialized from config, mutable for tuning)
+    struct FFCoeffs
+    {
+        float kv, ks, ka;
+    };
+    FFCoeffs ff_fwd_left_, ff_fwd_right_;
+    FFCoeffs ff_rev_left_, ff_rev_right_;
 };
 
 #endif

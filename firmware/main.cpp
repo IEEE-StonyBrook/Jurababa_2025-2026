@@ -509,7 +509,6 @@ void runDriverLabMode(Battery& battery)
         last_tick              = now;
 
         robot.update(dt);
-        driverlab->updateEncoders(LOOP_INTERVAL_S);
         driverlab->processSerial();
 
         if (now_ms - last_battery_update_ms >= BATTERY_UPDATE_INTERVAL_MS)
