@@ -523,11 +523,16 @@ void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration
     float max_volts       = 0.0f;
     int   diag_count      = 0;
 
+    absolute_time_t last_tick = get_absolute_time();
+
     // Poll loop — Robot does all control, DriverLab just logs
     while (!robot_->motionComplete())
     {
-        uint32_t now = to_ms_since_boot(get_absolute_time());
-        robot_->updateControl(LOOP_INTERVAL_S);
+        absolute_time_t now_at  = get_absolute_time();
+        float           dt_real = absolute_time_diff_us(last_tick, now_at) * 1e-6f;
+        last_tick               = now_at;
+        uint32_t now            = to_ms_since_boot(now_at);
+        robot_->updateControl(dt_real);
 
         float set_speed    = robot_->targetForwardVel();
         float left_speed   = dt->velocity(WheelSide::LEFT);
@@ -631,11 +636,16 @@ void DriverLab::runTurnTrial(float degrees, float top_omega, float alpha)
     float max_volts          = 0.0f;
     bool  past_target        = false;
 
+    absolute_time_t last_tick = get_absolute_time();
+
     // Poll loop — Robot does all control, DriverLab just logs
     while (!robot_->motionComplete())
     {
-        uint32_t now = to_ms_since_boot(get_absolute_time());
-        robot_->updateControl(LOOP_INTERVAL_S);
+        absolute_time_t now_at  = get_absolute_time();
+        float           dt_real = absolute_time_diff_us(last_tick, now_at) * 1e-6f;
+        last_tick               = now_at;
+        uint32_t now            = to_ms_since_boot(now_at);
+        robot_->updateControl(dt_real);
 
         float actual_yaw   = robot_->yaw();
         float actual_omega = robot_->omega();
