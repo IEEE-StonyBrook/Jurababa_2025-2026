@@ -7,6 +7,7 @@
 #include "common/utils.h"
 #include "control/pid.h"
 #include "control/profile.h"
+#include "pico/time.h"
 
 class Drivetrain;
 class IMU;
@@ -51,7 +52,9 @@ class Robot
     float yawDelta(); // Change since last call
     void  resetYaw();
     void  resetHeadingControl(); // Full reset: zeros yaw + clears PD state. Use at trial start.
-    float headingCorrection(float target_omega_degps, float dt);
+    // Uses dt measured by the most recent update() call.
+    // Caller must invoke update() once per loop before calling this.
+    float headingCorrection(float target_omega_degps);
 
     // === ToF Distances ===
     float frontDistance();
@@ -81,8 +84,12 @@ class Robot
     float remainingAngle() const;
 
     // === Control Loop ===
-    void updateControl(float dt);
-    void update(float dt);
+    // Robot is the sole owner of dt: update() measures wall-clock dt internally
+    // and propagates it to drivetrain, sensors, profiles, and PID. Callers must
+    // never pass dt — this prevents the OL-style "lied-to dt" bug class.
+    // The first call after construction or any motion-state change primes the
+    // clock and is a no-op for time-derived state.
+    void update();
 
     // === Controller Tuning ===
     void setForwardGains(float kp, float ki, float kd);
@@ -115,9 +122,13 @@ class Robot
     MotionState state_        = MotionState::Idle;
     ControlMode control_mode_ = ControlMode::Full;
 
+    // Robot is the dt owner — these helpers consume the dt that update() measured.
+    void updateControl(float dt);
     void updateSensors(float dt);
     void updateForwardProfile(float dt);
     void updateRotationProfile(float dt);
+
+    void invalidateClock() { last_update_time_ = nil_time; }
 
     void checkForwardCompletion();
     void checkRotationCompletion();
@@ -163,6 +174,10 @@ class Robot
     float last_yaw_for_delta_ = 0.0f;
 
     bool motion_done_ = true;
+
+    // dt ownership — see update() doc above.
+    absolute_time_t last_update_time_ = nil_time;
+    float           last_dt_s_        = 0.0f;
 };
 
 #endif

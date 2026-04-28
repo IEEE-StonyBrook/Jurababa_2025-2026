@@ -61,6 +61,7 @@ void Robot::reset()
     prev_right_volts_ = 0.0f;
 
     motion_done_ = true;
+    invalidateClock();
 }
 
 // === Sensor Methods (merged from Sensors class) ===
@@ -113,8 +114,9 @@ void Robot::resetHeadingControl()
     rotation_controller_.reset();
 }
 
-float Robot::headingCorrection(float target_omega_degps, float dt)
+float Robot::headingCorrection(float target_omega_degps)
 {
+    float dt                = last_dt_s_;
     float rotation_delta    = yawDelta();
     float expected_rotation = target_omega_degps * dt;
     rotation_error_ += (expected_rotation - rotation_delta);
@@ -188,6 +190,7 @@ void Robot::moveDistance(float distance_mm, float max_vel_mmps, float accel_mmps
     target_forward_accel_mmps2_ = 0.0f;
 
     motion_done_ = false;
+    invalidateClock();
 }
 
 void Robot::turnInPlace(float degrees, float max_vel_degps, float accel_degps2)
@@ -211,6 +214,7 @@ void Robot::turnInPlace(float degrees, float max_vel_degps, float accel_degps2)
     target_forward_accel_mmps2_ = 0.0f;
 
     motion_done_ = false;
+    invalidateClock();
 }
 
 void Robot::stopAtCenter()
@@ -223,6 +227,7 @@ void Robot::stopAtCenter()
     target_forward_vel_mmps_    = 0.0f;
     target_angular_vel_degps_   = 0.0f;
     target_forward_accel_mmps2_ = 0.0f;
+    invalidateClock();
 }
 
 void Robot::stop()
@@ -248,6 +253,7 @@ void Robot::stop()
     drivetrain_->stop();
 
     motion_done_ = true;
+    invalidateClock();
 }
 
 void Robot::moveToNextCell()
@@ -301,6 +307,7 @@ void Robot::smoothTurn(float degrees, float radius_mm)
     target_forward_accel_mmps2_ = 0.0f;
 
     motion_done_ = false;
+    invalidateClock();
 
     LOG_DEBUG("SmoothTurn | Angle: " + std::to_string(degrees) + " deg | Radius: " +
               std::to_string(radius_mm) + " mm | Arc: " + std::to_string(arc_length_mm) + " mm");
@@ -331,6 +338,7 @@ void Robot::backToWall(float max_distance_mm)
     target_forward_accel_mmps2_ = 0.0f;
 
     motion_done_ = false;
+    invalidateClock();
 
     LOG_DEBUG("BackToWall | Max distance: " + std::to_string(max_distance_mm) + " mm");
 }
@@ -614,8 +622,20 @@ void Robot::setFeedforward(WheelSide side, float kv, float ks, float ka)
     drivetrain_->setFeedforward(side, kv, ks, ka);
 }
 
-void Robot::update(float dt)
+void Robot::update()
 {
+    absolute_time_t now = get_absolute_time();
+    if (is_nil_time(last_update_time_))
+    {
+        last_update_time_ = now;
+        last_dt_s_        = 0.0f;
+        return;
+    }
+    float dt          = absolute_time_diff_us(last_update_time_, now) * 1e-6f;
+    last_update_time_ = now;
+    last_dt_s_        = dt;
+    if (dt < DRIVETRAIN_MIN_DT)
+        return;
     updateControl(dt);
 }
 

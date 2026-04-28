@@ -297,15 +297,11 @@ void core1_RobotController()
 
     const int       CONTROL_PERIOD_MS = 10;
     absolute_time_t next_tick         = make_timeout_time_ms(CONTROL_PERIOD_MS);
-    absolute_time_t last_tick         = get_absolute_time();
 
     while (true)
     {
-        absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
-        last_tick           = now;
-
-        robot.update(dt);
+        // Robot owns dt; update() measures wall-clock dt internally.
+        robot.update();
         processCommands(&robot);
 
         SensorData sensor_data{};
@@ -315,7 +311,7 @@ void core1_RobotController()
         sensor_data.tof_front_mm  = static_cast<int16_t>(front_tof.distance());
         sensor_data.tof_right_mm  = static_cast<int16_t>(right_tof.distance());
         sensor_data.imu_yaw       = imu.yaw();
-        sensor_data.timestamp_ms  = to_ms_since_boot(now);
+        sensor_data.timestamp_ms  = to_ms_since_boot(get_absolute_time());
         SensorHub::publish(sensor_data);
 
         sleep_until(next_tick);
@@ -496,19 +492,16 @@ void runDriverLabMode(Battery& battery)
 
     const uint32_t  LOOP_PERIOD_MS = static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f);
     absolute_time_t next_tick      = make_timeout_time_ms(LOOP_PERIOD_MS);
-    absolute_time_t last_tick      = get_absolute_time();
 
     uint32_t       last_battery_update_ms     = 0;
     const uint32_t BATTERY_UPDATE_INTERVAL_MS = 1000;
 
     while (true)
     {
-        absolute_time_t now    = get_absolute_time();
-        float           dt     = absolute_time_diff_us(last_tick, now) * 1e-6f;
-        uint32_t        now_ms = to_ms_since_boot(now);
-        last_tick              = now;
+        uint32_t now_ms = to_ms_since_boot(get_absolute_time());
 
-        robot.update(dt);
+        // Robot owns dt; update() measures wall-clock dt internally.
+        robot.update();
         driverlab->processSerial();
 
         if (now_ms - last_battery_update_ms >= BATTERY_UPDATE_INTERVAL_MS)
@@ -579,7 +572,9 @@ void runLineFollowingMode(Battery& battery)
 
     line_follower.startFollowing();
 
-    // Control loop
+    // Line-follower mode: this loop is the dt owner for this mode (no Robot here).
+    // drivetrain.update(dt) and line_follower.update(dt) are dt consumers — same
+    // single-owner pattern Robot uses in Normal/DriverLab modes.
     const int       CONTROL_PERIOD_MS = 10;
     absolute_time_t next_tick         = make_timeout_time_ms(CONTROL_PERIOD_MS);
     absolute_time_t last_tick         = get_absolute_time();

@@ -105,8 +105,8 @@ void Drivetrain::update(float dt)
         right_velocity_mmps_ = (d_right * MM_PER_TICK) / dt;
     }
 
-    if (left_velocity_mmps_ > DRIVETRAIN_MAX_VELOCITY_MMPS ||
-        right_velocity_mmps_ > DRIVETRAIN_MAX_VELOCITY_MMPS)
+    if (std::fabs(left_velocity_mmps_) > DRIVETRAIN_MAX_VELOCITY_MMPS ||
+        std::fabs(right_velocity_mmps_) > DRIVETRAIN_MAX_VELOCITY_MMPS)
     {
         LOG_ERROR("Velocity spike: L=" + std::to_string(left_velocity_mmps_) +
                   " R=" + std::to_string(right_velocity_mmps_) + " mm/s");

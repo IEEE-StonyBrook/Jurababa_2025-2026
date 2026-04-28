@@ -148,6 +148,7 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
 
     Drivetrain* dt = robot_->drivetrain();
     dt->reset();
+    robot_->stop(); // Force Idle so Robot::update() doesn't fight our manual voltages.
     robot_->setRotationGains(settings_.turnKP, 0.0f, settings_.turnKD);
     robot_->resetHeadingControl(); // Trial start: zero yaw + clear PD state.
 
@@ -168,19 +169,20 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
         // Per-step buffers for steady-state averaging
         std::vector<float> step_left_speeds, step_right_speeds;
         std::vector<float> step_left_volts, step_right_volts;
+        std::vector<float> step_sample_times_s; // wall-clock seconds since step_start
 
         uint32_t step_start   = to_ms_since_boot(get_absolute_time());
         size_t   sample_count = 0;
 
         while (to_ms_since_boot(get_absolute_time()) - step_start < settle_time_ms)
         {
-            robot_->update(LOOP_INTERVAL_S);
+            robot_->update();
 
             float left_speed  = dt->velocity(WheelSide::LEFT);
             float right_speed = dt->velocity(WheelSide::RIGHT);
 
             // Get steering correction from Robot's heading controller
-            float steer_volts = robot_->headingCorrection(0.0f, LOOP_INTERVAL_S);
+            float steer_volts = robot_->headingCorrection(0.0f);
             if (steer_volts > MAX_STEER_VOLTS)
                 steer_volts = MAX_STEER_VOLTS;
             if (steer_volts < -MAX_STEER_VOLTS)
@@ -197,10 +199,12 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
             // Record after transient settles
             if (sample_count >= SKIP_SAMPLES)
             {
+                uint32_t sample_ms = to_ms_since_boot(get_absolute_time()) - step_start;
                 step_left_speeds.push_back(left_speed);
                 step_right_speeds.push_back(right_speed);
                 step_left_volts.push_back(left_v);
                 step_right_volts.push_back(right_v);
+                step_sample_times_s.push_back(sample_ms * 1e-3f);
 
                 if ((sample_count - SKIP_SAMPLES) % OUTPUT_EVERY == 0)
                 {
@@ -254,7 +258,8 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
                 float s_prev = (step_left_speeds[i - 1] + step_right_speeds[i - 1]) / 2.0f;
                 if (s_prev >= target && s >= target)
                 {
-                    tm_samples.push_back((i - 1) * LOOP_INTERVAL_S);
+                    // Use real wall-clock timestamp for sample i-1, not assumed-uniform spacing.
+                    tm_samples.push_back(step_sample_times_s[i - 1]);
                     break;
                 }
             }
@@ -359,6 +364,7 @@ void DriverLab::runStepTrial(float step_voltage, uint32_t duration_ms)
 
     Drivetrain* dt = robot_->drivetrain();
     dt->reset();
+    robot_->stop(); // Force Idle so Robot::update() doesn't fight our manual step voltage.
 
     // Collect speed samples for Tm calculation
     static constexpr int MAX_STEP_SAMPLES = 2000;
@@ -378,7 +384,7 @@ void DriverLab::runStepTrial(float step_voltage, uint32_t duration_ms)
         uint32_t now = to_ms_since_boot(get_absolute_time());
         elapsed      = now - start_time;
 
-        dt->update(LOOP_INTERVAL_S);
+        robot_->update(); // Routes through Robot, which measures real wall-clock dt.
 
         float speed = (dt->velocity(WheelSide::LEFT) + dt->velocity(WheelSide::RIGHT)) / 2.0f;
         float pos   = (dt->position(WheelSide::LEFT) + dt->position(WheelSide::RIGHT)) / 2.0f;
@@ -523,16 +529,11 @@ void DriverLab::runMoveTrial(float distance, float top_speed, float acceleration
     float max_volts       = 0.0f;
     int   diag_count      = 0;
 
-    absolute_time_t last_tick = get_absolute_time();
-
-    // Poll loop — Robot does all control, DriverLab just logs
+    // Poll loop — Robot owns dt and does all control, DriverLab just logs
     while (!robot_->motionComplete())
     {
-        absolute_time_t now_at  = get_absolute_time();
-        float           dt_real = absolute_time_diff_us(last_tick, now_at) * 1e-6f;
-        last_tick               = now_at;
-        uint32_t now            = to_ms_since_boot(now_at);
-        robot_->updateControl(dt_real);
+        robot_->update();
+        uint32_t now = to_ms_since_boot(get_absolute_time());
 
         float set_speed    = robot_->targetForwardVel();
         float left_speed   = dt->velocity(WheelSide::LEFT);
@@ -636,16 +637,11 @@ void DriverLab::runTurnTrial(float degrees, float top_omega, float alpha)
     float max_volts          = 0.0f;
     bool  past_target        = false;
 
-    absolute_time_t last_tick = get_absolute_time();
-
-    // Poll loop — Robot does all control, DriverLab just logs
+    // Poll loop — Robot owns dt and does all control, DriverLab just logs
     while (!robot_->motionComplete())
     {
-        absolute_time_t now_at  = get_absolute_time();
-        float           dt_real = absolute_time_diff_us(last_tick, now_at) * 1e-6f;
-        last_tick               = now_at;
-        uint32_t now            = to_ms_since_boot(now_at);
-        robot_->updateControl(dt_real);
+        robot_->update();
+        uint32_t now = to_ms_since_boot(get_absolute_time());
 
         float actual_yaw   = robot_->yaw();
         float actual_omega = robot_->omega();
@@ -1384,19 +1380,15 @@ void DriverLab::cmdYawContinuous(const DriverLabArgs& args)
     // This prevents divide-by-near-zero causing huge omega spikes
     sleep_ms(interval_ms);
 
-    uint32_t        start_time = to_ms_since_boot(get_absolute_time());
-    absolute_time_t last_tick  = get_absolute_time();
-    uint32_t        elapsed    = 0;
+    uint32_t start_time = to_ms_since_boot(get_absolute_time());
+    uint32_t elapsed    = 0;
 
     while (elapsed < duration_ms)
     {
-        absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
-        last_tick           = now;
-        elapsed             = to_ms_since_boot(now) - start_time;
+        elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
 
-        // Keep robot sensor tracking (omega) up to date
-        robot_->update(dt);
+        // Robot owns dt; update() measures wall-clock dt internally and refreshes omega.
+        robot_->update();
 
         printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed), robot_->yaw(),
                robot_->omega());
@@ -1472,18 +1464,14 @@ void DriverLab::cmdTofContinuous(const DriverLabArgs& args)
            static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
     printf("Time(ms)  Left(mm)  Front(mm)  Right(mm)\n");
 
-    uint32_t        start_time = to_ms_since_boot(get_absolute_time());
-    absolute_time_t last_tick  = get_absolute_time();
-    uint32_t        elapsed    = 0;
+    uint32_t start_time = to_ms_since_boot(get_absolute_time());
+    uint32_t elapsed    = 0;
 
     while (elapsed < duration_ms)
     {
-        absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
-        last_tick           = now;
-        elapsed             = to_ms_since_boot(now) - start_time;
+        elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
 
-        robot_->update(dt);
+        robot_->update();
 
         float left_dist  = (left_tof_ != nullptr) ? left_tof_->distanceDirect() : 0.0f;
         float front_dist = (front_tof_ != nullptr) ? front_tof_->distanceDirect() : 0.0f;
@@ -1543,18 +1531,14 @@ void DriverLab::cmdEncoderContinuous(const DriverLabArgs& args)
            static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
     printf("Time(ms)  Left(mm)  Right(mm)\n");
 
-    uint32_t        start_time = to_ms_since_boot(get_absolute_time());
-    absolute_time_t last_tick  = get_absolute_time();
-    uint32_t        elapsed    = 0;
+    uint32_t start_time = to_ms_since_boot(get_absolute_time());
+    uint32_t elapsed    = 0;
 
     while (elapsed < duration_ms)
     {
-        absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
-        last_tick           = now;
-        elapsed             = to_ms_since_boot(now) - start_time;
+        elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
 
-        robot_->drivetrain()->update(dt);
+        robot_->update();
 
         float left_mm  = robot_->drivetrain()->position(WheelSide::LEFT);
         float right_mm = robot_->drivetrain()->position(WheelSide::RIGHT);
@@ -1864,19 +1848,15 @@ void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
            static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
     printf("Time(ms)  Position  Intersect\n");
 
-    uint32_t        start_time = to_ms_since_boot(get_absolute_time());
-    absolute_time_t last_tick  = get_absolute_time();
-    uint32_t        elapsed    = 0;
+    uint32_t start_time = to_ms_since_boot(get_absolute_time());
+    uint32_t elapsed    = 0;
 
     while (elapsed < duration_ms)
     {
-        absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
-        last_tick           = now;
-        elapsed             = to_ms_since_boot(now) - start_time;
+        elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
 
-        // Keep IMU tracking active
-        robot_->update(dt);
+        // Robot owns dt; keep IMU tracking and drivetrain bookkeeping active.
+        robot_->update();
 
         // Read and display line sensor
         line_sensor_->read();
