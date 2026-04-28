@@ -267,41 +267,6 @@ class Dashboard(QMainWindow):
         motor_group.setLayout(motor_grid)
         settings_layout.addWidget(motor_group)
 
-        # --- Feedforward ---
-        ff_group = QGroupBox("Feedforward  (open-loop)")
-        ff_group.setStyleSheet(group_style.format(border="#0072c3", title="#6faadc"))
-        ff_grid = QGridLayout()
-        ff_grid.setContentsMargins(6, 10, 6, 6)
-
-        self.spin_biasff = self.double_spinbox("FF kS", 0.0, 0.4, 0.01, 2)
-        self.spin_biasff.setToolTip("Static friction voltage: minimum V to start moving")
-        self.spin_speedff = self.double_spinbox("FF kV", 0.0, 0.001, 0.00001, 5)
-        self.spin_speedff.setToolTip("Speed feedforward: volts per mm/s (= 1/kM)")
-        self.spin_accff = self.double_spinbox("FF kA", 0.0, 0.001, 0.00001, 5)
-        self.spin_accff.setToolTip("Accel feedforward: volts per mm/s^2 (= Tm/kM)")
-
-        self.spin_biasff.valueChanged.connect(self.parameter_change)
-        self.spin_speedff.valueChanged.connect(self.parameter_change)
-        self.spin_accff.valueChanged.connect(self.parameter_change)
-
-        lbl = QLabel("kS  static V:")
-        lbl.setAlignment(RA)
-        ff_grid.addWidget(lbl, 0, 0)
-        ff_grid.addWidget(self.spin_biasff, 0, 1)
-
-        lbl = QLabel("kV  V/(mm/s):")
-        lbl.setAlignment(RA)
-        ff_grid.addWidget(lbl, 1, 0)
-        ff_grid.addWidget(self.spin_speedff, 1, 1)
-
-        lbl = QLabel("kA  V/(mm/s^2):")
-        lbl.setAlignment(RA)
-        ff_grid.addWidget(lbl, 2, 0)
-        ff_grid.addWidget(self.spin_accff, 2, 1)
-
-        ff_group.setLayout(ff_grid)
-        settings_layout.addWidget(ff_group)
-
         # --- Forward PD Controller ---
         fwd_group = QGroupBox("Forward PD  (straight-line)")
         fwd_group.setStyleSheet(group_style.format(border="#00c000", title="#6fdc8c"))
@@ -539,12 +504,37 @@ class Dashboard(QMainWindow):
         tuning_path = os.path.join(os.path.dirname(__file__),
                                    '..', 'firmware', 'config', 'tuning.h')
         defines = {}
+        # Two macro shapes appear in tuning.h:
+        #   #define MOTOR_KM 360.46f
+        #   #define FORWARD_KVL (1.0f / 361.10f)
+        # Strip trailing comments and 'f' suffixes, then evaluate the RHS as a
+        # Python arithmetic expression. Whitelist-only chars guard against
+        # arbitrary code execution from a malformed header.
+        scalar_re = re.compile(r'#define\s+(\w+)\s+([\d.eE+-]+)f?\b')
+        expr_re   = re.compile(r'#define\s+(\w+)\s+\(([^)]+)\)')
         try:
             with open(tuning_path) as f:
-                for line in f:
-                    m = re.match(r'#define\s+(\w+)\s+([\d.eE+-]+)f?\b', line)
+                for raw in f:
+                    line = raw.split('//', 1)[0]
+                    m = scalar_re.match(line)
                     if m:
                         defines[m.group(1)] = float(m.group(2))
+                        continue
+                    m = expr_re.match(line)
+                    if m:
+                        rhs = m.group(2)
+                        # Expand previously-defined macros (e.g. FWD_TD uses MOTOR_TM).
+                        # Sort longest-first so MOTOR_KM doesn't partial-match against
+                        # a hypothetical MOTOR_KM_X.
+                        for name in sorted(defines, key=len, reverse=True):
+                            rhs = re.sub(r'\b' + re.escape(name) + r'\b',
+                                         repr(defines[name]), rhs)
+                        rhs = rhs.replace('f', '')
+                        if re.fullmatch(r'[\d.eE+\-*/ ]+', rhs):
+                            try:
+                                defines[m.group(1)] = float(eval(rhs, {"__builtins__": {}}))
+                            except Exception:
+                                pass
         except FileNotFoundError:
             self.log_message("tuning.h not found — using zero defaults")
             return
@@ -584,9 +574,6 @@ class Dashboard(QMainWindow):
         turnKD = defines.get('ROT_KD', 0.0)
 
         # Populate widgets
-        self.set_safely(self.spin_biasff, kS)
-        self.set_safely(self.spin_speedff, kV)
-        self.set_safely(self.spin_accff, kA)
         self.lbl_km_val.setText(f"{kM:.2f}")
         self.lbl_tm_val.setText(f"{tm:.5f}")
         self.set_safely(self.spin_kp, kP)
@@ -918,12 +905,6 @@ class Dashboard(QMainWindow):
         self.get_response()
 
     def update_parameters(self):
-        if 'kS' in self.parameters:
-            self.set_safely(self.spin_biasff, self.parameters['kS'])
-        if 'kV' in self.parameters:
-            self.set_safely(self.spin_speedff, self.parameters['kV'])
-        if 'kA' in self.parameters:
-            self.set_safely(self.spin_accff, self.parameters['kA'])
         if 'zeta' in self.parameters:
             self.set_safely(self.spin_zeta, self.parameters['zeta'])
         if 'Td' in self.parameters:
@@ -955,9 +936,6 @@ class Dashboard(QMainWindow):
             cmds.append(f"KM {self.parameters['kM']}")
         if 'Tm' in self.parameters:
             cmds.append(f"TM {self.parameters['Tm']}")
-        cmds.append(f"BIAS {self.spin_biasff.value()}")
-        cmds.append(f"SPEEDFF {self.spin_speedff.value()}")
-        cmds.append(f"ACCFF {self.spin_accff.value()}")
         cmds.append(f"ZETA {self.spin_zeta.value()}")
         cmds.append(f"TD {self.spin_td.value()}")
         cmds.append(f"KP {self.spin_kp.value()}")
@@ -1292,7 +1270,6 @@ class Dashboard(QMainWindow):
                     try:
                         val = float(part.split('kS=')[1].split()[0])
                         self.parameters['kS'] = val
-                        self.set_safely(self.spin_biasff, val)
                     except (ValueError, IndexError):
                         pass
         # OL trial per-motor: "Left:  kM=342.00 mm/s/V, kS=0.4000 V (12 points)"
@@ -1334,7 +1311,6 @@ class Dashboard(QMainWindow):
             try:
                 val = float(line.split('=')[1].strip().split()[0])
                 self.parameters['kA'] = val
-                self.set_safely(self.spin_accff, val)
             except (ValueError, IndexError):
                 pass
         elif line.strip().startswith('-> Td ='):
@@ -1362,7 +1338,6 @@ class Dashboard(QMainWindow):
             try:
                 val = float(line.split('kV =')[1].strip().split()[0])
                 self.parameters['kV'] = val
-                self.set_safely(self.spin_speedff, val)
             except (ValueError, IndexError):
                 pass
 

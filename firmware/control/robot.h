@@ -164,6 +164,7 @@ class Robot
     float target_angular_vel_degps_   = 0.0f;
     float target_forward_accel_mmps2_ = 0.0f;
     float target_yaw_deg_             = 0.0f;
+    float target_forward_distance_mm_ = 0.0f; // absolute encoder target for current MOVE
 
     float prev_left_volts_  = 0.0f;
     float prev_right_volts_ = 0.0f;
@@ -178,6 +179,10 @@ class Robot
     // dt ownership — see update() doc above.
     absolute_time_t last_update_time_ = nil_time;
     float           last_dt_s_        = 0.0f;
+
+    // Forward-motion settling: clock primed on the first tick after
+    // forward_profile_.finished() flips true. nil_time = "not currently settling".
+    absolute_time_t settling_start_time_ = nil_time;
 };
 
 #endif

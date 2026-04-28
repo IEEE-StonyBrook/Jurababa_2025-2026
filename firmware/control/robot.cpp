@@ -23,12 +23,12 @@ Robot::Robot(Drivetrain* drivetrain, IMU* imu, ToF* left_tof, ToF* front_tof, To
       right_tof_(right_tof), forward_controller_(), rotation_controller_()
 {
     forward_controller_.setGains(FWD_KP, 0.0f, FWD_KD);
-    forward_controller_.setOutputLimit(ROBOT_MAX_DUTY);
+    forward_controller_.setOutputLimit(MAX_VOLTAGE);
     forward_controller_.setDeadband(0.0f);
     forward_controller_.setDerivativeFilterAlpha(0.9f);
 
     rotation_controller_.setGains(ROT_KP, 0.0f, ROT_KD);
-    rotation_controller_.setOutputLimit(ROBOT_MAX_DUTY);
+    rotation_controller_.setOutputLimit(MAX_VOLTAGE);
     rotation_controller_.setDeadband(0.0f);
     rotation_controller_.setDerivativeFilterAlpha(0.9f);
 
@@ -56,11 +56,13 @@ void Robot::reset()
     target_angular_vel_degps_   = 0.0f;
     target_forward_accel_mmps2_ = 0.0f;
     target_yaw_deg_             = 0.0f;
+    target_forward_distance_mm_ = 0.0f;
 
     prev_left_volts_  = 0.0f;
     prev_right_volts_ = 0.0f;
 
-    motion_done_ = true;
+    settling_start_time_ = nil_time;
+    motion_done_         = true;
     invalidateClock();
 }
 
@@ -173,6 +175,7 @@ void Robot::moveDistance(float distance_mm, float max_vel_mmps, float accel_mmps
     float current_pos =
         (drivetrain_->position(WheelSide::LEFT) + drivetrain_->position(WheelSide::RIGHT)) / 2.0f;
 
+    target_forward_distance_mm_ = current_pos + distance_mm;
     forward_profile_.start(distance_mm, max_vel_mmps, accel_mmps2, current_pos);
     rotation_profile_.reset();
 
@@ -189,7 +192,8 @@ void Robot::moveDistance(float distance_mm, float max_vel_mmps, float accel_mmps
     target_angular_vel_degps_   = 0.0f;
     target_forward_accel_mmps2_ = 0.0f;
 
-    motion_done_ = false;
+    settling_start_time_ = nil_time;
+    motion_done_         = false;
     invalidateClock();
 }
 
@@ -252,7 +256,8 @@ void Robot::stop()
     prev_right_volts_ = 0.0f;
     drivetrain_->stop();
 
-    motion_done_ = true;
+    settling_start_time_ = nil_time;
+    motion_done_         = true;
     invalidateClock();
 }
 
@@ -449,23 +454,53 @@ void Robot::updateRotationProfile(float dt)
 
 void Robot::checkForwardCompletion()
 {
-    if (forward_profile_.finished())
+    // Profile not yet finished delivering its velocity plan — keep settling clock idle.
+    if (!forward_profile_.finished())
     {
-        if (state_ == MotionState::MovingForward && target_forward_vel_mmps_ < 0.0f)
-        {
-            float front_dist = frontDistance();
-            if (front_dist < WALL_CONTACT_THRESHOLD_MM)
-            {
-                stop();
-                motion_done_        = true;
-                last_yaw_for_delta_ = yaw(); // Reset position tracking
-                LOG_DEBUG("BackToWall | Wall contact detected, position reset");
-                return;
-            }
-        }
+        settling_start_time_ = nil_time;
+        return;
+    }
 
+    // BackToWall special case — preserved verbatim from prior implementation.
+    if (state_ == MotionState::MovingForward && target_forward_vel_mmps_ < 0.0f)
+    {
+        float front_dist = frontDistance();
+        if (front_dist < WALL_CONTACT_THRESHOLD_MM)
+        {
+            stop();
+            motion_done_        = true;
+            last_yaw_for_delta_ = yaw();
+            LOG_DEBUG("BackToWall | Wall contact detected, position reset");
+            return;
+        }
+    }
+
+    // Prime settling clock the first tick after profile.finished() flips true.
+    if (is_nil_time(settling_start_time_))
+        settling_start_time_ = get_absolute_time();
+
+    float measured_pos =
+        (drivetrain_->position(WheelSide::LEFT) + drivetrain_->position(WheelSide::RIGHT)) / 2.0f;
+    float measured_remaining = std::fabs(target_forward_distance_mm_ - measured_pos);
+
+    float v_avg = (std::fabs(drivetrain_->velocity(WheelSide::LEFT)) +
+                   std::fabs(drivetrain_->velocity(WheelSide::RIGHT))) /
+                  2.0f;
+
+    bool position_ok = measured_remaining <= ROBOT_FORWARD_SETTLE_TOLERANCE_MM;
+    bool velocity_ok = v_avg <= ROBOT_STOPPING_VELOCITY_MMPS;
+
+    uint32_t settle_ms = absolute_time_diff_us(settling_start_time_, get_absolute_time()) / 1000;
+    bool     timed_out = settle_ms >= ROBOT_FORWARD_SETTLE_TIMEOUT_MS;
+
+    if ((position_ok && velocity_ok) || timed_out)
+    {
+        if (timed_out && !position_ok)
+            LOG_DEBUG("MOVE settle timeout, residual=" + std::to_string(measured_remaining) +
+                      " mm");
         stopAtCenter();
-        motion_done_ = true;
+        motion_done_         = true;
+        settling_start_time_ = nil_time;
     }
 }
 

@@ -17,12 +17,12 @@
 
 // ================ Feedforward (per motor) ============== //
 // V = kV * speed + kS + kA * accel
-#define FORWARD_KVL 1.0f / 361.10f // Left  V/(mm/s)     = 1/kM
-#define FORWARD_KVR 1.0f / 359.82f // Right V/(mm/s)
-#define FORWARD_KSL 0.5630f        // Left  static friction (V)
-#define FORWARD_KSR 0.5077f        // Right static friction (V)
-#define FORWARD_KAL 0.0006680f     // Left  V/(mm/s^2)   = Tm/kM
-#define FORWARD_KAR 0.0006680f     // Right V/(mm/s^2)
+#define FORWARD_KVL (1.0f / 361.10f) // Left  V/(mm/s)     = 1/kM
+#define FORWARD_KVR (1.0f / 359.82f) // Right V/(mm/s)
+#define FORWARD_KSL 0.5630f          // Left  static friction (V)
+#define FORWARD_KSR 0.5077f          // Right static friction (V)
+#define FORWARD_KAL 0.0006680f       // Left  V/(mm/s^2)   = Tm/kM
+#define FORWARD_KAR 0.0006680f       // Right V/(mm/s^2)
 
 // ================ Forward PD Controller ================ //
 // Design params: pick zeta & Td → auto-derive kP, kD

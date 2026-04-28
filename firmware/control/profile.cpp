@@ -104,7 +104,11 @@ void Profile::updateState(float distance_traveled)
 {
     float remaining_dist = target_distance_ - distance_traveled;
 
-    if (remaining_dist <= position_tolerance_ && current_velocity_ <= velocity_tolerance_)
+    // "Finished" means the velocity plan has been fully delivered. Robot decides
+    // motion completion separately by inspecting measured position + velocity.
+    const bool decel_done = (state_ == State::Decelerating) && (current_velocity_ <= 0.0f);
+    const bool degenerate = (target_distance_ <= position_tolerance_);
+    if (decel_done || degenerate)
     {
         state_ = State::Finished;
         return;

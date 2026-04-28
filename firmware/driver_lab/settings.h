@@ -55,18 +55,20 @@ struct DriverLabSettings
         kM = MOTOR_KM;
         tm = MOTOR_TM;
 
-        // Feedforward: derived from motor model, with per-motor kS from OL
+        // Per-motor model from tuning.h (from stereo OL trial).
+        // kM = 1 / kV by definition; reuse the per-motor FORWARD_KV* macros so
+        // L/R asymmetry from calibration survives into runtime defaults.
+        kM_L = 1.0f / FORWARD_KVL;
+        kM_R = 1.0f / FORWARD_KVR;
+        kS_L = FORWARD_KSL;
+        kS_R = FORWARD_KSR;
+        kA_L = FORWARD_KAL;
+        kA_R = FORWARD_KAR;
+
+        // Combined feedforward (used in single-motor codepaths)
         kV = 1.0f / kM;
         kS = (FORWARD_KSL + FORWARD_KSR) / 2.0f;
         kA = tm / kM;
-
-        // Per-motor defaults: same as combined until OL trial separates them
-        kM_L = kM;
-        kM_R = kM;
-        kS_L = kS;
-        kS_R = kS;
-        kA_L = kA;
-        kA_R = kA;
 
         // Forward PD: design parameters and gains from tuning.h
         zeta = FWD_ZETA;

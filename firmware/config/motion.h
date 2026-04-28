@@ -22,9 +22,11 @@
 #define ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS 250.0f // Linear speed during smooth turns
 
 // =============== Completion Tolerances ================= //
-#define ROBOT_YAW_TOLERANCE_DEG      0.5f  // Turn done when error < this
-#define ROBOT_STOPPING_VELOCITY_MMPS 50.0f // Move done when speed < this
-#define ROBOT_TURN_STABILITY_DEGPS   3.0f  // Turn stable when omega < this
+#define ROBOT_YAW_TOLERANCE_DEG           0.5f  // Turn done when error < this
+#define ROBOT_STOPPING_VELOCITY_MMPS      50.0f // Move done when speed < this
+#define ROBOT_TURN_STABILITY_DEGPS        3.0f  // Turn stable when omega < this
+#define ROBOT_FORWARD_SETTLE_TOLERANCE_MM 3.0f  // Move done when |measured - target| < this
+#define ROBOT_FORWARD_SETTLE_TIMEOUT_MS   400   // Bound on settling phase after profile finishes
 
 // ================= Control Output Limits =============== //
 #define ROBOT_MAX_DUTY               1.0f  // Max PWM duty cycle

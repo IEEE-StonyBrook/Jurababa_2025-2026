@@ -324,14 +324,51 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
         tm_calc /= static_cast<float>(tm_samples.size());
     }
 
-    // Update settings with results
-    settings_.kM   = kM_calc;
-    settings_.kS   = kS_calc;
-    settings_.tm   = tm_calc;
-    settings_.kM_L = kM_L;
-    settings_.kM_R = kM_R;
-    settings_.kS_L = kS_L;
-    settings_.kS_R = kS_R;
+    // Update settings with results.
+    //
+    // Per-motor: only write when regression produced a valid kM (positive,
+    // finite, with enough samples). A failed regression returns kM=0, which
+    // would then propagate via recalculateDerived as kV_L=1/0=inf, kA_L=tm/0,
+    // corrupting every dependent term. Preserve previous (e.g. tuning.h
+    // defaults from initDefaults) on failure so a bad OL run can never delete
+    // a known-good calibration.
+    //
+    // Combined: derive from the per-motor fits (NOT from combined regression).
+    // Combined regression on (commanded V, avg speed) is mathematically biased
+    // when L/R have asymmetric kS thresholds — the startup region where only
+    // one motor moves creates a piecewise-linear curve that pulls the fitted
+    // x-intercept below either physical kS. Per-motor regression sees clean
+    // linear data above each motor's own threshold and is the source of truth.
+    constexpr float MIN_VALID_KM = 1.0f; // mm/s/V — sanity floor for fitted kM
+    const bool      ol_left_ok   = (n_left >= 2) && (kM_L > MIN_VALID_KM);
+    const bool      ol_right_ok  = (n_right >= 2) && (kM_R > MIN_VALID_KM);
+
+    if (ol_left_ok)
+    {
+        settings_.kM_L = kM_L;
+        settings_.kS_L = kS_L;
+    }
+    if (ol_right_ok)
+    {
+        settings_.kM_R = kM_R;
+        settings_.kS_R = kS_R;
+    }
+    if (ol_left_ok && ol_right_ok)
+    {
+        settings_.kM = (kM_L + kM_R) / 2.0f;
+        settings_.kS = (kS_L + kS_R) / 2.0f;
+    }
+
+    // Tm: only overwrite when OL actually captured a transient crossing.
+    // tm_samples is empty if no step's response crossed 63.2% within the
+    // settle window — in which case tm_calc=0 above, which would zero out
+    // kA, kA_L, kA_R and drive kD negative through recalculateDerived.
+    // Preserve the existing tm (from STEP trial or initDefaults) instead.
+    if (!tm_samples.empty() && tm_calc > 0.0f)
+    {
+        settings_.tm = tm_calc;
+    }
+
     settings_.recalculateDerived();
 
     printf("\n=== OL Results ===\n");
