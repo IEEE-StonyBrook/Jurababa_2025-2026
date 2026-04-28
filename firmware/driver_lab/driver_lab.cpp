@@ -1365,7 +1365,7 @@ void DriverLab::cmdYawVel()
 
 void DriverLab::cmdYawContinuous(const DriverLabArgs& args)
 {
-    uint32_t duration_ms = 5000;
+    uint32_t duration_ms = 10000;
     uint32_t interval_ms = 100;
 
     if (args.argc > 1)
@@ -1528,7 +1528,7 @@ void DriverLab::cmdEncoderReset()
 
 void DriverLab::cmdEncoderContinuous(const DriverLabArgs& args)
 {
-    uint32_t duration_ms = 5000;
+    uint32_t duration_ms = 10000;
     uint32_t interval_ms = 100;
 
     if (args.argc > 1)
@@ -1570,7 +1570,7 @@ void DriverLab::cmdEncoderContinuous(const DriverLabArgs& args)
 void DriverLab::cmdOpenLoop(const DriverLabArgs& args)
 {
     float    max_v     = 6.0f;
-    float    step_v    = 0.5f;
+    float    step_v    = 1.0f;
     uint32_t settle_ms = 2000;
 
     if (args.argc > 1)
@@ -1849,7 +1849,7 @@ void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
         return;
     }
 
-    uint32_t duration_ms = 5000;
+    uint32_t duration_ms = 10000;
     uint32_t interval_ms = 100;
 
     if (args.argc > 1)

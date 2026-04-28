@@ -34,5 +34,5 @@ int Encoder::ticks() const
 void Encoder::reset()
 {
     LOG_DEBUG("Resetting encoder tick count to zero");
-    offset_ticks_ = quadrature_encoder_get_count(pio_instance_, state_machine_);
+    offset_ticks_ += ticks();
 }
