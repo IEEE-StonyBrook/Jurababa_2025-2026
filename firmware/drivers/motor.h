@@ -4,11 +4,11 @@
 #include <algorithm>
 #include <cmath>
 
+#include "common/log.h"
 #include "config/config.h"
 #include "hardware/gpio.h"
 #include "hardware/pwm.h"
 #include "pico/stdlib.h"
-#include "common/log.h"
 
 /**
  * @brief DC Motor driver using TB6552FNG with hardware inverter
@@ -31,17 +31,17 @@ class Motor
     Motor(int dir_pin, int pwm_pin, bool invert_direction = false);
 
     /**
-     * @brief Applies duty cycle command to motor
-     * @param duty_cycle Duty cycle in range [-1.0, 1.0] (positive = forward)
+     * @brief Sets PWM command to motor
+     * @param duty_cycle PWM in range [-1.0, 1.0] (positive = forward)
      */
-    void applyDuty(float duty_cycle);
+    void set_motor_pwm(float duty_cycle);
 
     /**
-     * @brief Applies voltage command to motor (scaled by battery voltage)
+     * @brief Sets voltage command to motor (scaled by battery voltage)
      * @param desired_volts Desired motor voltage
      * @param battery_volts Current battery voltage for scaling
      */
-    void applyVoltage(float desired_volts, float battery_volts);
+    void set_motor_volts(float desired_volts, float battery_volts);
 
     /**
      * @brief Immediately stops motor (short brake via PWM low)
@@ -49,8 +49,8 @@ class Motor
     void stop();
 
   private:
-    void configurePins();
-    void configurePWM();
+    void setup_pins();
+    void setup_pwm();
 
     int  dir_pin_;
     int  pwm_pin_;

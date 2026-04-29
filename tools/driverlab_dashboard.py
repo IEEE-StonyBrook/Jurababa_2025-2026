@@ -1375,25 +1375,19 @@ class Dashboard(QMainWindow):
             if self.csv_headings:
                 headings_str = ','.join(self.csv_headings).lower()
 
-                if 'steer_v' in headings_str:
-                    # Stereo OL: time_ms,cmd_v,left_v,right_v,left_speed,right_speed,steer_v,yaw
-                    # Output plot: left motor voltage, right motor voltage, steering correction
+                if 'cmd_v' in headings_str:
+                    # Stereo OL: time_ms,cmd_v,left_v,right_v,left_speed,right_speed,yaw
                     if len(self.plot_curves['output']) == 0:
                         pen_left_v = pg.mkPen(color=palette[1], width=2)
                         pen_right_v = pg.mkPen(color=palette[5], width=2)
-                        pen_steer = pg.mkPen(color=palette[3], width=2, style=Qt.PenStyle.DashLine)
                         self.plot_curves['output'].append(self.output_plot.plot(name='Left V', pen=pen_left_v))
                         self.plot_curves['output'].append(self.output_plot.plot(name='Right V', pen=pen_right_v))
-                        self.plot_curves['output'].append(self.output_plot.plot(name='Steer V', pen=pen_steer))
 
                     x, y = self._get_valid_data(0, 2)  # left_v
                     self.plot_curves['output'][0].setData(x, y)
                     x, y = self._get_valid_data(0, 3)  # right_v
                     if len(self.plot_curves['output']) > 1:
                         self.plot_curves['output'][1].setData(x, y)
-                    x, y = self._get_valid_data(0, 6)  # steer_v
-                    if len(self.plot_curves['output']) > 2:
-                        self.plot_curves['output'][2].setData(x, y)
                     self.output_plot.enableAutoRange()
 
                     # Motion plot: left speed vs right speed

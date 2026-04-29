@@ -32,7 +32,7 @@ class LineSensor
     /**
      * @brief Initializes I2C peripheral and GPIO pins
      */
-    void init();
+    void begin();
 
     /**
      * @brief Reads the 8-channel sensor data over I2C
@@ -41,22 +41,16 @@ class LineSensor
     void read();
 
     /**
-     * @brief Returns the raw 8-bit sensor bitmask from last read
-     * Bit 0 = leftmost, Bit 7 = rightmost. 1 = on line.
-     */
-    uint8_t getSensorData() const;
-
-    /**
      * @brief Computes weighted-average position error
      * @return Position in range [-3.5, +3.5]. 0.0 = centered on line.
      *         Negative = line is to the left, positive = line is to the right.
      */
-    float getPosition() const;
+    float get_position() const;
 
     /**
      * @brief Returns true if any sensor detects the line
      */
-    bool onLine() const;
+    bool on_line() const;
 
     /**
      * @brief Detects a perpendicular intersection
@@ -64,7 +58,7 @@ class LineSensor
      * Returns true if the 2 leftmost sensors OR the 2 rightmost sensors
      * are both active, indicating a perpendicular line crossing.
      */
-    bool detectIntersection() const;
+    bool detect_intersection() const;
 
   private:
     i2c_inst_t* i2c_;

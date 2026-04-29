@@ -28,7 +28,7 @@ class Battery
     /**
      * @brief Initializes the ADC hardware. Call once during setup.
      */
-    void init();
+    void begin();
 
     /**
      * @brief Takes a new ADC reading and updates the moving average.
@@ -46,14 +46,7 @@ class Battery
      * @brief Returns the raw ADC value (0-4095) of the most recent reading.
      * @return Raw 12-bit ADC value.
      */
-    uint16_t rawADC() const;
-
-    /**
-     * @brief Checks if battery voltage is below a critical threshold.
-     * @param threshold_volts Voltage threshold (default 6.0V for 2S LiPo).
-     * @return true if battery is low, false otherwise.
-     */
-    bool isLow(float threshold_volts = 6.0f) const;
+    uint16_t raw_adc() const;
 
   private:
     static constexpr int   AVERAGE_SAMPLES = 10;

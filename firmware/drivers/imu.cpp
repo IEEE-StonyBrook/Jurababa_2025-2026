@@ -2,25 +2,34 @@
 
 #include <math.h>
 
-#ifdef USE_MULTICORE_SENSORS
-#include "app/multicore.h"
-#endif
-
 #include "common/log.h"
 
 IMU* IMU::imu_instance_ = nullptr;
 
+namespace
+{
+float normalize_yaw_delta(float delta)
+{
+    if (delta > 180.0f)
+        return delta - 360.0f;
+    if (delta < -180.0f)
+        return delta + 360.0f;
+    return delta;
+}
+} // namespace
+
 IMU::IMU(int uart_rx_pin)
     : uart_rx_pin_(uart_rx_pin), packet_buffer_index_(0), yaw_data_ready_(false),
       current_yaw_degrees_(0.0f), yaw_reset_offset_(0.0f), filtered_yaw_degrees_(0.0f),
-      prev_raw_yaw_degrees_(0.0f), first_reading_(true)
+      prev_raw_yaw_degrees_(0.0f), first_reading_(true), prev_rot_yaw_(0.0f),
+      m_rot_change_deg_(0.0f)
 {
-    setupUART();
-    setupInterrupt();
+    setup_uart();
+    setup_interrupt();
     LOG_DEBUG("IMU initialized successfully");
 }
 
-void IMU::setupUART()
+void IMU::setup_uart()
 {
     imu_instance_ = this;
     uart_init(IMU_UART_ID, IMU_BAUD_RATE);
@@ -31,23 +40,23 @@ void IMU::setupUART()
     uart_set_fifo_enabled(IMU_UART_ID, true);
 }
 
-void IMU::setupInterrupt()
+void IMU::setup_interrupt()
 {
     uart_set_irq_enables(IMU_UART_ID, true, false);
-    irq_set_exclusive_handler(IMU_UART_IRQ, IMU::uartInterruptHandler);
+    irq_set_exclusive_handler(IMU_UART_IRQ, IMU::uart_interrupt_handler);
     irq_set_enabled(IMU_UART_IRQ, true);
     LOG_DEBUG("IMU UART interrupt configured");
 }
 
-void IMU::uartInterruptHandler()
+void IMU::uart_interrupt_handler()
 {
     if (imu_instance_ != nullptr)
     {
-        imu_instance_->processReceiveData();
+        imu_instance_->process_receive_data();
     }
 }
 
-void IMU::processReceiveData()
+void IMU::process_receive_data()
 {
     while (uart_is_readable(IMU_UART_ID))
     {
@@ -68,13 +77,13 @@ void IMU::processReceiveData()
 
         if (packet_buffer_index_ >= IMU_PACKET_LEN)
         {
-            parsePacketAndExtractYaw();
+            parse_packet_and_extract_yaw();
             packet_buffer_index_ = 0;
         }
     }
 }
 
-void IMU::parsePacketAndExtractYaw()
+void IMU::parse_packet_and_extract_yaw()
 {
     // Validate checksum
     uint8_t checksum = 0;
@@ -136,11 +145,10 @@ void IMU::parsePacketAndExtractYaw()
     yaw_data_ready_      = true;
 }
 
-float IMU::yaw()
+float IMU::robot_angle()
 {
     if (!yaw_data_ready_)
     {
-        // LOG_DEBUG("IMU yaw not ready, returning 0");
         return 0.0f;
     }
 
@@ -156,7 +164,7 @@ float IMU::yaw()
     return result;
 }
 
-void IMU::resetYaw()
+void IMU::reset()
 {
     if (!yaw_data_ready_)
     {
@@ -165,17 +173,26 @@ void IMU::resetYaw()
     }
     LOG_DEBUG("Resetting IMU yaw to zero");
     yaw_reset_offset_ = current_yaw_degrees_;
+    prev_rot_yaw_     = 0.0f;
+    m_rot_change_deg_ = 0.0f;
 }
 
-float IMU::yawAfterAdding(float degrees_to_add)
+void IMU::update()
 {
-    degrees_to_add = fmodf(degrees_to_add, 360.0f);
-    float new_yaw  = yaw() + degrees_to_add;
+    // Mazerunner Encoders::update() shape: sample once per tick, cache delta.
+    // BNO085 quantization (~100 Hz packet rate vs higher loop rate) is visible
+    // in CSV but doesn't affect control — the rotation PD integrates.
+    float current     = robot_angle();
+    m_rot_change_deg_ = normalize_yaw_delta(current - prev_rot_yaw_);
+    prev_rot_yaw_     = current;
+}
 
-    if (new_yaw > 180.0f)
-        new_yaw -= 360.0f;
-    else if (new_yaw < -180.0f)
-        new_yaw += 360.0f;
+float IMU::robot_omega()
+{
+    return m_rot_change_deg_ * LOOP_FREQUENCY_HZ;
+}
 
-    return new_yaw;
+float IMU::robot_rot_change()
+{
+    return m_rot_change_deg_;
 }

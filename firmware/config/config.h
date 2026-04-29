@@ -19,8 +19,9 @@
 #define DEFAULT_BATTERY_VOLTAGE 8.35f // Nominal 2S LiPo
 
 // ===================== Drivetrain ===================== //
-#define DRIVETRAIN_MIN_DT            0.001f  // Minimum valid dt (seconds)
-#define DRIVETRAIN_FF_DEADZONE_MMPS  10.0f   // Below this speed, no feedforward
+// MIN_DT and FF_DEADZONE removed: the controller now runs on a fixed-rate tick
+// (LOOP_INTERVAL_S) so dt clamping is unnecessary, and mazerunner-core's FF
+// shape uses sign(v)*KS — no deadzone — to keep low-speed commands moving.
 #define DRIVETRAIN_MAX_VELOCITY_MMPS 2500.0f // Sanity clamp on velocity
 
 // ===================== Multicore ===================== //

@@ -47,7 +47,10 @@ void API::moveForwardHalf()
         simulatorResponse("moveForwardHalf");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::MOVE_FWD_HALF);
+        waitForMotion();
+    }
 #endif
     mouse_->moveForward(0.5f);
 }
@@ -58,7 +61,10 @@ void API::moveForward()
         simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::MOVE_FWD, 1);
+        waitForMotion();
+    }
 #endif
     mouse_->moveForward(1);
 }
@@ -77,6 +83,7 @@ void API::moveForward(int steps)
     }
 #ifndef SIMULATOR_BUILD
     CommandHub::send(CommandType::MOVE_FWD, steps);
+    waitForMotion();
 #endif
     mouse_->moveForward(steps);
 }
@@ -91,6 +98,7 @@ void API::goToCenterFromEdge()
 {
 #ifndef SIMULATOR_BUILD
     CommandHub::send(CommandType::CENTER_FROM_EDGE);
+    waitForMotion();
 #endif
 }
 
@@ -100,7 +108,10 @@ void API::turnLeft45()
         simulatorResponse("turnLeft45");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::TURN_LEFT, 1);
+        waitForMotion();
+    }
 #endif
     mouse_->turn45Steps(-1);
 }
@@ -111,7 +122,10 @@ void API::turnLeft90()
         simulatorResponse("turnLeft");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::TURN_LEFT, 2);
+        waitForMotion();
+    }
 #endif
     mouse_->turn45Steps(-2);
 }
@@ -122,7 +136,10 @@ void API::turnRight45()
         simulatorResponse("turnRight45");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::TURN_RIGHT, 1);
+        waitForMotion();
+    }
 #endif
     mouse_->turn45Steps(1);
 }
@@ -133,7 +150,10 @@ void API::turnRight90()
         simulatorResponse("turnRight");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::TURN_RIGHT, 2);
+        waitForMotion();
+    }
 #endif
     mouse_->turn45Steps(2);
 }
@@ -144,7 +164,10 @@ void API::turn(int degrees)
         simulatorResponse("turn" + std::to_string(degrees));
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::TURN_ARBITRARY, degrees);
+        waitForMotion();
+    }
 #endif
     mouse_->turn45Steps(degrees / 45);
 }
@@ -155,7 +178,10 @@ void API::arcTurnLeft90()
         simulatorResponse("arcTurnLeft90");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::ARC_TURN_LEFT_90);
+        waitForMotion();
+    }
 #endif
     mouse_->turn45Steps(-2);
 }
@@ -166,7 +192,10 @@ void API::arcTurnRight90()
         simulatorResponse("arcTurnRight90");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::ARC_TURN_RIGHT_90);
+        waitForMotion();
+    }
 #endif
     mouse_->turn45Steps(2);
 }
@@ -177,7 +206,10 @@ void API::arcTurnLeft45()
         simulatorResponse("arcTurnLeft45");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::ARC_TURN_LEFT_45);
+        waitForMotion();
+    }
 #endif
     mouse_->turn45Steps(-1);
 }
@@ -188,7 +220,10 @@ void API::arcTurnRight45()
         simulatorResponse("arcTurnRight45");
 #ifndef SIMULATOR_BUILD
     else
+    {
         CommandHub::send(CommandType::ARC_TURN_RIGHT_45);
+        waitForMotion();
+    }
 #endif
     mouse_->turn45Steps(1);
 }

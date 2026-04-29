@@ -52,6 +52,14 @@ class DriverLab
     void init();
     bool processSerial();
 
+    // Inject a pre-read command line (no trailing newline) and run it
+    // through DriverLab's existing tokenizer + dispatcher. Used by `Cli`
+    // so the unified command loop can hand alpha tokens (OL, STEP,
+    // EXPORT, MOVE, TURN, …) to DriverLab without DriverLab owning the
+    // serial reader. Lines longer than `DRIVERLAB_INPUT_BUFFER_SIZE - 1`
+    // are silently truncated.
+    void executeLine(const char* line);
+
     DriverLabSettings& settings() { return settings_; }
 
     // Motor control
@@ -69,6 +77,16 @@ class DriverLab
     void runMoveTrial(float distance = 90.0f, float top_speed = 200.0f, float acceleration = 500.0f,
                       int mode = 2);
     void runTurnTrial(float degrees, float top_omega, float alpha);
+
+    // TURN-OL: open-loop differential voltage sweep. Measures rotational kM
+    // (deg/s per volt of differential drive). Robot is forced Idle; left and
+    // right motors are commanded to ±diff_v so the robot rotates in place.
+    void runTurnOpenLoopTrial(float max_diff_voltage = 3.0f, float step_voltage = 0.5f,
+                              uint32_t settle_time_ms = 800);
+
+    // TURN-STEP: differential-voltage step. Measures rotational time constant
+    // ROT_TM from the 63.2% rise time of yaw rate (deg/s) to its steady state.
+    void runTurnStepTrial(float diff_voltage = 1.5f, uint32_t duration_ms = 1000);
 
     // CLI commands
     void cmdHelp();
@@ -102,6 +120,8 @@ class DriverLab
     void cmdStep(const DriverLabArgs& args);
     void cmdMove(const DriverLabArgs& args);
     void cmdTurn(const DriverLabArgs& args);
+    void cmdTurnOpenLoop(const DriverLabArgs& args);
+    void cmdTurnStep(const DriverLabArgs& args);
     void cmdSetTurnKp(const DriverLabArgs& args);
     void cmdSetTurnKd(const DriverLabArgs& args);
     void cmdVoltage(const DriverLabArgs& args);

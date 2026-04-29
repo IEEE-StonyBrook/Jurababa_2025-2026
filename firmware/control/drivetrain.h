@@ -41,12 +41,6 @@ class Drivetrain
     float velocity(WheelSide side);
 
     /**
-     * @brief Returns distance traveled since last call (incremental tracking)
-     * @return Distance delta in millimeters since last call
-     */
-    float delta(WheelSide side);
-
-    /**
      * @brief Calculates feedforward duty cycle for target velocity and acceleration
      *
      * Uses empirically-tuned coefficients: Kv (back-EMF), Ks (friction), Ka (inertia)
@@ -61,29 +55,30 @@ class Drivetrain
     void setFeedforward(WheelSide side, float kv, float ks, float ka);
 
     /**
-     * @brief Updates velocity estimates from encoder readings
-     * @param dt Time step in seconds since last update
+     * @brief Reads encoders, computes per-tick deltas and velocity estimates.
+     *        Runs on the fixed control tick — no dt argument.
      */
-    void update(float dt);
+    void update();
 
     /**
-     * @brief Sets motor duty cycles
+     * @brief Average per-tick forward position delta in mm, since the last update().
+     *        This is the "measured_change" fed to the forward PD controller.
      */
-    void setDuty(float left, float right);
+    float fwdChangeMm() const { return fwd_change_mm_; }
 
     /**
      * @brief Sets motor voltages (scaled by current battery voltage)
      */
     void setVoltage(float left_volts, float right_volts);
 
-    /**
-     * @brief Returns current battery voltage reading
-     */
-    float batteryVoltage() const;
-
     void stop();
 
   private:
+    // Returns current battery voltage; falls back to DEFAULT_BATTERY_VOLTAGE
+    // when no battery driver is wired (sim, bench testing). Consumed by
+    // setVoltage() to scale per-wheel volts.
+    float batteryVoltage() const;
+
     Motor*   left_motor_;
     Motor*   right_motor_;
     Encoder* left_encoder_;
@@ -96,8 +91,8 @@ class Drivetrain
     float left_velocity_mmps_  = 0.0f;
     float right_velocity_mmps_ = 0.0f;
 
-    float last_left_pos_mm_  = 0.0f;
-    float last_right_pos_mm_ = 0.0f;
+    // Per-tick deltas refreshed by update(); consumed by Robot's PD loop.
+    float fwd_change_mm_ = 0.0f;
 
     // Feedforward coefficients (initialized from config, mutable for tuning)
     struct FFCoeffs

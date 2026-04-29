@@ -96,22 +96,22 @@ void DriverLab::stopMotors()
 void DriverLab::setMotorVoltage(float volts)
 {
     float battery_volts = batteryVoltage();
-    left_motor_->applyVoltage(volts, battery_volts);
-    right_motor_->applyVoltage(volts, battery_volts);
+    left_motor_->set_motor_volts(volts, battery_volts);
+    right_motor_->set_motor_volts(volts, battery_volts);
 }
 
 void DriverLab::setLeftMotorVoltage(float volts)
 {
     float battery_volts = batteryVoltage();
-    left_motor_->applyVoltage(volts, battery_volts);
-    right_motor_->applyVoltage(0, battery_volts);
+    left_motor_->set_motor_volts(volts, battery_volts);
+    right_motor_->set_motor_volts(0, battery_volts);
 }
 
 void DriverLab::setRightMotorVoltage(float volts)
 {
     float battery_volts = batteryVoltage();
-    left_motor_->applyVoltage(0, battery_volts);
-    right_motor_->applyVoltage(volts, battery_volts);
+    left_motor_->set_motor_volts(0, battery_volts);
+    right_motor_->set_motor_volts(volts, battery_volts);
 }
 
 float DriverLab::batteryVoltage() const
@@ -129,11 +129,10 @@ float DriverLab::batteryVoltage() const
 
 void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t settle_time_ms)
 {
-    printf("\n=== Open Loop Voltage Sweep (Stereo + Steering) ===\n");
+    printf("\n=== Open Loop Voltage Sweep (Stereo) ===\n");
     printf("Max voltage: %.2f V, Step: %.2f V, Settle time: %lu ms\n", max_voltage, step_voltage,
            static_cast<unsigned long>(settle_time_ms));
     printf("Battery: %.2f V\n", batteryVoltage());
-    printf("Steering PD: kP=%.3f, kD=%.3f\n", settings_.turnKP, settings_.turnKD);
 
     // Countdown to allow USB disconnect
     for (int i = 3; i > 0; i--)
@@ -148,9 +147,11 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
 
     Drivetrain* dt = robot_->drivetrain();
     dt->reset();
-    robot_->stop(); // Force Idle so Robot::update() doesn't fight our manual voltages.
-    robot_->setRotationGains(settings_.turnKP, 0.0f, settings_.turnKD);
-    robot_->resetHeadingControl(); // Trial start: zero yaw + clear PD state.
+    robot_->stop();
+    // Detach Robot's controller so update() won't compute PD/FF and won't call
+    // setVoltage(). We drive the motors directly via set_motor_volts() below.
+    // Mirrors motorlab `disable_controllers() + set_closed_loop(false)`.
+    robot_->setControlMode(ControlMode::Disabled);
 
     // Per-motor steady-state data for independent regression
     std::vector<float> left_voltages, left_speeds;
@@ -161,7 +162,6 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
     constexpr float  MIN_SPEED_THRESHOLD = 10.0f; // mm/s
     constexpr size_t SKIP_SAMPLES        = 10;    // 100ms at 100Hz transient skip
     constexpr size_t OUTPUT_EVERY        = 5;     // Output every 5th sample
-    constexpr float  MAX_STEER_VOLTS     = 1.0f;  // Clamp steering correction
 
     // Sweep from 0 to max_voltage
     for (float voltage = step_voltage; voltage <= max_voltage + 0.01f; voltage += step_voltage)
@@ -181,20 +181,12 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
             float left_speed  = dt->velocity(WheelSide::LEFT);
             float right_speed = dt->velocity(WheelSide::RIGHT);
 
-            // Get steering correction from Robot's heading controller
-            float steer_volts = robot_->headingCorrection(0.0f);
-            if (steer_volts > MAX_STEER_VOLTS)
-                steer_volts = MAX_STEER_VOLTS;
-            if (steer_volts < -MAX_STEER_VOLTS)
-                steer_volts = -MAX_STEER_VOLTS;
-
-            // Apply differential voltage (sign convention matches runPositionControl:
-            // left = forward - rotation, right = forward + rotation)
-            float left_v  = voltage - steer_volts;
-            float right_v = voltage + steer_volts;
+            // Pure open-loop: equal voltage on both wheels, no steering.
+            float left_v  = voltage;
+            float right_v = voltage;
             float batt    = batteryVoltage();
-            left_motor_->applyVoltage(left_v, batt);
-            right_motor_->applyVoltage(right_v, batt);
+            left_motor_->set_motor_volts(left_v, batt);
+            right_motor_->set_motor_volts(right_v, batt);
 
             // Record after transient settles
             if (sample_count >= SKIP_SAMPLES)
@@ -210,7 +202,7 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
                 {
                     uint32_t now = to_ms_since_boot(get_absolute_time());
                     reporter_.reportOpenLoopStereo(now, voltage, left_v, right_v, left_speed,
-                                                   right_speed, steer_volts, robot_->yaw());
+                                                   right_speed, robot_->yaw());
                 }
             }
 
@@ -267,6 +259,7 @@ void DriverLab::runOpenLoopTrial(float max_voltage, float step_voltage, uint32_t
     }
 
     stopMotors();
+    robot_->setControlMode(ControlMode::Full); // Restore default for next trial.
 
     // Linear regression: speed = kM * voltage + intercept, kS = -intercept / kM
     auto linRegress = [](const std::vector<float>& v, const std::vector<float>& s, float min_speed,
@@ -401,7 +394,8 @@ void DriverLab::runStepTrial(float step_voltage, uint32_t duration_ms)
 
     Drivetrain* dt = robot_->drivetrain();
     dt->reset();
-    robot_->stop(); // Force Idle so Robot::update() doesn't fight our manual step voltage.
+    robot_->stop();
+    robot_->setControlMode(ControlMode::Disabled);
 
     // Collect speed samples for Tm calculation
     static constexpr int MAX_STEP_SAMPLES = 2000;
@@ -443,6 +437,7 @@ void DriverLab::runStepTrial(float step_voltage, uint32_t duration_ms)
     }
 
     stopMotors();
+    robot_->setControlMode(ControlMode::Full); // Restore default for next trial.
 
     // === Calculate Tm from collected data ===
     if (n_samples < 10)
@@ -744,6 +739,337 @@ void DriverLab::runTurnTrial(float degrees, float top_omega, float alpha)
 }
 
 // ============================================================================
+// TURN-OL: open-loop differential-voltage sweep, measures rotational kM
+// ============================================================================
+//
+// Drives the wheels with ±diff_v to spin the robot in place at increasing
+// voltage steps. At each step, the steady-state yaw rate (deg/s) is averaged
+// over the tail of the settle window. A linear regression of (diff_v, omega_ss)
+// recovers ROT_KM = slope (deg/s/V), which is the rotational analogue of MOTOR_KM.
+// Tm-style 63.2% sample is also captured per step as a coarse rot_tm hint —
+// the dedicated TURN-STEP trial gives the better number.
+void DriverLab::runTurnOpenLoopTrial(float max_diff_voltage, float step_voltage,
+                                     uint32_t settle_time_ms)
+{
+    printf("\n=== TURN Open Loop Voltage Sweep ===\n");
+    printf("Max diff: %.2f V, Step: %.2f V, Settle: %lu ms\n", max_diff_voltage, step_voltage,
+           static_cast<unsigned long>(settle_time_ms));
+    printf("Battery: %.2f V\n", batteryVoltage());
+
+    for (int i = 3; i > 0; i--)
+    {
+        printf("Starting in %d...\n", i);
+        sleep_ms(1000);
+    }
+    printf("GO!\n\n");
+
+    reporter_.begin();
+    reporter_.printTurnOpenLoopHeader();
+
+    Drivetrain* dt = robot_->drivetrain();
+    dt->reset();
+    robot_->stop();
+    robot_->setControlMode(ControlMode::Disabled);
+    robot_->resetYaw(); // Trial start: zero yaw reference for omega integration.
+
+    constexpr float  MIN_OMEGA_THRESHOLD = 5.0f; // deg/s — below this we treat as "stalled"
+    constexpr size_t SKIP_SAMPLES        = 20;   // 40 ms transient skip at 500 Hz
+
+    std::vector<float> diff_voltages, omega_steady;
+    std::vector<float> rot_tm_samples;
+
+    // Sweep both polarities is unnecessary for plant identification (rotation is
+    // symmetric); a single direction is enough to recover ROT_KM.
+    for (float diff_v = step_voltage; diff_v <= max_diff_voltage + 0.01f; diff_v += step_voltage)
+    {
+        std::vector<float> step_omegas;
+        std::vector<float> step_times_s;
+
+        uint32_t step_start   = to_ms_since_boot(get_absolute_time());
+        size_t   sample_count = 0;
+        float    yaw_at_start = robot_->yaw();
+        float    prev_yaw     = yaw_at_start;
+        uint32_t prev_ms      = step_start;
+
+        while (to_ms_since_boot(get_absolute_time()) - step_start < settle_time_ms)
+        {
+            robot_->update();
+
+            // Right wheel forward, left wheel reverse → positive yaw rate.
+            float batt = batteryVoltage();
+            left_motor_->set_motor_volts(-diff_v, batt);
+            right_motor_->set_motor_volts(+diff_v, batt);
+
+            uint32_t now     = to_ms_since_boot(get_absolute_time());
+            float    cur_yaw = robot_->yaw();
+            float    dt_s    = (now - prev_ms) * 1e-3f;
+            float    omega   = (dt_s > 1e-4f) ? ((cur_yaw - prev_yaw) / dt_s) : 0.0f;
+            prev_yaw         = cur_yaw;
+            prev_ms          = now;
+
+            if (sample_count >= SKIP_SAMPLES)
+            {
+                step_omegas.push_back(omega);
+                step_times_s.push_back((now - step_start) * 1e-3f);
+
+                if ((sample_count - SKIP_SAMPLES) % 10 == 0)
+                    reporter_.reportTurnOpenLoop(now, diff_v, cur_yaw, omega);
+            }
+
+            sample_count++;
+            sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
+        }
+
+        // Average tail = steady-state omega
+        size_t avg_count = std::min(step_omegas.size(), size_t(20));
+        float  omega_ss  = 0.0f;
+        if (avg_count > 0)
+        {
+            for (size_t i = step_omegas.size() - avg_count; i < step_omegas.size(); i++)
+                omega_ss += step_omegas[i];
+            omega_ss /= static_cast<float>(avg_count);
+        }
+
+        diff_voltages.push_back(diff_v);
+        omega_steady.push_back(omega_ss);
+
+        // 63.2% rise time as coarse rot_tm sample
+        if (std::fabs(omega_ss) > MIN_OMEGA_THRESHOLD && step_omegas.size() > 1)
+        {
+            float target = omega_ss * 0.632f;
+            for (size_t i = 1; i < step_omegas.size(); i++)
+            {
+                if ((omega_ss > 0 && step_omegas[i - 1] < target && step_omegas[i] >= target) ||
+                    (omega_ss < 0 && step_omegas[i - 1] > target && step_omegas[i] <= target))
+                {
+                    rot_tm_samples.push_back(step_times_s[i - 1]);
+                    break;
+                }
+            }
+        }
+
+        // Brief pause between steps to let the robot stop spinning.
+        stopMotors();
+        sleep_ms(200);
+    }
+
+    stopMotors();
+    robot_->setControlMode(ControlMode::Full); // Restore default for next trial.
+
+    // Linear regression: omega = ROT_KM * diff_v + intercept
+    auto linRegress = [](const std::vector<float>& v, const std::vector<float>& w, float min_omega,
+                         float& kM_out, int& n_out)
+    {
+        float sum_v = 0, sum_w = 0, sum_vw = 0, sum_vv = 0;
+        n_out = 0;
+        for (size_t i = 0; i < v.size(); i++)
+        {
+            if (std::fabs(w[i]) > min_omega)
+            {
+                sum_v += v[i];
+                sum_w += w[i];
+                sum_vw += v[i] * w[i];
+                sum_vv += v[i] * v[i];
+                n_out++;
+            }
+        }
+        if (n_out < 2)
+        {
+            kM_out = 0.0f;
+            return;
+        }
+        float denom = n_out * sum_vv - sum_v * sum_v;
+        if (std::fabs(denom) < 1e-12f)
+        {
+            kM_out = 0.0f;
+            return;
+        }
+        kM_out = (n_out * sum_vw - sum_v * sum_w) / denom;
+    };
+
+    float rot_kM = 0.0f;
+    int   n_pts  = 0;
+    linRegress(diff_voltages, omega_steady, MIN_OMEGA_THRESHOLD, rot_kM, n_pts);
+
+    float rot_tm_calc = 0.0f;
+    if (!rot_tm_samples.empty())
+    {
+        for (float t : rot_tm_samples)
+            rot_tm_calc += t;
+        rot_tm_calc /= static_cast<float>(rot_tm_samples.size());
+    }
+
+    constexpr float MIN_VALID_ROT_KM = 10.0f; // deg/s/V — sanity floor
+    const bool      ol_ok            = (n_pts >= 2) && (rot_kM > MIN_VALID_ROT_KM);
+
+    if (ol_ok)
+    {
+        settings_.rot_kM = rot_kM;
+        // Only update rot_tm here if STEP hasn't been run yet — a dedicated
+        // TURN-STEP gives a cleaner number. We still write it so a fresh
+        // calibration is usable without a separate STEP.
+        if (rot_tm_calc > 0.001f && rot_tm_calc < 1.0f)
+            settings_.rot_tm = rot_tm_calc;
+
+        settings_.recalculateRotation();
+    }
+
+    printf("\n=== TURN-OL Results ===\n");
+    printf("ROT_KM = %.2f deg/s/V (%d points)\n", rot_kM, n_pts);
+    if (rot_tm_calc > 0.0f)
+        printf("ROT_TM (coarse) = %.5f s  (run TURN-STEP for a cleaner value)\n", rot_tm_calc);
+    if (ol_ok)
+    {
+        printf("  -> turnKP = %.5f, turnKD = %.5f  (recomputed)\n", settings_.turnKP,
+               settings_.turnKD);
+    }
+    else
+    {
+        printf("  ! Regression failed — keeping previous rot_kM/turnKP/turnKD\n");
+    }
+    printPrompt();
+}
+
+// ============================================================================
+// TURN-STEP: differential-voltage step response, measures rotational ROT_TM
+// ============================================================================
+//
+// Applies a constant ±diff_v differential voltage and measures the time for
+// the yaw rate to reach 63.2% of its steady-state value. That time IS ROT_TM
+// for a first-order rotational plant. Cleaner than the per-step TURN-OL hint
+// because the step is held long enough to fully settle.
+void DriverLab::runTurnStepTrial(float diff_voltage, uint32_t duration_ms)
+{
+    printf("\n=== TURN Step Response ===\n");
+    printf("Diff voltage: %.2f V, Duration: %lu ms\n", diff_voltage,
+           static_cast<unsigned long>(duration_ms));
+    printf("Battery: %.2f V\n", batteryVoltage());
+
+    for (int i = 3; i > 0; i--)
+    {
+        printf("Starting in %d...\n", i);
+        sleep_ms(1000);
+    }
+    printf("GO!\n\n");
+
+    reporter_.begin();
+    reporter_.printTurnStepHeader();
+
+    Drivetrain* dt = robot_->drivetrain();
+    dt->reset();
+    robot_->stop();
+    robot_->setControlMode(ControlMode::Disabled);
+    robot_->resetYaw(); // Zero yaw reference for omega integration.
+
+    static constexpr int MAX_SAMPLES = 4000;
+    std::vector<float>   times_s(MAX_SAMPLES);
+    std::vector<float>   omegas(MAX_SAMPLES);
+    int                  n = 0;
+
+    float batt = batteryVoltage();
+    left_motor_->set_motor_volts(-diff_voltage, batt);
+    right_motor_->set_motor_volts(+diff_voltage, batt);
+
+    uint32_t start_ms = to_ms_since_boot(get_absolute_time());
+    uint32_t prev_ms  = start_ms;
+    float    prev_yaw = robot_->yaw();
+    uint32_t elapsed  = 0;
+
+    while (elapsed < duration_ms)
+    {
+        robot_->update();
+
+        uint32_t now  = to_ms_since_boot(get_absolute_time());
+        elapsed       = now - start_ms;
+        float cur_yaw = robot_->yaw();
+        float dt_s    = (now - prev_ms) * 1e-3f;
+        float omega   = (dt_s > 1e-4f) ? ((cur_yaw - prev_yaw) / dt_s) : 0.0f;
+        prev_yaw      = cur_yaw;
+        prev_ms       = now;
+
+        if (reporter_.isTimeToReport(now))
+        {
+            reporter_.reportTurnStep(now, diff_voltage, cur_yaw, omega);
+            if (n < MAX_SAMPLES)
+            {
+                times_s[n] = elapsed * 1e-3f;
+                omegas[n]  = omega;
+                n++;
+            }
+        }
+
+        sleep_ms(static_cast<uint32_t>(LOOP_INTERVAL_S * 1000.0f));
+    }
+
+    stopMotors();
+    robot_->setControlMode(ControlMode::Full); // Restore default for next trial.
+
+    if (n < 10)
+    {
+        printf("\nNot enough samples to compute ROT_TM\n");
+        printPrompt();
+        return;
+    }
+
+    // Steady-state omega = average of last 20% of samples
+    int   tail_start = n - n / 5;
+    float sum_ss     = 0.0f;
+    int   ss_count   = 0;
+    for (int i = tail_start; i < n; i++)
+    {
+        sum_ss += omegas[i];
+        ss_count++;
+    }
+    float omega_ss = sum_ss / ss_count;
+
+    if (std::fabs(omega_ss) < 5.0f)
+    {
+        printf("\nSteady-state omega too small (%.2f deg/s) — increase diff voltage.\n", omega_ss);
+        printPrompt();
+        return;
+    }
+
+    float threshold = omega_ss * 0.632f;
+
+    float rot_tm_calc = 0.0f;
+    bool  found       = false;
+    for (int i = 1; i < n; i++)
+    {
+        bool crossed = (omega_ss > 0) ? (omegas[i - 1] < threshold && omegas[i] >= threshold)
+                                      : (omegas[i - 1] > threshold && omegas[i] <= threshold);
+        if (crossed)
+        {
+            float frac  = (threshold - omegas[i - 1]) / (omegas[i] - omegas[i - 1]);
+            rot_tm_calc = times_s[i - 1] + frac * (times_s[i] - times_s[i - 1]);
+            found       = true;
+            break;
+        }
+    }
+
+    printf("\n=== TURN-STEP Results ===\n");
+    printf("Steady-state omega: %.1f deg/s\n", omega_ss);
+    printf("63.2%% threshold:   %.1f deg/s\n", threshold);
+
+    if (found && rot_tm_calc > 0.001f && rot_tm_calc < 1.0f)
+    {
+        settings_.rot_tm = rot_tm_calc;
+        settings_.rot_td = rot_tm_calc; // mazerunner convention: Td = Tm
+        settings_.recalculateRotation();
+        printf("ROT_TM = %.5f s\n", settings_.rot_tm);
+        printf("  -> ROT_TD = %.5f s\n", settings_.rot_td);
+        printf("  -> turnKP = %.5f, turnKD = %.5f  (recomputed)\n", settings_.turnKP,
+               settings_.turnKD);
+    }
+    else
+    {
+        printf("ROT_TM: could not determine (omega may not have settled)\n");
+    }
+
+    printf("Samples: %d\n\n", n);
+    printPrompt();
+}
+
+// ============================================================================
 // CLI Processing
 // ============================================================================
 
@@ -835,6 +1161,34 @@ int DriverLab::readSerialLine()
             }
         }
     }
+}
+
+void DriverLab::executeLine(const char* line)
+{
+    if (line == nullptr)
+        return;
+
+    // Reuse the same input buffer the line reader writes into. tokenize()
+    // calls strtok which clobbers it in place, so we need to land the line
+    // here exactly the way readSerialLine would. clearInput() afterwards
+    // resets history-nav state so the next readSerialLine starts clean.
+    size_t i = 0;
+    while (line[i] != '\0' && line[i] != '\n' && line[i] != '\r' &&
+           i < DRIVERLAB_INPUT_BUFFER_SIZE - 1)
+    {
+        input_buffer_[i] = line[i];
+        ++i;
+    }
+    input_buffer_[i] = '\0';
+    input_index_     = static_cast<int>(i);
+
+    DriverLabArgs args = tokenize();
+    if (args.argc > 0)
+    {
+        executeCommand(args);
+    }
+
+    clearInput();
 }
 
 DriverLabArgs DriverLab::tokenize()
@@ -988,6 +1342,14 @@ void DriverLab::executeCommand(const DriverLabArgs& args)
     {
         cmdTurn(args);
     }
+    else if (strcmp(cmd, "TURNOL") == 0 || strcmp(cmd, "TOL") == 0)
+    {
+        cmdTurnOpenLoop(args);
+    }
+    else if (strcmp(cmd, "TURNSTEP") == 0 || strcmp(cmd, "TSTEP") == 0)
+    {
+        cmdTurnStep(args);
+    }
     else if (strcmp(cmd, "TURN_KP") == 0)
     {
         cmdSetTurnKp(args);
@@ -1119,6 +1481,8 @@ void DriverLab::cmdHelp()
     printf("       mode: 0=FF only, 1=PD only, 2=FF+PD\n");
     printf("  TURN [deg deg/s deg/s^2]        Turn in place    (default: 90 200 500)\n");
     printf("       +deg=right, -deg=left\n");
+    printf("  TURNOL  [max step settle_ms]    Rotation OL sweep  (default: 3 0.5 800)\n");
+    printf("  TURNSTEP [diff_v duration_ms]   Rotation step      (default: 1.5 1000)\n");
     printf("\n");
     printf("=== TUNING (set/get, omit val to read) ===\n");
     printf("  Motor:  KM [val]  TM [val]\n");
@@ -1346,7 +1710,7 @@ void DriverLab::cmdBattery()
 {
     if (battery_ != nullptr)
     {
-        printf("Battery: %.2f V (ADC: %u)\n", battery_->voltage(), battery_->rawADC());
+        printf("Battery: %.2f V (ADC: %u)\n", battery_->voltage(), battery_->raw_adc());
     }
     else
     {
@@ -1446,7 +1810,7 @@ void DriverLab::cmdLeftTof()
 {
     if (left_tof_ != nullptr)
     {
-        printf("Left ToF: %.0f mm\n", left_tof_->distanceDirect());
+        printf("Left ToF: %.0f mm\n", left_tof_->get_distance());
     }
     else
     {
@@ -1458,7 +1822,7 @@ void DriverLab::cmdFrontTof()
 {
     if (front_tof_ != nullptr)
     {
-        printf("Front ToF: %.0f mm\n", front_tof_->distanceDirect());
+        printf("Front ToF: %.0f mm\n", front_tof_->get_distance());
     }
     else
     {
@@ -1470,7 +1834,7 @@ void DriverLab::cmdRightTof()
 {
     if (right_tof_ != nullptr)
     {
-        printf("Right ToF: %.0f mm\n", right_tof_->distanceDirect());
+        printf("Right ToF: %.0f mm\n", right_tof_->get_distance());
     }
     else
     {
@@ -1510,9 +1874,9 @@ void DriverLab::cmdTofContinuous(const DriverLabArgs& args)
 
         robot_->update();
 
-        float left_dist  = (left_tof_ != nullptr) ? left_tof_->distanceDirect() : 0.0f;
-        float front_dist = (front_tof_ != nullptr) ? front_tof_->distanceDirect() : 0.0f;
-        float right_dist = (right_tof_ != nullptr) ? right_tof_->distanceDirect() : 0.0f;
+        float left_dist  = (left_tof_ != nullptr) ? left_tof_->get_distance() : 0.0f;
+        float front_dist = (front_tof_ != nullptr) ? front_tof_->get_distance() : 0.0f;
+        float right_dist = (right_tof_ != nullptr) ? right_tof_->get_distance() : 0.0f;
 
         printf("%7lu  %8.0f  %9.0f  %8.0f\n", static_cast<unsigned long>(elapsed), left_dist,
                front_dist, right_dist);
@@ -1653,6 +2017,35 @@ void DriverLab::cmdTurn(const DriverLabArgs& args)
     runTurnTrial(degrees, omega, alpha);
 }
 
+void DriverLab::cmdTurnOpenLoop(const DriverLabArgs& args)
+{
+    float    max_v     = 3.0f;
+    float    step_v    = 0.5f;
+    uint32_t settle_ms = 800;
+
+    if (args.argc > 1)
+        max_v = static_cast<float>(atof(args.argv[1]));
+    if (args.argc > 2)
+        step_v = static_cast<float>(atof(args.argv[2]));
+    if (args.argc > 3)
+        settle_ms = static_cast<uint32_t>(atoi(args.argv[3]));
+
+    runTurnOpenLoopTrial(max_v, step_v, settle_ms);
+}
+
+void DriverLab::cmdTurnStep(const DriverLabArgs& args)
+{
+    float    diff_v      = 1.5f;
+    uint32_t duration_ms = 1000;
+
+    if (args.argc > 1)
+        diff_v = static_cast<float>(atof(args.argv[1]));
+    if (args.argc > 2)
+        duration_ms = static_cast<uint32_t>(atoi(args.argv[2]));
+
+    runTurnStepTrial(diff_v, duration_ms);
+}
+
 void DriverLab::cmdSetTurnKp(const DriverLabArgs& args)
 {
     float val;
@@ -1784,9 +2177,12 @@ void DriverLab::cmdExport()
     printf("//   kA_L = %.7f V/(mm/s^2), kA_R = %.7f V/(mm/s^2)\n", settings_.kA_L, settings_.kA_R);
     printf("//   Tm = %.5f s\n", settings_.tm);
     printf("\n");
-    printf("// Rotation PD gains\n");
-    printf("#define ROT_KP %.4ff\n", settings_.turnKP);
-    printf("#define ROT_KD %.4ff\n", settings_.turnKD);
+    printf("// Rotation plant model (from TURN-OL + TURN-STEP)\n");
+    printf("#define ROT_KM %.2ff   // deg/s per volt of differential drive\n", settings_.rot_kM);
+    printf("#define ROT_TM %.5ff // seconds — rotational time constant\n", settings_.rot_tm);
+    printf("// ROT_KP / ROT_KD are now formula-derived in tuning.h.\n");
+    printf("// Resulting gains: turnKP = %.4f, turnKD = %.4f\n", settings_.turnKP,
+           settings_.turnKD);
     printf("// ============================================================\n");
     printf("\n");
 }
@@ -1842,8 +2238,8 @@ void DriverLab::cmdLinePosition()
     }
 
     line_sensor_->read();
-    float position = line_sensor_->getPosition();
-    bool  on_line  = line_sensor_->onLine();
+    float position = line_sensor_->get_position();
+    bool  on_line  = line_sensor_->on_line();
 
     printf("Position: %.2f (%s)\n", position, on_line ? "on line" : "off line");
 }
@@ -1857,7 +2253,7 @@ void DriverLab::cmdLineIntersection()
     }
 
     line_sensor_->read();
-    bool intersection = line_sensor_->detectIntersection();
+    bool intersection = line_sensor_->detect_intersection();
 
     printf("Intersection: %s\n", intersection ? "YES" : "NO");
 }
@@ -1897,8 +2293,8 @@ void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
 
         // Read and display line sensor
         line_sensor_->read();
-        float position     = line_sensor_->getPosition();
-        bool  intersection = line_sensor_->detectIntersection();
+        float position     = line_sensor_->get_position();
+        bool  intersection = line_sensor_->detect_intersection();
 
         printf("%7lu  %8.2f  %9s\n", static_cast<unsigned long>(elapsed), position,
                intersection ? "YES" : "NO");

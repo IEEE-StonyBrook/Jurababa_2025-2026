@@ -29,7 +29,11 @@ void DriverLabSettings::print() const
     printf("kP   = %8.5f\n", kP);
     printf("kD   = %8.5f\n", kD);
 
-    // Rotation PD
+    // Rotation plant + PD
+    printf("rot_kM = %8.2f  deg/s/V\n", rot_kM);
+    printf("rot_tm = %8.5f  s\n", rot_tm);
+    printf("rot_zeta = %.4f\n", rot_zeta);
+    printf("rot_td   = %.5f  s\n", rot_td);
     printf("turnKP = %.4f\n", turnKP);
     printf("turnKD = %.4f\n", turnKD);
     printf("\n");

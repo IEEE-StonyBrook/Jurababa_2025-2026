@@ -7,7 +7,6 @@
 #include "common/utils.h"
 #include "control/pid.h"
 #include "control/profile.h"
-#include "pico/time.h"
 
 class Drivetrain;
 class IMU;
@@ -19,20 +18,28 @@ class ToF;
  * Full:             FF + PD (default, used in Normal Mode)
  * FeedforwardOnly:  FF only, PD zeroed (for characterization)
  * FeedbackOnly:     PD only, FF zeroed (for characterization)
+ * Disabled:         Skip PD/FF/setVoltage entirely. Caller drives the H-bridge
+ *                   directly via Motor::set_motor_volts(). Mirrors mazerunner /
+ *                   motorlab `disable_controllers() + set_closed_loop(false)`
+ *                   semantics. Required by DriverLab open-loop trials so
+ *                   Robot::update() doesn't fight manual voltage commands.
  */
 enum class ControlMode
 {
     Full,
     FeedforwardOnly,
-    FeedbackOnly
+    FeedbackOnly,
+    Disabled
 };
 
 /**
- * @brief High-level robot controller with position-based control
+ * @brief High-level robot controller (mazerunner-core style)
  *
- * Implements mazerunner-core style dual PD controllers for position and
- * rotation control with trapezoidal motion profiling. Includes integrated
- * sensor access for wall detection and heading tracking.
+ * Per-tick: drivetrain.update() → forward_profile.update() → rotation_profile.update()
+ * → runPositionControl(). Motion complete when both profiles report finished().
+ *
+ * Yaw and omega come from the IMU (deliberate divergence from mazerunner, which
+ * derives both from differential encoders). Forward position comes from encoders.
  */
 class Robot
 {
@@ -41,30 +48,25 @@ class Robot
 
     void reset();
 
-    // === Wall Detection (from IMU/ToF) ===
+    // === Wall Detection (ToF) ===
     bool wallLeft();
     bool wallFront();
     bool wallRight();
 
     // === IMU Readings ===
     float yaw();      // Current heading [-180, 180]
-    float omega();    // Angular velocity (deg/s)
+    float omega();    // Angular velocity (deg/s) — raw per-tick delta * LOOP_FREQUENCY_HZ
     float yawDelta(); // Change since last call
     void  resetYaw();
-    void  resetHeadingControl(); // Full reset: zeros yaw + clears PD state. Use at trial start.
-    // Uses dt measured by the most recent update() call.
-    // Caller must invoke update() once per loop before calling this.
-    float headingCorrection(float target_omega_degps);
 
     // === ToF Distances ===
     float frontDistance();
     float leftDistance();
     float rightDistance();
 
-    // === Basic Motion Commands ===
+    // === Motion Commands ===
     void moveDistance(float distance_mm, float max_vel_mmps, float accel_mmps2);
     void turnInPlace(float degrees, float max_vel_degps, float accel_degps2);
-    void stopAtCenter();
     void stop();
 
     // === Cell Navigation (Convenience Wrappers) ===
@@ -84,20 +86,18 @@ class Robot
     float remainingAngle() const;
 
     // === Control Loop ===
-    // Robot is the sole owner of dt: update() measures wall-clock dt internally
-    // and propagates it to drivetrain, sensors, profiles, and PID. Callers must
-    // never pass dt — this prevents the OL-style "lied-to dt" bug class.
-    // The first call after construction or any motion-state change primes the
-    // clock and is a no-op for time-derived state.
+    // Caller must invoke update() exactly once per tick from a deterministic
+    // scheduler pinned to LOOP_FREQUENCY_HZ.
     void update();
 
-    // === Controller Tuning ===
+    // === Controller Tuning (DriverLab) ===
+    // `ki` is accepted for API compatibility but is ignored — the controller is PD.
     void setForwardGains(float kp, float ki, float kd);
     void setRotationGains(float kp, float ki, float kd);
     void setControlMode(ControlMode mode);
     void setFeedforward(WheelSide side, float kv, float ks, float ka);
 
-    // === Diagnostic Accessors (for DriverLab CSV logging) ===
+    // === Diagnostic Accessors (DriverLab CSV logging) ===
     float       targetForwardVel() const { return target_forward_vel_mmps_; }
     float       targetAngularVel() const { return target_angular_vel_degps_; }
     float       forwardError() const { return forward_error_; }
@@ -106,38 +106,10 @@ class Robot
     float       lastRightVolts() const { return prev_right_volts_; }
     Drivetrain* drivetrain() const { return drivetrain_; }
 
-    // Legacy API
-    bool isMotionDone() const;
-
   private:
-    enum class MotionState
-    {
-        Idle,
-        MovingForward,
-        TurningInPlace,
-        SmoothTurning,
-        Stopping
-    };
-
-    MotionState state_        = MotionState::Idle;
     ControlMode control_mode_ = ControlMode::Full;
 
-    // Robot is the dt owner — these helpers consume the dt that update() measured.
-    void updateControl(float dt);
-    void updateSensors(float dt);
-    void updateForwardProfile(float dt);
-    void updateRotationProfile(float dt);
-
-    void invalidateClock() { last_update_time_ = nil_time; }
-
-    void checkForwardCompletion();
-    void checkRotationCompletion();
-    void checkSmoothTurnCompletion();
-    void checkStoppingCompletion();
-
-    void        runPositionControl(float dt);
-    float       applySlew(float cmd, float& prev_cmd, float dt);
-    std::string stateName() const;
+    void runPositionControl();
 
     // Hardware
     Drivetrain* drivetrain_;
@@ -154,35 +126,33 @@ class Robot
     PID forward_controller_;
     PID rotation_controller_;
 
-    // Control state
-    float forward_error_       = 0.0f;
-    float rotation_error_      = 0.0f;
-    float prev_forward_error_  = 0.0f;
-    float prev_rotation_error_ = 0.0f;
+    // Diagnostic mirrors of controller error (mazerunner exposes these directly).
+    float forward_error_  = 0.0f;
+    float rotation_error_ = 0.0f;
 
-    float target_forward_vel_mmps_    = 0.0f;
-    float target_angular_vel_degps_   = 0.0f;
-    float target_forward_accel_mmps2_ = 0.0f;
-    float target_yaw_deg_             = 0.0f;
-    float target_forward_distance_mm_ = 0.0f; // absolute encoder target for current MOVE
+    // Per-tick targets read from the profiles each update().
+    float target_forward_vel_mmps_  = 0.0f;
+    float target_angular_vel_degps_ = 0.0f;
 
+    // Last applied motor voltage (CSV logging).
     float prev_left_volts_  = 0.0f;
     float prev_right_volts_ = 0.0f;
 
-    // Sensor state (merged from Sensors class)
-    float prev_yaw_           = 0.0f;
-    float omega_degps_        = 0.0f;
+    // Per-wheel commanded velocity from previous tick — feeds ACC_FF as
+    // `(v - prev_v) * LOOP_FREQUENCY_HZ`.
+    float prev_left_cmd_vel_mmps_  = 0.0f;
+    float prev_right_cmd_vel_mmps_ = 0.0f;
+
+    // Caller-driven yawDelta() tracker. Per-tick rotation state (rot_change,
+    // omega) lives in the IMU driver — Robot is a pass-through.
     float last_yaw_for_delta_ = 0.0f;
 
+    // Sensor-driven steering correction injected into rotation PD as an additive
+    // omega rate (mazerunner's `steering_adjustment` parameter). Populated by
+    // centerWithWalls(); zeroed elsewhere.
+    float steering_adjustment_ = 0.0f;
+
     bool motion_done_ = true;
-
-    // dt ownership — see update() doc above.
-    absolute_time_t last_update_time_ = nil_time;
-    float           last_dt_s_        = 0.0f;
-
-    // Forward-motion settling: clock primed on the first tick after
-    // forward_profile_.finished() flips true. nil_time = "not currently settling".
-    absolute_time_t settling_start_time_ = nil_time;
 };
 
 #endif

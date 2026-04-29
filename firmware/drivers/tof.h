@@ -23,26 +23,28 @@ class ToF
     ToF(int xshut_pin, char sensor_position);
 
     /**
-     * @brief Returns measured distance to nearest object
-     * @return Distance in millimeters
+     * @brief Returns measured distance to nearest object.
+     *
+     * Reads hardware directly. On a valid measurement, caches the value
+     * and returns it. On an invalid measurement (RangeStatus != 0,
+     * e.g., out-of-range, signal too low) returns the last cached value.
+     * Before the first valid read the cache is initialized to the VL53L0X
+     * out-of-range sentinel (8191 mm), so cold-start reads can never lie
+     * about wall presence.
+     *
+     * @return Distance in millimeters.
      */
-    float distance();
-
-    /**
-     * @brief Returns measured distance directly from hardware (bypasses multicore snapshot)
-     * @return Distance in millimeters
-     */
-    float distanceDirect();
+    float get_distance();
 
   private:
-    void setupXSHUTPin(int xshut_pin);
-    void resetSensor(int xshut_pin);
-    void initializeSensor(int xshut_pin, char sensor_position);
-    void setupContinuousRanging();
+    void setup_xshut_pin(int xshut_pin);
+    void reset_sensor(int xshut_pin);
+    void initialize_sensor(int xshut_pin, char sensor_position);
+    void setup_continuous_ranging();
 
     VL53L0X_Dev_t sensor_device_;
     char          sensor_position_;
-    float         last_valid_distance_ = 500.0f;
+    float         last_valid_distance_ = 8191.0f;
 };
 
 #endif

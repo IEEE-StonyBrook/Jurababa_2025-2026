@@ -7,7 +7,7 @@ LineSensor::LineSensor(i2c_inst_t* i2c, uint sda_pin, uint scl_pin, uint8_t addr
 {
 }
 
-void LineSensor::init()
+void LineSensor::begin()
 {
     i2c_init(i2c_, LINE_SENSOR_I2C_BAUD);
 
@@ -54,12 +54,7 @@ void LineSensor::read()
     sensor_data_ = buf;
 }
 
-uint8_t LineSensor::getSensorData() const
-{
-    return sensor_data_;
-}
-
-float LineSensor::getPosition() const
+float LineSensor::get_position() const
 {
     // Weighted average: sensor positions from -3.5 (leftmost) to +3.5 (rightmost)
     // Bit 0 = leftmost = position -3.5
@@ -85,12 +80,12 @@ float LineSensor::getPosition() const
     return weighted_sum / active_count;
 }
 
-bool LineSensor::onLine() const
+bool LineSensor::on_line() const
 {
     return sensor_data_ != 0;
 }
 
-bool LineSensor::detectIntersection() const
+bool LineSensor::detect_intersection() const
 {
     // Check if 2 leftmost sensors (bits 0 and 1) are both active
     bool left_intersection = (sensor_data_ & 0x03) == 0x03;

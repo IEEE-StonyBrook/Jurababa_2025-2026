@@ -1,99 +1,52 @@
 #ifndef CONTROL_PID_H
 #define CONTROL_PID_H
 
-#include <cfloat>
-#include <cmath>
-
 /**
- * @brief PID Controller for closed-loop control systems
+ * @brief Position-error PD controller (mazerunner-core style)
  *
- * Implements a discrete PID controller with integral windup protection,
- * derivative filtering, deadband, and output limiting. Suitable for
- * motor velocity control, position tracking, and other feedback loops.
+ * Per-tick math:
+ *   m_error      += setpoint * LOOP_INTERVAL_S - measured_change
+ *                  + steering_adjustment * LOOP_INTERVAL_S;
+ *   diff          = m_error - m_prev_error;        // per-LOOP diff
+ *   m_prev_error  = m_error;
+ *   output        = kp * m_error + kd * diff;
  *
- * The controller calculates output = Kp*e + Ki*integral(e) + Kd*de/dt
- * where e is the error signal (setpoint - measurement).
+ * `setpoint` is the COMMANDED velocity (mm/s for forward, deg/s for rotation).
+ * `measured_change` is the per-tick position delta (mm or deg) actually moved.
+ * `steering_adjustment` is an additive rate term (only used by the rotation
+ * controller; sourced from sensor-driven wall centering). Defaults to 0.
+ *
+ * No integral term: position-error integration is the integral.
+ * No derivative LPF: per-loop diff has no `1/dt` to amplify noise.
+ * No deadband.
  */
 class PID
 {
   public:
-    /**
-     * @brief Constructs PID controller with specified gains
-     * @param kp Proportional gain
-     * @param ki Integral gain
-     * @param kd Derivative gain
-     */
-    PID(float kp = 0.0f, float ki = 0.0f, float kd = 0.0f);
+    PID(float kp = 0.0f, float kd = 0.0f);
 
     /**
-     * @brief Calculates PID output from error signal
-     * @param error Control error (setpoint - measurement)
-     * @param dt Time step in seconds since last update
-     * @return Control output signal
+     * @brief Single-tick PD update.
      */
-    float compute(float error, float dt);
+    float update(float setpoint, float measured_change, float steering_adjustment = 0.0f);
 
-    /**
-     * @brief Calculates PID output from setpoint and measurement
-     * @param setpoint Desired value
-     * @param measurement Current measured value
-     * @param dt Time step in seconds since last update
-     * @return Control output signal
-     */
-    float compute(float setpoint, float measurement, float dt);
+    void setGains(float kp, float kd);
 
-    /**
-     * @brief Updates PID gains at runtime
-     */
-    void setGains(float kp, float ki, float kd);
-
-    /**
-     * @brief Sets error deadband threshold
-     * @param threshold If |error| < threshold, output forced to 0
-     */
-    void setDeadband(float threshold);
-
-    /**
-     * @brief Sets integral accumulator limit to prevent windup
-     */
-    void setIntegralLimit(float limit);
-
-    /**
-     * @brief Sets output saturation limit
-     */
+    /** @brief Symmetric output saturation (e.g. battery voltage). */
     void setOutputLimit(float limit);
 
-    /**
-     * @brief Sets derivative low-pass filter coefficient
-     * @param alpha Filter strength (0-0.999, higher = more smoothing)
-     */
-    void setDerivativeFilterAlpha(float alpha);
-
-    /**
-     * @brief Resets controller internal state
-     */
+    /** @brief Clears integrated error and previous-error history. */
     void reset();
+
+    /** @brief Read current accumulated position error (diagnostics). */
+    float error() const { return m_error_; }
 
   private:
     float kp_;
-    float ki_;
     float kd_;
-
-    float integral_       = 0.0f;
-    float integral_limit_ = 1e6f;
-
-    float prev_error_     = 0.0f;
-    bool  has_prev_error_ = false;
-
-    float deadband_ = 0.0f;
-
-    float filtered_derivative_ = 0.0f;
-    float derivative_alpha_    = 0.9f;
-    float derivative_limit_    = 1e6f;
-
-    float output_limit_ = FLT_MAX;
-
-    static float clampAbs(float value, float max_abs);
+    float m_error_      = 0.0f;
+    float m_prev_error_ = 0.0f;
+    float output_limit_ = 1e6f;
 };
 
 #endif

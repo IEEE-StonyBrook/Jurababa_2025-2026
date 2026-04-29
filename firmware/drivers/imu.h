@@ -16,6 +16,11 @@
  * Provides UART-based communication with BNO085 IMU using RVC (Rotation Vector
  * Compressed) protocol. Reads yaw angle via interrupt-driven packet reception
  * with checksum validation.
+ *
+ * API mirrors mazerunner-core's `Encoders` rotation interface — substituting an
+ * IMU as the rotation source. Caller invokes update() once per control tick to
+ * sample yaw and refresh rot_change; robot_omega() / robot_rot_change() then
+ * return cached values.
  */
 class IMU
 {
@@ -27,22 +32,39 @@ class IMU
     explicit IMU(int uart_rx_pin);
 
     /**
+     * @brief Per-tick sampler. Call once per control loop tick.
+     *
+     * Samples current yaw and updates m_rot_change_deg_ as the per-tick yaw
+     * delta. Mirrors mazerunner's `Encoders::update()`.
+     */
+    void update();
+
+    /**
      * @brief Returns current yaw angle normalized to [-180, 180] degrees
-     * @return Yaw angle in degrees (relative to reset offset)
+     *        (relative to last reset()).
      */
-    float yaw();
+    float robot_angle();
 
     /**
-     * @brief Resets yaw offset to make current heading = 0 degrees
+     * @brief Returns angular velocity (deg/s).
+     *
+     * Equals `m_rot_change_deg_ * LOOP_FREQUENCY_HZ`, same shape as
+     * mazerunner's `robot_omega() = LOOP_FREQUENCY * m_rot_change`.
+     * Updated by update().
      */
-    void resetYaw();
+    float robot_omega();
 
     /**
-     * @brief Calculates new yaw after adding angle offset
-     * @param degrees_to_add Angle delta to add (degrees)
-     * @return New yaw normalized to [-180, 180] degrees
+     * @brief Returns the per-tick yaw delta (deg) cached by the last update().
+     *        Mirrors mazerunner's `Encoders::robot_rot_change()`.
      */
-    float yawAfterAdding(float degrees_to_add);
+    float robot_rot_change();
+
+    /**
+     * @brief Resets yaw offset to make current heading = 0 degrees.
+     *        Also zeros rot_change tracking.
+     */
+    void reset();
 
   private:
     const int    uart_rx_pin_;
@@ -57,13 +79,17 @@ class IMU
     float prev_raw_yaw_degrees_; // Previous raw yaw for outlier detection
     bool  first_reading_;        // Skip outlier check on first reading
 
+    // Per-tick rotation tracking (mazerunner Encoders shape)
+    float prev_rot_yaw_;     // yaw at last update() call
+    float m_rot_change_deg_; // per-tick yaw delta (deg)
+
     static IMU* imu_instance_;
 
-    void        setupUART();
-    void        setupInterrupt();
-    void        processReceiveData();
-    void        parsePacketAndExtractYaw();
-    static void uartInterruptHandler();
+    void        setup_uart();
+    void        setup_interrupt();
+    void        process_receive_data();
+    void        parse_packet_and_extract_yaw();
+    static void uart_interrupt_handler();
 };
 
 #endif

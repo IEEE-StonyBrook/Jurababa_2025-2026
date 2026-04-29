@@ -32,10 +32,18 @@ class DriverLabReporter
     void printOpenLoopStereoHeader();
     void reportOpenLoopStereo(uint32_t time_ms, float cmd_voltage, float left_voltage,
                               float right_voltage, float left_speed, float right_speed,
-                              float steer_volts, float yaw_deg);
+                              float yaw_deg);
 
     void printStepHeader();
     void reportStep(uint32_t time_ms, float step_voltage, float speed, float position);
+
+    // TURN-OL: differential voltage sweep, measures rotational kM (deg/s per V).
+    void printTurnOpenLoopHeader();
+    void reportTurnOpenLoop(uint32_t time_ms, float diff_voltage, float yaw_deg, float omega_degps);
+
+    // TURN-STEP: differential voltage step, measures rotational time constant ROT_TM.
+    void printTurnStepHeader();
+    void reportTurnStep(uint32_t time_ms, float diff_voltage, float yaw_deg, float omega_degps);
 
     uint32_t sampleCount() const { return sample_count_; }
     uint32_t startTime() const { return start_time_ms_; }

@@ -11,7 +11,7 @@ Bluetooth* Bluetooth::instance_ = nullptr;
 
 Bluetooth::Bluetooth(uart_inst_t* uart, uint32_t baud_rate, uint8_t tx_pin, uint8_t rx_pin)
     : uart_(uart), baud_rate_(baud_rate), tx_pin_(tx_pin), rx_pin_(rx_pin),
-      pending_command_(Command::NONE), last_char_(0), command_ready_(false)
+      pending_command_(Command::NONE), command_ready_(false)
 {
     instance_ = this;
 }
@@ -71,16 +71,6 @@ Bluetooth::Command Bluetooth::command()
     return cmd;
 }
 
-char Bluetooth::lastChar() const
-{
-    return last_char_;
-}
-
-bool Bluetooth::txReady() const
-{
-    return uart_is_writable(uart_);
-}
-
 void Bluetooth::rxInterruptHandler()
 {
     if (instance_ == nullptr)
@@ -95,7 +85,6 @@ void Bluetooth::rxInterruptHandler()
 
 void Bluetooth::processChar(char c)
 {
-    last_char_ = c;
     uart_putc(uart_, c); // Echo
 
     if (c == '\n' || c == '\r')

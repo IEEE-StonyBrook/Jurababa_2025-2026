@@ -14,7 +14,7 @@ Battery::Battery(uint8_t adc_pin, float r1_ohms, float r2_ohms)
     }
 }
 
-void Battery::init()
+void Battery::begin()
 {
     adc_init();
     adc_gpio_init(adc_pin_);
@@ -45,13 +45,8 @@ float Battery::voltage() const
     return v_adc * divider_ratio_;
 }
 
-uint16_t Battery::rawADC() const
+uint16_t Battery::raw_adc() const
 {
     int idx = (reading_index_ == 0) ? (AVERAGE_SAMPLES - 1) : (reading_index_ - 1);
     return raw_readings_[idx];
-}
-
-bool Battery::isLow(float threshold_volts) const
-{
-    return voltage() < threshold_volts;
 }

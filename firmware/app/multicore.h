@@ -8,23 +8,18 @@
 #include <array>
 #include <cstdint>
 
-#define USE_MULTICORE_SENSORS
-
 /**
  * @brief Bitmask for selective sensor updates
  */
 enum class SensorMask : uint32_t
 {
-    ALL            = 0,
-    LEFT_ENCODER   = 1 << 0,
-    RIGHT_ENCODER  = 1 << 1,
-    TOF_LEFT       = 1 << 2,
-    TOF_FRONT      = 1 << 3,
-    TOF_RIGHT      = 1 << 4,
-    IMU_YAW        = 1 << 5,
-    TOF_LEFT_WALL  = 1 << 6,
-    TOF_FRONT_WALL = 1 << 7,
-    TOF_RIGHT_WALL = 1 << 8
+    ALL           = 0,
+    LEFT_ENCODER  = 1 << 0,
+    RIGHT_ENCODER = 1 << 1,
+    TOF_LEFT      = 1 << 2,
+    TOF_FRONT     = 1 << 3,
+    TOF_RIGHT     = 1 << 4,
+    IMU_YAW       = 1 << 5
 };
 
 /**
@@ -37,19 +32,23 @@ struct SensorData
     int16_t    tof_left_mm   = 0;
     int16_t    tof_front_mm  = 0;
     int16_t    tof_right_mm  = 0;
-    bool       wall_left     = false;
-    bool       wall_front    = false;
-    bool       wall_right    = false;
     float      imu_yaw       = 0.0f;
     uint64_t   timestamp_ms  = 0;
     SensorMask valid         = SensorMask::ALL;
 };
 
 /**
- * @brief Double-buffered sensor hub for lock-free multicore reads
+ * @brief Double-buffered sensor hub for lock-free multicore reads.
  *
- * Producer core writes to back buffer, flips index, consumer core
- * reads from front buffer. Uses mutex only for publish operation.
+ * Producer core writes to back buffer, flips index, consumer core reads
+ * from front buffer. Mutex serializes publishers; readers are lock-free.
+ *
+ * Float-tearing safety: each `SensorData` (including its float members)
+ * lives wholly inside one buffer. A reader copies the entire struct from
+ * whichever buffer `active_` points at; that buffer is never written
+ * while it is the active one (writers always target the back buffer and
+ * only flip after the write completes). So no field is ever read while
+ * being written — even non-atomic float stores are safe here.
  */
 class SensorHub
 {
@@ -82,12 +81,6 @@ class SensorHub
                 back.tof_right_mm = data.tof_right_mm;
             if ((uint32_t)mask & (uint32_t)SensorMask::IMU_YAW)
                 back.imu_yaw = data.imu_yaw;
-            if ((uint32_t)mask & (uint32_t)SensorMask::TOF_LEFT_WALL)
-                back.wall_left = data.wall_left;
-            if ((uint32_t)mask & (uint32_t)SensorMask::TOF_FRONT_WALL)
-                back.wall_front = data.wall_front;
-            if ((uint32_t)mask & (uint32_t)SensorMask::TOF_RIGHT_WALL)
-                back.wall_right = data.wall_right;
         }
 
         back.timestamp_ms = data.timestamp_ms;

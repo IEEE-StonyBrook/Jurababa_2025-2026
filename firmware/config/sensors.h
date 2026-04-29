@@ -15,7 +15,6 @@
 #define TOF_LEFT_WALL_THRESHOLD_MM  100
 #define TOF_RIGHT_WALL_THRESHOLD_MM 100
 #define TOF_FRONT_WALL_THRESHOLD_MM 120
-#define TOF_CELL_DEPTH_TO_CHECK_MM  40
 
 // ================= IMU Configuration ================= //
 // BNO085 UART settings
@@ -58,9 +57,6 @@
 // ================= IMU Filtering ================= //
 #define IMU_YAW_FILTER_ALPHA         0.3f  // EMA filter for yaw (0.3 = moderate smoothing)
 #define IMU_MAX_YAW_DELTA_PER_SAMPLE 20.0f // Max degrees change per 10ms (2000°/s physical limit)
-
-// ================= Angular Velocity Filtering ================= //
-#define SENSORS_ANGULAR_VEL_FILTER_ALPHA 0.15f // Was 0.7f - lower = more smoothing for omega
 
 // ================= Line Sensor Configuration ================= //
 #define LINE_SENSOR_COUNT             8

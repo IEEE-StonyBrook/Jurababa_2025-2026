@@ -68,7 +68,7 @@ void LineFollower::update(float dt)
 
 void LineFollower::followLine(float dt)
 {
-    float position_error = line_sensor_->getPosition();
+    float position_error = line_sensor_->get_position();
 
     // PD steering computation
     float derivative = (position_error - prev_position_error_) / dt;
@@ -101,7 +101,7 @@ void LineFollower::followLine(float dt)
 
 bool LineFollower::isIntersectionDetected()
 {
-    bool current = line_sensor_->detectIntersection();
+    bool current = line_sensor_->detect_intersection();
 
     uint32_t now_ms = to_ms_since_boot(get_absolute_time());
 
@@ -125,7 +125,7 @@ bool LineFollower::isIntersectionDetected()
 void LineFollower::turnLeft90()
 {
     state_          = State::TurningLeft;
-    turn_start_yaw_ = imu_->yaw();
+    turn_start_yaw_ = imu_->robot_angle();
     turn_degrees_   = -90.0f;
     target_yaw_     = utils::wrapAngle180(turn_start_yaw_ + turn_degrees_);
     turn_done_      = false;
@@ -137,7 +137,7 @@ void LineFollower::turnLeft90()
 void LineFollower::turnRight90()
 {
     state_          = State::TurningRight;
-    turn_start_yaw_ = imu_->yaw();
+    turn_start_yaw_ = imu_->robot_angle();
     turn_degrees_   = 90.0f;
     target_yaw_     = utils::wrapAngle180(turn_start_yaw_ + turn_degrees_);
     turn_done_      = false;
@@ -148,7 +148,7 @@ void LineFollower::turnRight90()
 
 void LineFollower::updateTurn(float dt)
 {
-    float current_yaw = imu_->yaw();
+    float current_yaw = imu_->robot_angle();
     float yaw_error   = normalizeYawDelta(target_yaw_ - current_yaw);
 
     // Simple proportional turn (ROT_KP in V/deg → output is volts).

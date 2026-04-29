@@ -39,7 +39,7 @@ class Encoder
     int ticks() const;
 
   private:
-    void loadPIOProgram(PIO pio_instance);
+    void load_pio_program(PIO pio_instance);
 
     const PIO pio_instance_;
     uint      state_machine_;

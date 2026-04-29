@@ -63,6 +63,10 @@ set(NAVIGATION_SOURCES
 set(APP_SOURCES
     firmware/app/bluetooth.cpp
     firmware/app/api.cpp
+    firmware/app/firmware_api.cpp
+    firmware/app/start_gesture.cpp
+    firmware/app/core1.cpp
+    firmware/app/cli.cpp
 )
 
 set(DRIVER_LAB_SOURCES

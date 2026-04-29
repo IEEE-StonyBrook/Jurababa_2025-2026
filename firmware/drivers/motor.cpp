@@ -3,11 +3,11 @@
 Motor::Motor(int dir_pin, int pwm_pin, bool invert_direction)
     : dir_pin_(dir_pin), pwm_pin_(pwm_pin), invert_direction_(invert_direction)
 {
-    configurePins();
-    configurePWM();
+    setup_pins();
+    setup_pwm();
 }
 
-void Motor::configurePins()
+void Motor::setup_pins()
 {
     // Direction pin is a plain GPIO output
     gpio_init(dir_pin_);
@@ -18,7 +18,7 @@ void Motor::configurePins()
     gpio_set_function(pwm_pin_, GPIO_FUNC_PWM);
 }
 
-void Motor::configurePWM()
+void Motor::setup_pwm()
 {
     pwm_slice_   = pwm_gpio_to_slice_num(pwm_pin_);
     pwm_channel_ = pwm_gpio_to_channel(pwm_pin_);
@@ -30,7 +30,7 @@ void Motor::configurePWM()
     pwm_set_enabled(pwm_slice_, true);
 }
 
-void Motor::applyDuty(float duty_cycle)
+void Motor::set_motor_pwm(float duty_cycle)
 {
     duty_cycle = std::clamp(duty_cycle, -1.0f, 1.0f);
 
@@ -46,16 +46,27 @@ void Motor::applyDuty(float duty_cycle)
     pwm_set_chan_level(pwm_slice_, pwm_channel_, static_cast<uint16_t>(pwm_level));
 }
 
-void Motor::applyVoltage(float desired_volts, float battery_volts)
+void Motor::set_motor_volts(float desired_volts, float battery_volts)
 {
+    // Edge-triggered warning: motors run from battery rails, not USB,
+    // so a sub-1V reading means the pack is off. Log once per transition
+    // instead of every control cycle (called 200 Hz across both motors).
+    static bool fallback_active = false;
     if (battery_volts < 1.0f)
     {
+        if (!fallback_active)
+        {
+            LOG_DEBUG("Battery <1V; using default voltage (USB only? motors will not move)");
+            fallback_active = true;
+        }
         battery_volts = DEFAULT_BATTERY_VOLTAGE;
-        LOG_DEBUG("Using default battery voltage");
     }
-    applyDuty(desired_volts / battery_volts);
-    // LOG_DEBUG("Applying voltage of " + std::to_string(desired_volts) + " and duty of " +
-    //   std::to_string((desired_volts / battery_volts)));
+    else if (fallback_active)
+    {
+        LOG_DEBUG("Battery voltage restored");
+        fallback_active = false;
+    }
+    set_motor_pwm(desired_volts / battery_volts);
 }
 
 void Motor::stop()

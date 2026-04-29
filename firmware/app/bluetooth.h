@@ -46,8 +46,6 @@ class Bluetooth
 
     bool    hasCommand() const;
     Command command();
-    char    lastChar() const;
-    bool    txReady() const;
 
     static Bluetooth* instance_;
 
@@ -61,7 +59,6 @@ class Bluetooth
     uint8_t      rx_pin_;
 
     volatile Command pending_command_;
-    volatile char    last_char_;
     volatile bool    command_ready_;
 };
 

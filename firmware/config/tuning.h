@@ -2,21 +2,36 @@
  * @file tuning.h
  * @brief Calibration values from DriverLab trials
  *
- * Workflow:  OL → STEP → MOVE → TURN
- *   1. OL    → kM, kS per motor
- *   2. STEP  → Tm (auto-calculates kV, kA)
- *   3. MOVE  → tune zeta/Td → auto kP, kD
- *   4. TURN  → tune ROT_KP, ROT_KD
+ * Workflow:  OL → STEP → MOVE → TURN-OL → TURN-STEP
+ *   1. OL        → kM, kS per motor (forward)
+ *   2. STEP      → Tm (auto-calculates kV, kA)
+ *   3. MOVE      → verify FWD_KP/FWD_KD formula gains
+ *   4. TURN-OL   → ROT_KM (deg/s per volt of differential drive)
+ *   5. TURN-STEP → ROT_TM (rotational time constant)
+ *
+ * All PD gains are formula-derived from the motor model (Km, Tm) and design
+ * parameters (zeta, Td). Per mazerunner-core's modern control design — no
+ * hand-tuning. If a gain feels wrong, the FIX is to re-measure Km/Tm in
+ * DriverLab, not to nudge KP/KD by hand.
  */
 #ifndef CONFIG_TUNING_H
 #define CONFIG_TUNING_H
 
 // ===================== Motor Model ===================== //
-#define MOTOR_KM 360.46f  // mm/s per volt  (from OL trial)
-#define MOTOR_TM 0.09617f // seconds        (from STEP trial)
+// Forward (linear) motor model — from OL + STEP trials.
+#define MOTOR_KM 360.46f  // mm/s per volt  (steady-state gain)
+#define MOTOR_TM 0.09617f // seconds        (time constant)
+
+// Rotational motor model — placeholders until TURN-OL + TURN-STEP run.
+// Provisional ratios derived from mazerunner-core Orion config (rotational
+// gain ≈ 1.6× forward, rotational time constant ≈ 1.1× forward). Re-calibrate
+// before relying on closed-loop turning.
+#define ROT_KM 580.0f  // deg/s per volt of differential drive (TODO: calibrate)
+#define ROT_TM 0.106f  // seconds                              (TODO: calibrate)
 
 // ================ Feedforward (per motor) ============== //
-// V = kV * speed + kS + kA * accel
+// V = kV * speed + kS + kA * accel (per wheel; characterized independently).
+// Per-wheel asymmetry preserved: the L/R difference (~10% in kS) is real.
 #define FORWARD_KVL (1.0f / 361.10f) // Left  V/(mm/s)     = 1/kM
 #define FORWARD_KVR (1.0f / 359.82f) // Right V/(mm/s)
 #define FORWARD_KSL 0.5630f          // Left  static friction (V)
@@ -25,17 +40,23 @@
 #define FORWARD_KAR 0.0006680f       // Right V/(mm/s^2)
 
 // ================ Forward PD Controller ================ //
-// Design params: pick zeta & Td → auto-derive kP, kD
-//   kP = Tm / (kM * Td^2)              (standard 2nd-order pole placement)
-//   kD = (2 * zeta * Tm / Td - 1) / kM (positive when Td < 2*zeta*Tm)
-#define FWD_ZETA 0.707f         // Damping ratio
-#define FWD_TD   (MOTOR_TM / 2) // Natural period 1/omega_n
-#define FWD_KP   0.1154         // ≈ 1/(kM*Tm) ≈ 0.0935
-#define FWD_KD   0.0051         // ≈ 0.414/kM ≈ 0.00327
+// Mazerunner-core formulation (modern design):
+//   FWD_KP = 16 * Tm / (Km * zeta^2 * Td^2)
+//   FWD_KD = (8 * Tm - Td) / (Km * Td)        -- per-LOOP diff (not per-second)
+// Td = Tm gives the standard textbook second-order pole placement.
+#define FWD_ZETA 0.707f
+#define FWD_TD   MOTOR_TM
+#define FWD_KP                                                                                     \
+    (16.0f * MOTOR_TM / (MOTOR_KM * FWD_ZETA * FWD_ZETA * FWD_TD * FWD_TD))
+#define FWD_KD ((8.0f * MOTOR_TM - FWD_TD) / (MOTOR_KM * FWD_TD))
 
 // ================ Rotation PD Controller =============== //
-#define ROT_KP 0.01f // Turn proportional gain
-#define ROT_KD 0.0f  // Turn derivative gain
+// Same formula structure as forward, applied to the rotational plant.
+#define ROT_ZETA 0.707f
+#define ROT_TD   ROT_TM
+#define ROT_KP                                                                                     \
+    (16.0f * ROT_TM / (ROT_KM * ROT_ZETA * ROT_ZETA * ROT_TD * ROT_TD))
+#define ROT_KD ((8.0f * ROT_TM - ROT_TD) / (ROT_KM * ROT_TD))
 
 // =================== Line Follower ===================== //
 #define LINE_KP                     0.3f

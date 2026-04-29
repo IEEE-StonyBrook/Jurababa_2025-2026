@@ -19,11 +19,9 @@
 #define DEG_PER_MM_DIFFERENCE (180.0f / (3.14159265f * WHEEL_BASE_MM))
 
 // ===================== Maze ===================== //
-#define MAZE_SIZE             16     // 16x16 cell maze
-#define CELL_SIZE_MM          180.0f // Standard micromouse cell
-#define HALF_CELL_MM          (CELL_SIZE_MM / 2.0f)
-#define CELL_DISTANCE_MM      CELL_SIZE_MM
-#define HALF_CELL_DISTANCE_MM HALF_CELL_MM
+#define MAZE_SIZE    16     // 16x16 cell maze
+#define CELL_SIZE_MM 180.0f // Standard micromouse cell
+#define HALF_CELL_MM (CELL_SIZE_MM / 2.0f)
 
 // ===================== Robot Body ===================== //
 // Distance from wheel axle to front of robot (for wall alignment)

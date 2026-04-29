@@ -2,10 +2,16 @@
 #define CONTROL_PROFILE_H
 
 /**
- * @brief Trapezoidal motion profile generator for smooth velocity control
+ * @brief Trapezoidal motion profile generator (mazerunner-core style)
  *
- * Generates smooth acceleration, cruise, and deceleration phases for position-based
- * motion control. Inspired by UKMARS mazerunner-core motion profiling.
+ * Time-based: each tick advances `current_velocity_` by `accel * LOOP_INTERVAL_S`
+ * and advances `current_position_` by `current_velocity_ * LOOP_INTERVAL_S`.
+ * State transitions test the COMMANDED `current_position_` against the braking-
+ * distance criterion — never measured position. This decouples profile timing
+ * from controller tracking error.
+ *
+ * Units are scalar (mm or deg). Caller integrates controller tracking against
+ * measured position separately.
  */
 class Profile
 {
@@ -14,80 +20,46 @@ class Profile
     {
         Idle,
         Accelerating,
-        Cruising,
-        Decelerating,
+        Braking,
         Finished
     };
 
     Profile();
 
     /**
-     * @brief Start a new motion profile
-     * @param target_distance Total distance to travel (mm or degrees)
-     * @param max_velocity Maximum velocity during cruise phase
-     * @param acceleration Acceleration/deceleration rate
-     * @param initial_position Starting position
+     * @brief Start a new motion profile.
+     * @param target_distance  Total signed distance (mm or deg). Sign sets direction.
+     * @param top_speed        Cruise speed magnitude.
+     * @param final_speed      Terminal speed magnitude (>=0). Default 0.
+     *                         Non-zero enables chained moves through cells.
+     * @param acceleration     Accel/decel magnitude.
      */
-    void start(float target_distance, float max_velocity, float acceleration,
-               float initial_position);
+    void start(float target_distance, float top_speed, float final_speed, float acceleration);
 
-    /**
-     * @brief Update profile based on current position
-     * @param current_position Current position from feedback
-     * @param dt Time step since last update (seconds)
-     */
-    void update(float current_position, float dt);
+    /** @brief Advance profile by one fixed-rate tick. */
+    void update();
 
-    /**
-     * @brief Target velocity at current point in profile
-     */
-    float velocity() const;
-
-    /**
-     * @brief Target acceleration at current point in profile
-     */
-    float acceleration() const;
-
-    /**
-     * @brief Remaining distance to target
-     */
+    float velocity() const { return current_velocity_; }
+    float acceleration() const { return current_acceleration_; }
+    float position() const { return current_position_; }
     float remaining() const;
+    bool  finished() const { return state_ == State::Finished; }
+    State state() const { return state_; }
 
-    /**
-     * @brief Check if profile has completed
-     */
-    bool finished() const;
-
-    /**
-     * @brief Current profile state
-     */
-    State state() const;
-
-    /**
-     * @brief Reset profile to idle state
-     */
     void reset();
 
   private:
     State state_;
+    int   direction_;
     float target_distance_;
-    float max_velocity_;
+    float top_speed_;
+    float final_speed_;
     float acceleration_;
-    float initial_position_;
-
     float current_velocity_;
     float current_acceleration_;
+    float current_position_;
 
-    float accel_distance_;
-    float decel_distance_;
-    float cruise_distance_;
-    float cruise_velocity_;
-
-    float position_tolerance_;
-    float velocity_tolerance_;
-
-    void calculateProfileParameters();
-    void updateState(float distance_traveled);
+    float brakingDistance() const; // (v^2 - final_speed^2) / (2a)
 };
 
 #endif

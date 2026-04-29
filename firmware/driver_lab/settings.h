@@ -43,9 +43,16 @@ struct DriverLabSettings
     float kP;   // Proportional gain (forward)
     float kD;   // Derivative gain (forward)
 
-    // Rotation PD control
-    float turnKP; // Rotation proportional gain
-    float turnKD; // Rotation derivative gain
+    // Rotation plant model (from TURN-OL + TURN-STEP)
+    float rot_kM; // Rotational velocity constant (deg/s per volt of differential drive)
+    float rot_tm; // Rotational time constant (seconds)
+
+    // Rotation PD control (derived from rot_kM, rot_tm via the same 2nd-order
+    // formula as the forward loop)
+    float rot_zeta; // Rotation damping ratio
+    float rot_td;   // Rotation derivative time constant
+    float turnKP;   // Rotation proportional gain
+    float turnKD;   // Rotation derivative gain
 
     uint8_t control_flags;
 
@@ -76,6 +83,12 @@ struct DriverLabSettings
         kP   = FWD_KP;
         kD   = FWD_KD;
 
+        // Rotation plant from tuning.h (TODO: re-measure via TURN-OL + TURN-STEP)
+        rot_kM   = ROT_KM;
+        rot_tm   = ROT_TM;
+        rot_zeta = ROT_ZETA;
+        rot_td   = ROT_TD;
+
         // Rotation PD
         turnKP = ROT_KP;
         turnKD = ROT_KD;
@@ -105,6 +118,17 @@ struct DriverLabSettings
     {
         kP = tm / (kM * td * td);
         kD = (2.0f * zeta * tm / td - 1.0f) / kM;
+    }
+
+    // Recompute rotation PD (turnKP, turnKD) from the rotation plant
+    // (rot_kM, rot_tm) using the same 2nd-order pole-placement formula as
+    // forward. Same shape: turnKP = rot_tm / (rot_kM * rot_td^2),
+    //                     turnKD = (2*rot_zeta*rot_tm/rot_td - 1) / rot_kM.
+    // Call after TURN-OL / TURN-STEP updates rot_kM / rot_tm.
+    void recalculateRotation()
+    {
+        turnKP = rot_tm / (rot_kM * rot_td * rot_td);
+        turnKD = (2.0f * rot_zeta * rot_tm / rot_td - 1.0f) / rot_kM;
     }
 
     // Recompute everything. Use only when motor model parameters change.

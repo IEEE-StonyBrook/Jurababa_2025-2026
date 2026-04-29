@@ -4,6 +4,7 @@
 #include <string>
 
 #include "config/config.h"
+#include "config/motion.h"
 
 Drivetrain::Drivetrain(Motor* left_motor, Motor* right_motor, Encoder* left_encoder,
                        Encoder* right_encoder, Battery* battery)
@@ -39,8 +40,7 @@ void Drivetrain::reset()
     left_velocity_mmps_  = 0.0f;
     right_velocity_mmps_ = 0.0f;
 
-    last_left_pos_mm_  = 0.0f;
-    last_right_pos_mm_ = 0.0f;
+    fwd_change_mm_ = 0.0f;
 }
 
 float Drivetrain::position(WheelSide side)
@@ -57,23 +57,21 @@ float Drivetrain::velocity(WheelSide side)
     return (side == WheelSide::LEFT) ? left_velocity_mmps_ : right_velocity_mmps_;
 }
 
-float Drivetrain::delta(WheelSide side)
-{
-    float  current_pos = position(side);
-    float& last_pos    = (side == WheelSide::LEFT) ? last_left_pos_mm_ : last_right_pos_mm_;
-    float  d           = current_pos - last_pos;
-    last_pos           = current_pos;
-    return d;
-}
-
 float Drivetrain::feedforward(WheelSide side, float speed_mmps, float accel_mmps2)
 {
-    if (std::fabs(speed_mmps) < DRIVETRAIN_FF_DEADZONE_MMPS)
-        return 0.0f;
-
     bool            is_left = (side == WheelSide::LEFT);
     const FFCoeffs& c       = is_left ? ff_fwd_left_ : ff_fwd_right_;
-    return c.kv * speed_mmps + std::copysign(c.ks, speed_mmps) + c.ka * accel_mmps2;
+
+    // Mazerunner shape: KV*v + sign(v)*KS + KA*a, with no deadzone.
+    // KS is zero-d only when v is exactly 0 (stationary hold). At any nonzero
+    // command the static-friction term must be present, otherwise low-speed
+    // commands produce zero motor voltage and the wheel stalls.
+    float ks_term = 0.0f;
+    if (speed_mmps > 0.0f)
+        ks_term = c.ks;
+    else if (speed_mmps < 0.0f)
+        ks_term = -c.ks;
+    return c.kv * speed_mmps + ks_term + c.ka * accel_mmps2;
 }
 
 void Drivetrain::setFeedforward(WheelSide side, float kv, float ks, float ka)
@@ -84,17 +82,21 @@ void Drivetrain::setFeedforward(WheelSide side, float kv, float ks, float ka)
         ff_fwd_right_ = {kv, ks, ka};
 }
 
-void Drivetrain::update(float dt)
+void Drivetrain::update()
 {
-    if (dt < DRIVETRAIN_MIN_DT)
-        return;
+    float left_change_mm  = 0.0f;
+    float right_change_mm = 0.0f;
 
     if (left_encoder_)
     {
-        int32_t curr_left   = left_encoder_->ticks();
-        int32_t d_left      = curr_left - prev_left_ticks_;
-        prev_left_ticks_    = curr_left;
-        left_velocity_mmps_ = (d_left * MM_PER_TICK) / dt;
+        int32_t curr_left = left_encoder_->ticks();
+        int32_t d_left    = curr_left - prev_left_ticks_;
+        prev_left_ticks_  = curr_left;
+        left_change_mm    = d_left * MM_PER_TICK;
+        // Velocity is diagnostic only — PD math uses the per-tick delta.
+        // At 500 Hz the per-tick speed is quantized to ~185 mm/s steps for a
+        // single tick of motion, so this number is noisy by design.
+        left_velocity_mmps_ = left_change_mm / LOOP_INTERVAL_S;
     }
 
     if (right_encoder_)
@@ -102,28 +104,18 @@ void Drivetrain::update(float dt)
         int32_t curr_right   = right_encoder_->ticks();
         int32_t d_right      = curr_right - prev_right_ticks_;
         prev_right_ticks_    = curr_right;
-        right_velocity_mmps_ = (d_right * MM_PER_TICK) / dt;
+        right_change_mm      = d_right * MM_PER_TICK;
+        right_velocity_mmps_ = right_change_mm / LOOP_INTERVAL_S;
     }
 
-    if (std::fabs(left_velocity_mmps_) > DRIVETRAIN_MAX_VELOCITY_MMPS ||
-        std::fabs(right_velocity_mmps_) > DRIVETRAIN_MAX_VELOCITY_MMPS)
-    {
-        LOG_ERROR("Velocity spike: L=" + std::to_string(left_velocity_mmps_) +
-                  " R=" + std::to_string(right_velocity_mmps_) + " mm/s");
-    }
-}
-
-void Drivetrain::setDuty(float left, float right)
-{
-    left_motor_->applyDuty(left);
-    right_motor_->applyDuty(right);
+    fwd_change_mm_ = 0.5f * (left_change_mm + right_change_mm);
 }
 
 void Drivetrain::setVoltage(float left_volts, float right_volts)
 {
     float batt = batteryVoltage();
-    left_motor_->applyVoltage(left_volts, batt);
-    right_motor_->applyVoltage(right_volts, batt);
+    left_motor_->set_motor_volts(left_volts, batt);
+    right_motor_->set_motor_volts(right_volts, batt);
 }
 
 float Drivetrain::batteryVoltage() const

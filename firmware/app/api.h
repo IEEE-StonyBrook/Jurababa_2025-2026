@@ -9,24 +9,42 @@ class Mouse;
 class Drivetrain;
 
 /**
+ * @brief Strategy interface for blocking until Core 1 finishes a motion.
+ *
+ * Implemented by `Cli` on hardware (polls `MotionState::active` while
+ * watching for HALT). Sim build leaves the pointer null — simulator commands
+ * are synchronous already.
+ */
+class MotionWaiter
+{
+  public:
+    virtual ~MotionWaiter()              = default;
+    virtual void waitForMotionComplete() = 0;
+};
+
+/**
  * @brief High-level maze navigation API
  *
  * Provides movement commands, wall sensing, and maze visualization.
  * Bridges between navigation algorithms and hardware control.
+ *
+ * `wallLeft/Front/Right` are virtual so `FirmwareApi` can read real ToF
+ * snapshots on hardware while the sim build keeps using bare `API`.
  */
 class API
 {
   public:
     explicit API(Mouse* mouse);
+    virtual ~API() = default;
 
     // Maze dimensions
     int mazeWidth();
     int mazeHeight();
 
     // Wall queries
-    bool wallLeft();
-    bool wallFront();
-    bool wallRight();
+    virtual bool wallLeft();
+    virtual bool wallFront();
+    virtual bool wallRight();
 
     // Movement commands
     void moveForwardHalf();
@@ -72,7 +90,20 @@ class API
     // Pico-specific
     void goToCenterFromEdge();
 
+    // Inject a motion-complete waiter (set by Cli on hardware; null in sim).
+    // When set, every CommandHub::send call blocks here until Core 1 finishes
+    // the motion — this is what keeps the 8-deep multicore FIFO from filling
+    // and deadlocking on `multicore_fifo_push_blocking`.
+    void setMotionWaiter(MotionWaiter* waiter) { motion_waiter_ = waiter; }
+
     bool run_on_simulator = false;
+
+  protected:
+    void waitForMotion()
+    {
+        if (motion_waiter_ != nullptr)
+            motion_waiter_->waitForMotionComplete();
+    }
 
   private:
     std::string simulatorResponse(const std::string& cmd);
@@ -80,8 +111,9 @@ class API
     bool        simulatorBool(const std::string& cmd);
     std::string printMazeRow(int row);
 
-    Mouse* mouse_;
-    char   phase_color_ = 'y';
+    Mouse*        mouse_;
+    char          phase_color_   = 'y';
+    MotionWaiter* motion_waiter_ = nullptr;
 };
 
 #endif

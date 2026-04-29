@@ -87,8 +87,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #define VL53L0X_I2C_USER_VAR         /* none but could be for a flag var to get/pass to mutex interruptible  return flags and try again */
-#define VL53L0X_GetI2CAccess(Dev)    /* todo mutex acquire */
-#define VL53L0X_DoneI2CAcces(Dev)    /* todo mutex release */
+#define VL53L0X_GetI2CAccess(Dev)    
+#define VL53L0X_DoneI2CAcces(Dev)    
 
 
 VL53L0X_Error VL53L0X_LockSequenceAccess(VL53L0X_DEV Dev){
