@@ -32,7 +32,12 @@ class Battery
 
     /**
      * @brief Takes a new ADC reading and updates the moving average.
-     * Call this periodically (e.g., every 100ms) from your main loop.
+     *
+     * Call this every control tick (500 Hz). Each call performs one ADC
+     * read; the 10-sample moving average gives a 20 ms time constant
+     * matched to the control loop. Producer must run on the same core
+     * that consumes voltage() — see CLAUDE.md and the per-mode table in
+     * the multicore correctness notes.
      */
     void update();
 

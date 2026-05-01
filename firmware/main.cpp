@@ -171,10 +171,7 @@ static void runDriverLabMode(Battery* battery)
     stdio_set_driver_enabled(&bt_driver, true);
 
     printf("\n=== DriverLab ===\n");
-    if (battery)
-        printf("Battery: %.2f V\n", battery->voltage());
-    else
-        printf("Battery: USB-only (monitoring disabled)\n");
+    printf("Battery: %.2f V\n", battery->voltage());
 
     SensorMode sensor_mode = selectSensorMode(3000);
 
@@ -215,21 +212,15 @@ static void runDriverLabMode(Battery* battery)
 
     printf("\nReady. Type '?' for help.\n\n");
 
-    const uint32_t  LOOP_PERIOD_US  = static_cast<uint32_t>(LOOP_INTERVAL_S * 1.0e6f);
-    absolute_time_t next_tick       = make_timeout_time_us(LOOP_PERIOD_US);
-    uint32_t        last_battery_ms = 0;
+    const uint32_t  LOOP_PERIOD_US = static_cast<uint32_t>(LOOP_INTERVAL_S * 1.0e6f);
+    absolute_time_t next_tick      = make_timeout_time_us(LOOP_PERIOD_US);
 
     while (true)
     {
-        uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+        battery->update();         // 500 Hz; 10-sample MA = 20 ms time constant
         imu.update();              // no-op for omega; reserved for future fusion
         driverlab.tick();          // advances active trial by exactly one 500 Hz step
         driverlab.processSerial(); // poll keyboard for new commands
-        if (battery && now_ms - last_battery_ms >= 1000)
-        {
-            battery->update();
-            last_battery_ms = now_ms;
-        }
         sleep_until(next_tick);
         next_tick = delayed_by_us(next_tick, LOOP_PERIOD_US);
     }
@@ -332,26 +323,26 @@ int main()
 
     Battery battery(PIN_BATTERY_ADC, 10000.0f, 5100.0f);
     battery.begin();
-    for (int i = 0; i < 10; i++)
+    // Quick pre-fill so the boot diagnostic printf in runDriverLabMode/runCliMode
+    // has a non-zero reading before the 500 Hz tick loop spins up. The per-tick
+    // updater downstream takes over once the loop starts.
+    for (int i = 0; i < 3; i++)
     {
         battery.update();
-        sleep_ms(10);
+        sleep_ms(2);
     }
 
-    // USB-only detection: VBAT is fed through a 10k/5.1k divider into the ADC.
-    // With no battery connected the input floats near 0 V, so anything below
-    // 1 V means there is no pack present. Suppress battery monitoring in that
-    // case so Motor::set_motor_volts() does not fire its < 1 V fallback warning
-    // every control tick. Motors will not spin without VBAT regardless.
-    const bool usb_only = (battery.voltage() < 1.0f);
-    if (usb_only)
+    // Always hand a live Battery* downstream so hot-plug works: if VBAT is
+    // absent at boot but plugged in later, BAT and voltage compensation pick
+    // it up automatically. Motor::set_motor_volts() already handles the
+    // <1 V case with an edge-triggered fallback warning (motor.cpp), so no
+    // boot-time latch is needed here.
+    Battery* battery_ptr = &battery;
+    if (battery.voltage() < 1.0f)
     {
-        printf("USB-only power detected (battery=%.2f V). "
-               "Battery monitoring disabled; motors will not spin without VBAT.\n",
+        printf("Battery low/absent at boot (%.2f V). Hot-plug VBAT and BAT will pick it up.\n",
                battery.voltage());
     }
-
-    Battery* battery_ptr = usb_only ? nullptr : &battery;
 
     if (selectDriverLab(3000))
     {

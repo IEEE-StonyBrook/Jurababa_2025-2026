@@ -18,6 +18,17 @@
 #define ROTATION_LOOP_HZ    100.0f
 #define ROTATION_INTERVAL_S (1.0f / ROTATION_LOOP_HZ)
 
+// 8-tap moving average over per-tick encoder deltas, applied in
+// Drivetrain::update() and DriverLab::sampleEncoders() to mirror
+// ukmars/motorlab/src/encoders.h:108. Adds ~16 ms phase lag at 500 Hz
+// in exchange for quantization rejection on the D-term and a clean plot
+// trace. Forward PD gains are tuned against this smoothed input.
+//
+// CAUTION (per Peter Harrison's encoders.h header): changing this length
+// adds delay to the feedback loop and forces re-tuning of the forward
+// PD controller. Rotation PD is unaffected (uses IMU, not encoders).
+#define ENCODER_AVERAGER_LENGTH 8
+
 // ================ Forward Speed Limits ================= //
 #define ROBOT_MAX_SEARCH_SPEED_MMPS 300.0f // Search mode cruise speed
 #define ROBOT_BACKUP_SPEED_MMPS     100.0f // Reverse speed

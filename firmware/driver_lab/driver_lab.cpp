@@ -89,6 +89,7 @@ void DriverLab::init()
     prev_right_ticks_  = 0;
     left_position_mm_  = 0.0f;
     right_position_mm_ = 0.0f;
+    resetEncoderMA();
 
     forward_pid_.setOutputLimit(MAX_VOLTAGE);
     rotation_pid_.setOutputLimit(MAX_VOLTAGE);
@@ -113,20 +114,53 @@ void DriverLab::sampleEncoders()
     const int left_ticks  = left_encoder_->ticks();
     const int right_ticks = right_encoder_->ticks();
 
-    const float left_change_mm  = (left_ticks - prev_left_ticks_) * MM_PER_TICK;
-    const float right_change_mm = (right_ticks - prev_right_ticks_) * MM_PER_TICK;
+    const int d_left  = left_ticks - prev_left_ticks_;
+    const int d_right = right_ticks - prev_right_ticks_;
+
+    // 8-tap moving averager — same shape as Drivetrain::update() and
+    // ukmars/motorlab/src/encoders.h::update(). Smoothing here means
+    // forward_pid_'s measured_change input matches what Robot's PD sees
+    // in maze mode, so DriverLab-tuned gains transfer.
+    dl_left_history_total_ -= dl_left_history_[dl_averager_index_];
+    dl_right_history_total_ -= dl_right_history_[dl_averager_index_];
+    dl_left_history_total_ += d_left;
+    dl_right_history_total_ += d_right;
+    dl_left_history_[dl_averager_index_]  = static_cast<int8_t>(d_left);
+    dl_right_history_[dl_averager_index_] = static_cast<int8_t>(d_right);
+    dl_averager_index_                    = (dl_averager_index_ + 1) % ENCODER_AVERAGER_LENGTH;
+
+    constexpr float inv_avg    = 1.0f / static_cast<float>(ENCODER_AVERAGER_LENGTH);
+    const float left_change_mm = static_cast<float>(dl_left_history_total_) * inv_avg * MM_PER_TICK;
+    const float right_change_mm =
+        static_cast<float>(dl_right_history_total_) * inv_avg * MM_PER_TICK;
 
     // Deterministic dt: the main loop paces with sleep_until(next_tick), so
-    // dividing by the compile-time LOOP_INTERVAL_S is exact. (See CLAUDE.md
-    // "Loop dt: use LOOP_FREQUENCY_HZ, do not measure".)
+    // multiplying by the compile-time LOOP_FREQUENCY_HZ is exact. (See
+    // CLAUDE.md "Loop dt: use LOOP_FREQUENCY_HZ, do not measure".)
     left_velocity_mmps_  = left_change_mm * LOOP_FREQUENCY_HZ;
     right_velocity_mmps_ = right_change_mm * LOOP_FREQUENCY_HZ;
 
+    // Position accumulates the smoothed delta (mirrors MotorLab's
+    // m_robot_distance += m_fwd_change). Integral of MA equals integral of
+    // raw deltas modulo an 8-tick startup transient — Tm-fit ring buffers
+    // sampling position remain unbiased.
     left_position_mm_ += left_change_mm;
     right_position_mm_ += right_change_mm;
 
     prev_left_ticks_  = left_ticks;
     prev_right_ticks_ = right_ticks;
+}
+
+void DriverLab::resetEncoderMA()
+{
+    for (int i = 0; i < ENCODER_AVERAGER_LENGTH; i++)
+    {
+        dl_left_history_[i]  = 0;
+        dl_right_history_[i] = 0;
+    }
+    dl_left_history_total_  = 0;
+    dl_right_history_total_ = 0;
+    dl_averager_index_      = 0;
 }
 
 void DriverLab::setVoltages(float lv, float rv)
@@ -219,11 +253,7 @@ void DriverLab::setRightMotorVoltage(float volts)
 
 float DriverLab::batteryVoltage() const
 {
-    if (battery_ != nullptr)
-    {
-        return battery_->voltage();
-    }
-    return DEFAULT_BATTERY_VOLTAGE;
+    return battery_->voltage();
 }
 
 // Cooperative 3-second pre-trial pause. Replaces the old blocking
@@ -335,6 +365,7 @@ void DriverLab::armOpenLoop()
     prev_right_ticks_  = 0;
     left_position_mm_  = 0.0f;
     right_position_mm_ = 0.0f;
+    resetEncoderMA();
 
     reporter_.begin();
     reporter_.printOpenLoopStereoHeader();
@@ -591,6 +622,12 @@ void DriverLab::armStep()
     prev_right_ticks_  = 0;
     left_position_mm_  = 0.0f;
     right_position_mm_ = 0.0f;
+    resetEncoderMA();
+
+    // Trailing-window velocity state — reset at start so the first sample
+    // doesn't compare against stale positions from a prior trial.
+    step_.v_idx   = 0;
+    step_.v_count = 0;
 
     reporter_.begin();
     reporter_.printStepHeader();
@@ -607,16 +644,41 @@ void DriverLab::tickStep()
         return;
     }
 
-    const float speed = (left_velocity_mmps_ + right_velocity_mmps_) / 2.0f;
+    constexpr int SKIP_SAMPLES = 5; // 10 ms warm-up so the first VEL_WIN samples are valid
+
+    // Trailing-window velocity from the oldest sample in the ring buffer.
+    float win_left = 0.0f, win_right = 0.0f;
+    if (step_.v_count > 0)
+    {
+        const int oldest = (step_.v_count < StepTrial::VEL_WIN) ? 0 : step_.v_idx;
+        const int span = (step_.v_count < StepTrial::VEL_WIN) ? step_.v_count : StepTrial::VEL_WIN;
+        const float dt_s = span * LOOP_INTERVAL_S;
+        if (dt_s > 1e-6f)
+        {
+            win_left  = (left_position_mm_ - step_.left_pos_buf[oldest]) / dt_s;
+            win_right = (right_position_mm_ - step_.right_pos_buf[oldest]) / dt_s;
+        }
+    }
+    step_.left_pos_buf[step_.v_idx]  = left_position_mm_;
+    step_.right_pos_buf[step_.v_idx] = right_position_mm_;
+    step_.v_idx                      = (step_.v_idx + 1) % StepTrial::VEL_WIN;
+    if (step_.v_count < StepTrial::VEL_WIN)
+        step_.v_count++;
+
+    const float speed = (win_left + win_right) / 2.0f;
     const float pos   = (left_position_mm_ + right_position_mm_) / 2.0f;
 
-    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
-    if (reporter_.isTimeToReport(now_ms))
+    // Internal Tm-fit array: dense, every loop tick after the warm-up window.
+    if (step_.loop_count >= SKIP_SAMPLES)
     {
-        reporter_.reportStep(now_ms, step_.voltage, speed, pos);
         step_.times_s.push_back(loopsToSeconds(step_.loop_count));
         step_.speeds.push_back(speed);
     }
+
+    // CSV emission stays gated by the reporter — independent 10 ms cadence.
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    if (reporter_.isTimeToReport(now_ms))
+        reporter_.reportStep(now_ms, step_.voltage, speed, pos);
 
     step_.loop_count++;
 }
@@ -729,6 +791,7 @@ void DriverLab::armMove()
     prev_right_ticks_  = 0;
     left_position_mm_  = 0.0f;
     right_position_mm_ = 0.0f;
+    resetEncoderMA();
 
     forward_pid_.setGains(settings_.kP, settings_.kD);
     forward_pid_.reset();
@@ -737,7 +800,14 @@ void DriverLab::armMove()
     forward_profile_.start(move_.distance_mm, move_.top_speed, move_.acceleration);
 
     reporter_.begin();
-    printf("time_ms,set_speed,actual_speed,error,left_v,right_v,left_speed,right_speed\n");
+    // MotorLab-style controller header: FF / CTRL / Motor voltages reported
+    // separately so the dashboard can plot each contribution. Stereo
+    // extension: per-wheel FF (asymmetric kV/kS shows up here) plus a single
+    // shared ctrl_v (PID is computed once and added equally to both sides).
+    // set_pos / actual_pos are logged for offline tracking-error inspection
+    // but not plotted by default — same as MotorLab.
+    printf("time_ms,set_pos,actual_pos,set_speed,actual_speed,ff_v_left,ff_v_right,ctrl_v,"
+           "total_v_left,total_v_right,left_speed,right_speed\n");
 
     trial_ = TrialState::Move;
 }
@@ -782,9 +852,12 @@ void DriverLab::tickMove()
     const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
     if (reporter_.isTimeToReport(now_ms))
     {
-        const uint32_t elapsed = now_ms - reporter_.startTime();
-        printf("%lu,%.2f,%.2f,%.2f,%.3f,%.3f,%.2f,%.2f\n", static_cast<unsigned long>(elapsed),
-               set_speed, actual_speed, pos_error, left_v, right_v, left_velocity_mmps_,
+        const uint32_t elapsed    = now_ms - reporter_.startTime();
+        const float    set_pos    = forward_profile_.position();
+        const float    actual_pos = (left_position_mm_ + right_position_mm_) * 0.5f;
+        printf("%lu,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f,%.2f,%.2f\n",
+               static_cast<unsigned long>(elapsed), set_pos, actual_pos, set_speed, actual_speed,
+               ff_left, ff_right, pid_output, left_v, right_v, left_velocity_mmps_,
                right_velocity_mmps_);
         reporter_.incrementSampleCount();
     }
@@ -869,7 +942,11 @@ void DriverLab::armTurn()
     imu_->reset(); // zero yaw reference for this trial
 
     reporter_.begin();
-    printf("time_ms,set_omega,actual_yaw,actual_omega,error,left_v,right_v\n");
+    // TURN has no rotation feedforward — last_rotation_volts is purely the
+    // PID output (see tickTurn). So unlike MOVE we emit only ctrl_v plus the
+    // per-wheel applied voltages. If a rotation FF term is ever added,
+    // expand this header to include ff_v.
+    printf("time_ms,set_omega,actual_yaw,actual_omega,error,ctrl_v,total_v_left,total_v_right\n");
 
     trial_ = TrialState::Turn;
 }
@@ -918,9 +995,9 @@ void DriverLab::tickTurn()
     if (reporter_.isTimeToReport(now_ms))
     {
         const uint32_t elapsed = now_ms - reporter_.startTime();
-        printf("%lu,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f\n", static_cast<unsigned long>(elapsed),
-               signed_set_omega, actual_yaw, actual_omega, rot_error, -last_rotation_volts,
-               +last_rotation_volts);
+        printf("%lu,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f\n", static_cast<unsigned long>(elapsed),
+               signed_set_omega, actual_yaw, actual_omega, rot_error, last_rotation_volts,
+               -last_rotation_volts, +last_rotation_volts);
         reporter_.incrementSampleCount();
     }
 
@@ -1184,8 +1261,11 @@ void DriverLab::startTurnStepTrial(float diff_v, uint32_t duration_ms)
     tstep_.loop_count     = 0;
     tstep_.times_s.clear();
     tstep_.omegas.clear();
-    tstep_.times_s.reserve(tstep_.duration_loops);
-    tstep_.omegas.reserve(tstep_.duration_loops);
+    // Internal samples push at IMU packet rate (~100 Hz), not loop rate.
+    // Reserve for one sample per ms / IMU_PACKET_HZ = duration_ms / 10.
+    const size_t imu_samples = static_cast<size_t>(duration_ms / 10) + 4;
+    tstep_.times_s.reserve(imu_samples);
+    tstep_.omegas.reserve(imu_samples);
 
     beginCountdown("TURN Step Response", TrialState::TurnStep);
 }
@@ -1193,6 +1273,10 @@ void DriverLab::startTurnStepTrial(float diff_v, uint32_t duration_ms)
 void DriverLab::armTurnStep()
 {
     imu_->reset();
+
+    // Seed packet-edge gate so the first tick doesn't push a stale packet
+    // from before the trial armed.
+    tstep_.last_packet_seq = imu_->packet_seq();
 
     reporter_.begin();
     reporter_.printTurnStepHeader();
@@ -1212,13 +1296,20 @@ void DriverLab::tickTurnStep()
     const float cur_yaw = imu_->robot_angle();
     const float omega   = imu_->robot_omega();
 
-    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
-    if (reporter_.isTimeToReport(now_ms))
+    // Internal Tm-fit array: one sample per IMU packet edge. omega is held
+    // flat between packets, so loop-rate sampling would just repeat values.
+    const uint32_t seq_now = imu_->packet_seq();
+    if (seq_now != tstep_.last_packet_seq)
     {
-        reporter_.reportTurnStep(now_ms, tstep_.diff_voltage, cur_yaw, omega);
         tstep_.times_s.push_back(loopsToSeconds(tstep_.loop_count));
         tstep_.omegas.push_back(omega);
+        tstep_.last_packet_seq = seq_now;
     }
+
+    // CSV emission stays gated by the reporter — independent 10 ms cadence.
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    if (reporter_.isTimeToReport(now_ms))
+        reporter_.reportTurnStep(now_ms, tstep_.diff_voltage, cur_yaw, omega);
 
     tstep_.loop_count++;
 }
@@ -1782,14 +1873,7 @@ void DriverLab::cmdSetAccFF(const DriverLabArgs& args)
 
 void DriverLab::cmdBattery()
 {
-    if (battery_ != nullptr)
-    {
-        printf("Battery: %.2f V (ADC: %u)\n", battery_->voltage(), battery_->raw_adc());
-    }
-    else
-    {
-        printf("Battery monitor not available (default: %.2f V)\n", DEFAULT_BATTERY_VOLTAGE);
-    }
+    printf("Battery: %.2f V (ADC: %u)\n", battery_->voltage(), battery_->raw_adc());
 }
 
 void DriverLab::cmdEncoders()
@@ -1954,10 +2038,11 @@ void DriverLab::cmdEncoderReset()
         left_encoder_->reset();
     if (right_encoder_)
         right_encoder_->reset();
-    prev_left_ticks_     = 0;
-    prev_right_ticks_    = 0;
-    left_position_mm_    = 0.0f;
-    right_position_mm_   = 0.0f;
+    prev_left_ticks_   = 0;
+    prev_right_ticks_  = 0;
+    left_position_mm_  = 0.0f;
+    right_position_mm_ = 0.0f;
+    resetEncoderMA();
     left_velocity_mmps_  = 0.0f;
     right_velocity_mmps_ = 0.0f;
     printf("Encoders reset to 0\n");
@@ -2158,6 +2243,17 @@ void DriverLab::cmdStop()
 void DriverLab::cmdExport()
 {
     const float battery_volts = batteryVoltage();
+    // Refuse to bake calibration constants from an implausible reading.
+    // 5.0 V is well below any healthy 2S LiPo (~6 V cutoff) — a USB-only or
+    // mid-hot-plug filter state will fail closed instead of silently producing
+    // wrong duty constants that persist into every future maze run.
+    if (battery_volts < 5.0f)
+    {
+        printf("EXPORT: battery reads %.2f V — below 2S floor (5.0 V). "
+               "Pack disconnected or filter not yet settled. Refusing.\n",
+               battery_volts);
+        return;
+    }
 
     const float kvl_duty =
         (std::fabs(settings_.kM_L) > 1e-6f) ? (1.0f / (settings_.kM_L * battery_volts)) : 0.0f;

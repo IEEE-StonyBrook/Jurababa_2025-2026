@@ -37,6 +37,15 @@ void Drivetrain::reset()
         prev_right_ticks_ = 0;
     }
 
+    for (int i = 0; i < ENCODER_AVERAGER_LENGTH; i++)
+    {
+        left_history_[i]  = 0;
+        right_history_[i] = 0;
+    }
+    left_history_total_  = 0;
+    right_history_total_ = 0;
+    averager_index_      = 0;
+
     left_velocity_mmps_  = 0.0f;
     right_velocity_mmps_ = 0.0f;
 
@@ -84,32 +93,41 @@ void Drivetrain::setFeedforward(WheelSide side, float kv, float ks, float ka)
 
 void Drivetrain::update()
 {
-    float left_change_mm  = 0.0f;
-    float right_change_mm = 0.0f;
+    int d_left  = 0;
+    int d_right = 0;
 
     if (left_encoder_)
     {
         int32_t curr_left = left_encoder_->ticks();
-        int32_t d_left    = curr_left - prev_left_ticks_;
+        d_left            = static_cast<int>(curr_left - prev_left_ticks_);
         prev_left_ticks_  = curr_left;
-        left_change_mm    = d_left * MM_PER_TICK;
-        // Per-tick velocity is what the PD math wants (it consumes the raw
-        // change directly via fwdChangeMm()); this exposed value is for that
-        // same single-loop use, not for any logging that needs a smooth
-        // trace. Consumers wanting smoothness should window the position.
-        left_velocity_mmps_ = left_change_mm / LOOP_INTERVAL_S;
     }
-
     if (right_encoder_)
     {
-        int32_t curr_right   = right_encoder_->ticks();
-        int32_t d_right      = curr_right - prev_right_ticks_;
-        prev_right_ticks_    = curr_right;
-        right_change_mm      = d_right * MM_PER_TICK;
-        right_velocity_mmps_ = right_change_mm / LOOP_INTERVAL_S;
+        int32_t curr_right = right_encoder_->ticks();
+        d_right            = static_cast<int>(curr_right - prev_right_ticks_);
+        prev_right_ticks_  = curr_right;
     }
 
-    fwd_change_mm_ = 0.5f * (left_change_mm + right_change_mm);
+    // 8-tap moving averager — drop the oldest sample at this index, add the
+    // newest. Mirrors ukmars/motorlab/src/encoders.h::update(). Both the PD's
+    // measured_change input (fwdChangeMm()) and external velocity observers
+    // see the smoothed value.
+    left_history_total_ -= left_history_[averager_index_];
+    right_history_total_ -= right_history_[averager_index_];
+    left_history_total_ += d_left;
+    right_history_total_ += d_right;
+    left_history_[averager_index_]  = static_cast<int8_t>(d_left);
+    right_history_[averager_index_] = static_cast<int8_t>(d_right);
+    averager_index_                 = (averager_index_ + 1) % ENCODER_AVERAGER_LENGTH;
+
+    constexpr float inv_avg      = 1.0f / static_cast<float>(ENCODER_AVERAGER_LENGTH);
+    const float     left_change  = static_cast<float>(left_history_total_) * inv_avg * MM_PER_TICK;
+    const float     right_change = static_cast<float>(right_history_total_) * inv_avg * MM_PER_TICK;
+
+    left_velocity_mmps_  = left_change / LOOP_INTERVAL_S;
+    right_velocity_mmps_ = right_change / LOOP_INTERVAL_S;
+    fwd_change_mm_       = 0.5f * (left_change + right_change);
 }
 
 void Drivetrain::setVoltage(float left_volts, float right_volts)

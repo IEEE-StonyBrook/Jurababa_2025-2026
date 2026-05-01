@@ -86,6 +86,11 @@ void Cli::loop()
 bool Cli::pollOnce()
 {
     handleBluetoothCommand();
+    // Battery filter producer for LineSensor mode. Skip in ToF mode — Core 1's
+    // tick loop already updates the filter, and a second writer here would
+    // race with it on `reading_sum_` / `reading_index_`.
+    if (deps_.battery && deps_.sensor_mode != SensorMode::TOF)
+        deps_.battery->update();
 
     bool processed = false;
     if (readLineNonBlocking())
@@ -454,7 +459,9 @@ void Cli::runFunction(int n)
                 printf("Battery monitor not initialized.\n");
                 break;
             }
-            deps_.battery->update();
+            // Filter is kept fresh by the per-tick producer (Core 1 in ToF mode,
+            // Cli::pollOnce / runLineFollowEventLoop in LineSensor mode). No
+            // update() call here — it would race with Core 1.
             printf("Battery: %.2f V\n", deps_.battery->voltage());
             break;
         }
@@ -478,7 +485,7 @@ void Cli::dumpSensorsOneShot()
            static_cast<long>(snap.left_encoder), static_cast<long>(snap.right_encoder));
     if (deps_.battery != nullptr)
     {
-        deps_.battery->update();
+        // No update() here — see runFunction case 10 / Cli::pollOnce.
         printf("Battery: %.2f V\n", deps_.battery->voltage());
     }
 }
@@ -530,6 +537,8 @@ void Cli::runLineFollowEventLoop()
         float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
         last_tick           = now;
 
+        if (deps_.battery)
+            deps_.battery->update(); // Battery filter producer for LineSensor mode.
         lf->update(dt);
 
         if (lf->isIntersectionDetected() && lf->isMotionDone())

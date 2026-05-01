@@ -199,9 +199,19 @@ class DriverLab
 
     struct StepTrial
     {
-        float              voltage;
-        int                duration_loops;
-        int                loop_count;
+        float voltage;
+        int   duration_loops;
+        int   loop_count;
+
+        // 5-tick trailing-window velocity (mirrors OpenLoopTrial::VEL_WIN).
+        // Smooths integer encoder quantization at the 2 ms loop rate; without
+        // this, dense Tm-fit samples would be dominated by tick-count noise.
+        static constexpr int VEL_WIN = 5;
+        float                left_pos_buf[VEL_WIN];
+        float                right_pos_buf[VEL_WIN];
+        int                  v_idx;
+        int                  v_count;
+
         std::vector<float> times_s;
         std::vector<float> speeds;
     };
@@ -261,9 +271,11 @@ class DriverLab
 
     struct TurnStepTrial
     {
-        float              diff_voltage;
-        int                duration_loops;
-        int                loop_count;
+        float    diff_voltage;
+        int      duration_loops;
+        int      loop_count;
+        uint32_t last_packet_seq; // gates Tm-fit sample push to true IMU cadence
+
         std::vector<float> times_s;
         std::vector<float> omegas;
     };
@@ -299,6 +311,16 @@ class DriverLab
     float left_position_mm_;
     float right_position_mm_;
 
+    // 8-tap moving averager state, parallel to Drivetrain's. DriverLab reads
+    // encoders directly (HAL-sharing rule) so it owns its own MA state and
+    // applies the same algorithm — gains tuned in DriverLab transfer cleanly
+    // to maze-running because both paths see the same smoothed signal.
+    int8_t dl_left_history_[ENCODER_AVERAGER_LENGTH]  = {};
+    int8_t dl_right_history_[ENCODER_AVERAGER_LENGTH] = {};
+    int    dl_left_history_total_                     = 0;
+    int    dl_right_history_total_                    = 0;
+    int    dl_averager_index_                         = 0;
+
     // Active trial dispatch
     TrialState        trial_;
     CountdownTrial    countdown_;
@@ -326,6 +348,7 @@ class DriverLab
     // Per-tick helpers
     // ------------------------------------------------------------------
     void  sampleEncoders(); // refresh L/R velocity + position cache
+    void  resetEncoderMA(); // clear 8-tap MA ring buffers (call on trial-arm)
     void  setVoltages(float lv, float rv);
     float feedforwardVolts(float speed_mmps, float accel_mmps2, bool left) const;
 

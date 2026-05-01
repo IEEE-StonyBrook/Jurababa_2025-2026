@@ -152,6 +152,8 @@ void core1Entry()
 
     while (true)
     {
+        if (g_battery)
+            g_battery->update(); // Producer for the Battery filter in ToF/Robot mode.
         robot.update();
         processCommands(&robot);
 

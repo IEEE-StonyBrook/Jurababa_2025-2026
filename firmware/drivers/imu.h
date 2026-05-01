@@ -77,6 +77,15 @@ class IMU
     bool has_new_yaw_sample();
 
     /**
+     * @brief Monotonic counter incremented once per accepted packet (ISR-side).
+     *        Wraps at 2^32 (~14 months at 100 Hz). Read-only — use a local
+     *        `last_seq` and compare for edge detection without consuming the
+     *        has_new_yaw_sample() pending flag (which is owned by the
+     *        rotation PID gate).
+     */
+    uint32_t packet_seq() const;
+
+    /**
      * @brief Resets yaw offset to make current heading = 0 degrees.
      *        Also zeros rot_change tracking.
      */
@@ -99,13 +108,19 @@ class IMU
     // Cortex-M0+ single-word loads/stores make plain float read-from-main /
     // write-from-ISR atomic enough for these scalars (same model as
     // current_yaw_degrees_).
-    float last_packet_yaw_;     // yaw at the last accepted packet
-    float cached_omega_degps_;  // delta_yaw * IMU_PACKET_HZ
-    float m_rot_change_deg_;    // per-packet yaw delta, held between packets
+    float last_packet_yaw_;    // yaw at the last accepted packet
+    float cached_omega_degps_; // delta_yaw * IMU_PACKET_HZ
+    float m_rot_change_deg_;   // per-packet yaw delta, held between packets
 
     // Set by parse_packet_and_extract_yaw() (ISR context) when a fresh packet
     // is accepted. Read-and-cleared by has_new_yaw_sample() (main context).
     volatile bool new_yaw_sample_pending_;
+
+    // ISR-side monotonic packet counter. Incremented once per accepted packet
+    // alongside new_yaw_sample_pending_. Read-only via packet_seq(); used by
+    // DriverLab TURN-STEP to gate Tm-fit samples on packet edges without
+    // racing the rotation PID's has_new_yaw_sample() consumer.
+    volatile uint32_t packet_seq_;
 
     static IMU* imu_instance_;
 

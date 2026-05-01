@@ -22,7 +22,8 @@ IMU::IMU(int uart_rx_pin)
     : uart_rx_pin_(uart_rx_pin), packet_buffer_index_(0), yaw_data_ready_(false),
       current_yaw_degrees_(0.0f), yaw_reset_offset_(0.0f), filtered_yaw_degrees_(0.0f),
       prev_raw_yaw_degrees_(0.0f), first_reading_(true), last_packet_yaw_(0.0f),
-      cached_omega_degps_(0.0f), m_rot_change_deg_(0.0f), new_yaw_sample_pending_(false)
+      cached_omega_degps_(0.0f), m_rot_change_deg_(0.0f), new_yaw_sample_pending_(false),
+      packet_seq_(0)
 {
     setup_uart();
     setup_interrupt();
@@ -156,6 +157,7 @@ void IMU::parse_packet_and_extract_yaw()
 
     yaw_data_ready_         = true;
     new_yaw_sample_pending_ = true; // ISR-context: tells main loop a fresh packet is available
+    packet_seq_++;                  // monotonic ISR-side counter for edge-detection consumers
 }
 
 float IMU::robot_angle()
@@ -216,4 +218,12 @@ bool IMU::has_new_yaw_sample()
     // disable-IRQ / load / store / restore-IRQ sequence; same effect as
     // a critical section, but expresses the intent ("atomic swap") clearly.
     return __atomic_exchange_n(&new_yaw_sample_pending_, false, __ATOMIC_SEQ_CST);
+}
+
+uint32_t IMU::packet_seq() const
+{
+    // Plain volatile read. Single-word load is atomic on Cortex-M0+, and we
+    // don't need a clear — consumers compare against a previously-stashed
+    // value to detect edges.
+    return packet_seq_;
 }

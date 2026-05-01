@@ -50,18 +50,25 @@ hline_style = 'border: 2px solid gray'
 
 
 class DataChannel:
-    """Encapsulates a single-dimensional numpy array for plot data."""
+    """Append-only per-trial sample buffer.
 
-    def __init__(self, points):
-        self.points = points
-        self.data_ = np.zeros(shape=self.points, dtype=float)
+    Grows to fit the trial; reset() is called on the CSV header line so each
+    trial starts fresh. The previous fixed-size ring buffer silently dropped
+    the oldest samples once the trial exceeded its capacity, which corrupted
+    long trials like OL (~1200 samples vs. 400 slots).
+    """
+
+    def __init__(self):
+        self._values = []
 
     def add_new_value(self, value):
-        self.data_[:-1] = self.data_[1:]
-        self.data_[-1] = value
+        self._values.append(value)
+
+    def reset(self):
+        self._values = []
 
     def data(self):
-        return self.data_
+        return np.asarray(self._values, dtype=float)
 
 
 class Dashboard(QMainWindow):
@@ -84,11 +91,27 @@ class Dashboard(QMainWindow):
         self.monitor_thread = None
         self.monitoring = False
 
-        self.nChannels = 10
-        self.nPoints = 400
-        self.telemetry = [DataChannel(self.nPoints) for i in range(self.nChannels)]
+        # Sized for the widest CSV row we emit: MOVE controller stream has 12
+        # columns (time + set_pos/actual_pos + set_speed/actual_speed +
+        # ff_v_left/right + ctrl_v + total_v_left/right + left/right_speed).
+        # Excess columns past nChannels are silently dropped at parse time.
+        self.nChannels = 12
+        self.telemetry = [DataChannel() for i in range(self.nChannels)]
         self.csv_headings = []
         self.plot_curves = {'output': [], 'motion': []}
+
+        # Throttled redraw: ingestion in on_monitor_data only appends samples
+        # and sets _plot_dirty; the QTimer below performs the actual setData /
+        # enableAutoRange at ~25 Hz. Decouples render rate from the firmware's
+        # ~100 Hz CSV stream so the Qt event loop can keep up during long
+        # trials (OL emits ~1200 rows over ~12 s).
+        self._plot_dirty = False
+        self._last_value_count = 0
+        self._plot_timer = QTimer(self)
+        self._plot_timer.setInterval(40)
+        self._plot_timer.timeout.connect(self._refresh_plots)
+        self._plot_timer.start()
+
         self.initUI()
 
     def initUI(self):
@@ -393,6 +416,22 @@ class Dashboard(QMainWindow):
         self.btn_turn.setToolTip("Turn-in-place trial → tune rotation kP and kD\nDefault: TURN 90 200 500")
         self.btn_turn.clicked.connect(lambda: self.run_trial("TURN 90 200 500"))
         trials_layout.addWidget(self.btn_turn)
+
+        self.btn_turn_ol = QPushButton('5. TURN-OL  —  Measure rot_kM')
+        self.btn_turn_ol.setToolTip(
+            "Open-loop differential-voltage sweep → finds rotational gain (rot_kM, deg/s/V)\n"
+            "Default: TURNOL 3.0 0.5 800  (0.5V–3.0V, 0.8s per step, motorlab-aligned)"
+        )
+        self.btn_turn_ol.clicked.connect(lambda: self.run_trial("TURNOL 3.0 0.5 800"))
+        trials_layout.addWidget(self.btn_turn_ol)
+
+        self.btn_turn_step = QPushButton('6. TURN-STEP  —  Measure rot_tm')
+        self.btn_turn_step.setToolTip(
+            "Differential-voltage step response → finds rotational time constant (rot_tm, s)\n"
+            "Default: TURNSTEP 1.5 700  (motorlab forward-STEP total duration)"
+        )
+        self.btn_turn_step.clicked.connect(lambda: self.run_trial("TURNSTEP 1.5 700"))
+        trials_layout.addWidget(self.btn_turn_step)
 
         trials_group.setLayout(trials_layout)
 
@@ -801,11 +840,16 @@ class Dashboard(QMainWindow):
         plot_widget.plot(x, y, name=plotname, pen=pen)
 
     def _get_valid_data(self, time_channel_idx, value_channel_idx):
-        """Return only data points where time is non-zero (filters out buffer padding)."""
+        """Return the (x, y) sample arrays for the two channels.
+
+        With the growable DataChannel, every entry is a real sample — there
+        is no zero padding to filter. Dropping the previous `mask = x > 0`
+        also restores the very first sample of every trial, which has
+        time_ms = 0 and was being silently filtered out.
+        """
         x_data = self.telemetry[time_channel_idx].data()
         y_data = self.telemetry[value_channel_idx].data()
-        mask = x_data > 0
-        return x_data[mask], y_data[mask]
+        return x_data, y_data
 
     def log_data(self):
         """Batch log all data lines in a single update for performance."""
@@ -1340,234 +1384,302 @@ class Dashboard(QMainWindow):
                 self.parameters['kV'] = val
             except (ValueError, IndexError):
                 pass
+        # TURN-OL trial: "ROT_KM = 342.00 deg/s/V (6 points)"
+        elif line.startswith('ROT_KM ='):
+            try:
+                val = float(line.split('=')[1].strip().split()[0])
+                self.parameters['rot_kM'] = val
+            except (ValueError, IndexError):
+                pass
+        # TURN-STEP trial: "ROT_TM = 0.05000 s"
+        elif line.startswith('ROT_TM ='):
+            try:
+                val = float(line.split('=')[1].strip().split()[0])
+                self.parameters['rot_tm'] = val
+            except (ValueError, IndexError):
+                pass
+        # TURN-OL/TURN-STEP recomputed gains:
+        #   "  -> turnKP = 0.12345, turnKD = 0.00123  (recomputed)"
+        elif line.strip().startswith('-> turnKP ='):
+            try:
+                parts = line.split(',')
+                kp_val = float(parts[0].split('=')[1].strip())
+                self.parameters['turnKP'] = kp_val
+                self.set_safely(self.spin_turn_kp, kp_val)
+                if len(parts) > 1 and 'turnKD' in parts[1]:
+                    kd_val = float(parts[1].split('=')[1].strip().split()[0])
+                    self.parameters['turnKD'] = kd_val
+                    self.set_safely(self.spin_turn_kd, kd_val)
+            except (ValueError, IndexError):
+                pass
 
         # Parse CSV header to identify columns
         if line.startswith('time_ms'):
             self.csv_headings = line.split(',')
-            # Clear old plot curves when header arrives (new trial starting)
+            # Reset per-trial sample buffers and clear old plot curves so the
+            # new trial starts with empty channels (no leakage from previous
+            # runs). The throttled timer will rebuild curves on its next tick.
+            for channel in self.telemetry:
+                channel.reset()
             self.output_plot.clear()
             self.motion_plot.clear()
             self.plot_curves = {'output': [], 'motion': []}
+            self._plot_dirty = True
             return
-        
-        # Parse CSV data line
+
+        # Parse CSV data line. on_monitor_data must stay cheap because it
+        # runs on the GUI thread for every line the firmware emits (~100 Hz
+        # during OL). Heavy work (setData / enableAutoRange / pyqtgraph
+        # redraws) is deferred to _refresh_plots, fired by self._plot_timer
+        # at ~25 Hz.
         try:
             parts = line.split(',')
             if len(parts) < 2:
                 return
-            
-            # Convert all parts to floats
+
             values = []
             for part in parts:
                 try:
                     values.append(float(part))
                 except ValueError:
                     return  # Skip malformed lines
-            
+
             if len(values) == 0:
                 return
-            
-            # Add values to telemetry channels
+
             for i in range(min(len(values), self.nChannels)):
                 self.telemetry[i].add_new_value(values[i])
-            
-            # Determine data type from headings and update plots accordingly
-            if self.csv_headings:
-                headings_str = ','.join(self.csv_headings).lower()
 
-                if 'cmd_v' in headings_str:
-                    # Stereo OL: time_ms,cmd_v,left_v,right_v,left_speed,right_speed,yaw
-                    if len(self.plot_curves['output']) == 0:
-                        pen_left_v = pg.mkPen(color=palette[1], width=2)
-                        pen_right_v = pg.mkPen(color=palette[5], width=2)
-                        self.plot_curves['output'].append(self.output_plot.plot(name='Left V', pen=pen_left_v))
-                        self.plot_curves['output'].append(self.output_plot.plot(name='Right V', pen=pen_right_v))
+            self._last_value_count = len(values)
+            self._plot_dirty = True
 
-                    x, y = self._get_valid_data(0, 2)  # left_v
-                    self.plot_curves['output'][0].setData(x, y)
-                    x, y = self._get_valid_data(0, 3)  # right_v
-                    if len(self.plot_curves['output']) > 1:
-                        self.plot_curves['output'][1].setData(x, y)
-                    self.output_plot.enableAutoRange()
+        except Exception:
+            # Silently ignore parsing errors to avoid spam
+            pass
 
-                    # Motion plot: left speed vs right speed
+    def _refresh_plots(self):
+        """Throttled plot redraw. Fires at ~25 Hz from self._plot_timer.
+
+        Pulls the current contents of the telemetry channels and updates the
+        pyqtgraph curves once per timer tick, regardless of how many CSV rows
+        arrived in between. This is what keeps the Qt event loop responsive
+        when the firmware streams ~1200 rows over ~12 s during an OL trial.
+        """
+        if not self._plot_dirty:
+            return
+        self._plot_dirty = False
+
+        if not self.csv_headings:
+            return
+
+        headings_str = ','.join(self.csv_headings).lower()
+        value_count = self._last_value_count
+
+        try:
+            if 'cmd_v' in headings_str:
+                # Stereo OL: time_ms,cmd_v,left_v,right_v,left_speed,right_speed,yaw
+                if len(self.plot_curves['output']) == 0:
+                    pen_left_v = pg.mkPen(color=palette[1], width=2)
+                    pen_right_v = pg.mkPen(color=palette[5], width=2)
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Left V', pen=pen_left_v))
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Right V', pen=pen_right_v))
+
+                x, y = self._get_valid_data(0, 2)  # left_v
+                self.plot_curves['output'][0].setData(x, y)
+                x, y = self._get_valid_data(0, 3)  # right_v
+                if len(self.plot_curves['output']) > 1:
+                    self.plot_curves['output'][1].setData(x, y)
+                self.output_plot.enableAutoRange()
+
+                # Motion plot: left speed vs right speed
+                if len(self.plot_curves['motion']) == 0:
+                    pen_left = pg.mkPen(color=palette[1], width=2)
+                    pen_right = pg.mkPen(color=palette[5], width=2)
+                    self.plot_curves['motion'].append(self.motion_plot.plot(name='Left Speed', pen=pen_left))
+                    self.plot_curves['motion'].append(self.motion_plot.plot(name='Right Speed', pen=pen_right))
+
+                x, y = self._get_valid_data(0, 4)  # left_speed
+                self.plot_curves['motion'][0].setData(x, y)
+                x, y = self._get_valid_data(0, 5)  # right_speed
+                if len(self.plot_curves['motion']) > 1:
+                    self.plot_curves['motion'][1].setData(x, y)
+                self.motion_plot.enableAutoRange()
+                self.output_plot.setXLink(self.motion_plot)
+
+            elif 'diff_v' in headings_str and 'omega' in headings_str:
+                # Turn-OL / Turn-STEP: time_ms,diff_v,yaw,omega
+                if len(self.plot_curves['output']) == 0:
+                    pen_diff = pg.mkPen(color=palette[4], width=2)
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Diff V', pen=pen_diff))
+
+                x, y = self._get_valid_data(0, 1)  # diff_v
+                self.plot_curves['output'][0].setData(x, y)
+                self.output_plot.enableAutoRange()
+
+                if len(self.plot_curves['motion']) == 0:
+                    pen_yaw = pg.mkPen(color=palette[5], width=2)
+                    pen_omega = pg.mkPen(color=palette[3], width=2, style=Qt.PenStyle.DashLine)
+                    self.plot_curves['motion'].append(self.motion_plot.plot(name='Yaw', pen=pen_yaw))
+                    self.plot_curves['motion'].append(self.motion_plot.plot(name='Omega', pen=pen_omega))
+
+                x, y = self._get_valid_data(0, 2)  # yaw
+                self.plot_curves['motion'][0].setData(x, y)
+                x, y = self._get_valid_data(0, 3)  # omega
+                if len(self.plot_curves['motion']) > 1:
+                    self.plot_curves['motion'][1].setData(x, y)
+                self.motion_plot.setLabel('left', 'Angle (deg) / Omega (deg/s)')
+                self.motion_plot.enableAutoRange()
+                self.output_plot.setXLink(self.motion_plot)
+
+            elif 'set_omega' in headings_str and 'ctrl_v' in headings_str:
+                # Turn (controller): time_ms,set_omega,actual_yaw,actual_omega,error,ctrl_v,total_v_left,total_v_right
+                # MotorLab-style: separate Ctrl V from per-wheel applied voltages.
+                # No FF trace — TURN currently has no rotation feedforward
+                # (rotation_pid_.update is the only contribution in tickTurn).
+                if len(self.plot_curves['output']) == 0:
+                    pen_ctrl = pg.mkPen(color=palette[2], width=2)
+                    pen_left = pg.mkPen(color=palette[6], width=1)
+                    pen_right = pg.mkPen(color=palette[3], width=1)
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Ctrl V', pen=pen_ctrl))
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Motor Left', pen=pen_left))
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Motor Right', pen=pen_right))
+
+                x, y = self._get_valid_data(0, 5)  # ctrl_v
+                self.plot_curves['output'][0].setData(x, y)
+                x, y = self._get_valid_data(0, 6)  # total_v_left
+                if len(self.plot_curves['output']) > 1:
+                    self.plot_curves['output'][1].setData(x, y)
+                x, y = self._get_valid_data(0, 7)  # total_v_right
+                if len(self.plot_curves['output']) > 2:
+                    self.plot_curves['output'][2].setData(x, y)
+                self.output_plot.enableAutoRange()
+
+                if len(self.plot_curves['motion']) == 0:
+                    pen_set = pg.mkPen(color=palette[4], width=2, style=Qt.PenStyle.DotLine)
+                    pen_omega = pg.mkPen(color=palette[5], width=2)
+                    pen_yaw = pg.mkPen(color=palette[7], width=1, style=Qt.PenStyle.DashLine)
+                    self.plot_curves['motion'].append(self.motion_plot.plot(name='Set Omega', pen=pen_set))
+                    self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Omega', pen=pen_omega))
+                    self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Yaw', pen=pen_yaw))
+
+                x, y = self._get_valid_data(0, 1)  # set_omega
+                self.plot_curves['motion'][0].setData(x, y)
+                x, y = self._get_valid_data(0, 3)  # actual_omega
+                if len(self.plot_curves['motion']) > 1:
+                    self.plot_curves['motion'][1].setData(x, y)
+                x, y = self._get_valid_data(0, 2)  # actual_yaw
+                if len(self.plot_curves['motion']) > 2:
+                    self.plot_curves['motion'][2].setData(x, y)
+                self.motion_plot.setLabel('left', 'Angle (deg) / Omega (deg/s)')
+                self.motion_plot.enableAutoRange()
+                self.output_plot.setXLink(self.motion_plot)
+
+            elif 'step_voltage' in headings_str:
+                # Step: time_ms,step_voltage,speed,position
+                if len(self.plot_curves['output']) == 0:
+                    pen = pg.mkPen(color=palette[4], width=2)
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Step Voltage', pen=pen))
+
+                x, y = self._get_valid_data(0, 1)
+                self.plot_curves['output'][0].setData(x, y)
+                self.output_plot.enableAutoRange(axis='x')
+                self.output_plot.setYRange(-1, 7)
+
+                if value_count > 2:
                     if len(self.plot_curves['motion']) == 0:
-                        pen_left = pg.mkPen(color=palette[1], width=2)
-                        pen_right = pg.mkPen(color=palette[5], width=2)
-                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Left Speed', pen=pen_left))
-                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Right Speed', pen=pen_right))
-
-                    x, y = self._get_valid_data(0, 4)  # left_speed
+                        pen = pg.mkPen(color=palette[5], width=2)
+                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Speed', pen=pen))
+                    x, y = self._get_valid_data(0, 2)
                     self.plot_curves['motion'][0].setData(x, y)
-                    x, y = self._get_valid_data(0, 5)  # right_speed
-                    if len(self.plot_curves['motion']) > 1:
-                        self.plot_curves['motion'][1].setData(x, y)
-                    self.motion_plot.enableAutoRange()
-                    self.output_plot.setXLink(self.motion_plot)
-
-                elif 'set_omega' in headings_str and 'actual_yaw' in headings_str:
-                    # Turn: time_ms,set_omega,actual_yaw,actual_omega,error,left_v,right_v
-                    # Output plot: left/right motor voltage
-                    if len(self.plot_curves['output']) == 0:
-                        pen_left_v = pg.mkPen(color=palette[1], width=2)
-                        pen_right_v = pg.mkPen(color=palette[5], width=2)
-                        self.plot_curves['output'].append(self.output_plot.plot(name='Left V', pen=pen_left_v))
-                        self.plot_curves['output'].append(self.output_plot.plot(name='Right V', pen=pen_right_v))
-
-                    x, y = self._get_valid_data(0, 5)  # left_v
-                    self.plot_curves['output'][0].setData(x, y)
-                    x, y = self._get_valid_data(0, 6)  # right_v
-                    if len(self.plot_curves['output']) > 1:
-                        self.plot_curves['output'][1].setData(x, y)
-                    self.output_plot.enableAutoRange()
-
-                    # Motion plot: actual yaw + actual omega (dashed)
-                    if len(self.plot_curves['motion']) == 0:
-                        pen_yaw = pg.mkPen(color=palette[5], width=2)
-                        pen_omega = pg.mkPen(color=palette[3], width=2, style=Qt.PenStyle.DashLine)
-                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Yaw', pen=pen_yaw))
-                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Omega', pen=pen_omega))
-
-                    x, y = self._get_valid_data(0, 2)  # actual_yaw
-                    self.plot_curves['motion'][0].setData(x, y)
-                    x, y = self._get_valid_data(0, 3)  # actual_omega
-                    if len(self.plot_curves['motion']) > 1:
-                        self.plot_curves['motion'][1].setData(x, y)
-                    self.motion_plot.setLabel('left', 'Angle (deg) / Omega (deg/s)')
-                    self.motion_plot.enableAutoRange()
-                    self.output_plot.setXLink(self.motion_plot)
-
-                elif 'step_voltage' in headings_str:
-                    # Step: time_ms,step_voltage,speed,position
-                    if len(self.plot_curves['output']) == 0:
-                        pen = pg.mkPen(color=palette[4], width=2)
-                        self.plot_curves['output'].append(self.output_plot.plot(name='Step Voltage', pen=pen))
-
-                    x, y = self._get_valid_data(0, 1)
-                    self.plot_curves['output'][0].setData(x, y)
-                    self.output_plot.enableAutoRange(axis='x')
-                    self.output_plot.setYRange(-1, 7)
-
-                    if len(values) > 2:
-                        if len(self.plot_curves['motion']) == 0:
-                            pen = pg.mkPen(color=palette[5], width=2)
-                            self.plot_curves['motion'].append(self.motion_plot.plot(name='Speed', pen=pen))
-                        x, y = self._get_valid_data(0, 2)
-                        self.plot_curves['motion'][0].setData(x, y)
-                        self.motion_plot.setLabel('left', 'Speed (mm/s)')
-                        self.motion_plot.enableAutoRange()
-                        self.output_plot.setXLink(self.motion_plot)
-
-                elif 'set_speed' in headings_str and 'actual_speed' in headings_str and 'left_v' in headings_str:
-                    # Move (current firmware): time_ms,set_speed,actual_speed,error,left_v,right_v[,left_speed,right_speed]
-                    # Output plot: left/right motor voltage
-                    if len(self.plot_curves['output']) == 0:
-                        pen_left_v = pg.mkPen(color=palette[1], width=2)
-                        pen_right_v = pg.mkPen(color=palette[5], width=2)
-                        self.plot_curves['output'].append(self.output_plot.plot(name='Left V', pen=pen_left_v))
-                        self.plot_curves['output'].append(self.output_plot.plot(name='Right V', pen=pen_right_v))
-
-                    x, y = self._get_valid_data(0, 4)  # left_v
-                    self.plot_curves['output'][0].setData(x, y)
-                    x, y = self._get_valid_data(0, 5)  # right_v
-                    if len(self.plot_curves['output']) > 1:
-                        self.plot_curves['output'][1].setData(x, y)
-                    self.output_plot.enableAutoRange()
-
-                    # Motion plot: set_speed (dashed) + actual_speed; overlay per-wheel speeds when present
-                    has_per_wheel = ('left_speed' in headings_str and 'right_speed' in headings_str
-                                     and len(values) > 7)
-                    if len(self.plot_curves['motion']) == 0:
-                        pen_set = pg.mkPen(color=palette[4], width=2, style=Qt.PenStyle.DashLine)
-                        pen_actual = pg.mkPen(color=palette[5], width=2)
-                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Set Speed', pen=pen_set))
-                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Speed', pen=pen_actual))
-                        if has_per_wheel:
-                            pen_left_s = pg.mkPen(color=palette[1], width=1)
-                            pen_right_s = pg.mkPen(color=palette[2], width=1)
-                            self.plot_curves['motion'].append(self.motion_plot.plot(name='Left Speed', pen=pen_left_s))
-                            self.plot_curves['motion'].append(self.motion_plot.plot(name='Right Speed', pen=pen_right_s))
-
-                    x, y = self._get_valid_data(0, 1)  # set_speed
-                    self.plot_curves['motion'][0].setData(x, y)
-                    x, y = self._get_valid_data(0, 2)  # actual_speed
-                    if len(self.plot_curves['motion']) > 1:
-                        self.plot_curves['motion'][1].setData(x, y)
-                    if has_per_wheel and len(self.plot_curves['motion']) > 3:
-                        x, y = self._get_valid_data(0, 6)  # left_speed
-                        self.plot_curves['motion'][2].setData(x, y)
-                        x, y = self._get_valid_data(0, 7)  # right_speed
-                        self.plot_curves['motion'][3].setData(x, y)
                     self.motion_plot.setLabel('left', 'Speed (mm/s)')
                     self.motion_plot.enableAutoRange()
                     self.output_plot.setXLink(self.motion_plot)
 
-                elif 'ctrl_v' in headings_str or 'ff_v' in headings_str:
-                    # Move controller: time_ms,set_pos,actual_pos,set_speed,actual_speed,ctrl_v,ff_v,total_v
-                    # Output plot: FF, ctrl, total voltage
-                    if 'ff_v' in headings_str and len(values) > 6:
-                        if len(self.plot_curves['output']) == 0:
-                            self.plot_curves['output'].append(self.output_plot.plot(
-                                name='FF Volts', pen=pg.mkPen(color=palette[1], width=2)))
-                        x, y = self._get_valid_data(0, 6)
-                        self.plot_curves['output'][0].setData(x, y)
+            elif 'ff_v_left' in headings_str:
+                # Move (controller): time_ms,set_pos,actual_pos,set_speed,actual_speed,
+                #                    ff_v_left,ff_v_right,ctrl_v,total_v_left,total_v_right,
+                #                    left_speed,right_speed
+                # Mirrors MotorLab's MOVE plot (FF / Ctrl / Motor traces) with a stereo
+                # extension: per-wheel FF surfaces kV/kS asymmetry, a single shared
+                # ctrl_v shows the PID's burden, total_v_left/right are what reached
+                # the motors. Set Speed dotted + Actual Speed solid mirror MotorLab
+                # exactly; per-wheel speed lines are our extension.
+                if len(self.plot_curves['output']) == 0:
+                    pen_ff_l = pg.mkPen(color=palette[1], width=2)
+                    pen_ff_r = pg.mkPen(color=palette[5], width=2)
+                    pen_ctrl = pg.mkPen(color=palette[2], width=2)
+                    pen_tot_l = pg.mkPen(color=palette[6], width=1)
+                    pen_tot_r = pg.mkPen(color=palette[3], width=1)
+                    self.plot_curves['output'].append(self.output_plot.plot(name='FF Left', pen=pen_ff_l))
+                    self.plot_curves['output'].append(self.output_plot.plot(name='FF Right', pen=pen_ff_r))
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Ctrl V', pen=pen_ctrl))
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Motor Left', pen=pen_tot_l))
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Motor Right', pen=pen_tot_r))
 
-                    if 'ctrl_v' in headings_str and len(values) > 5:
-                        if len(self.plot_curves['output']) < 2:
-                            self.plot_curves['output'].append(self.output_plot.plot(
-                                name='Ctrl Volts', pen=pg.mkPen(color=palette[2], width=2)))
-                        x, y = self._get_valid_data(0, 5)
-                        if len(self.plot_curves['output']) > 1:
-                            self.plot_curves['output'][1].setData(x, y)
+                x, y = self._get_valid_data(0, 5)  # ff_v_left
+                self.plot_curves['output'][0].setData(x, y)
+                x, y = self._get_valid_data(0, 6)  # ff_v_right
+                if len(self.plot_curves['output']) > 1:
+                    self.plot_curves['output'][1].setData(x, y)
+                x, y = self._get_valid_data(0, 7)  # ctrl_v
+                if len(self.plot_curves['output']) > 2:
+                    self.plot_curves['output'][2].setData(x, y)
+                x, y = self._get_valid_data(0, 8)  # total_v_left
+                if len(self.plot_curves['output']) > 3:
+                    self.plot_curves['output'][3].setData(x, y)
+                x, y = self._get_valid_data(0, 9)  # total_v_right
+                if len(self.plot_curves['output']) > 4:
+                    self.plot_curves['output'][4].setData(x, y)
+                self.output_plot.enableAutoRange()
 
-                    if 'total_v' in headings_str and len(values) > 7:
-                        if len(self.plot_curves['output']) < 3:
-                            self.plot_curves['output'].append(self.output_plot.plot(
-                                name='Total Volts', pen=pg.mkPen(color=palette[7], width=2)))
-                        x, y = self._get_valid_data(0, 7)
-                        if len(self.plot_curves['output']) > 2:
-                            self.plot_curves['output'][2].setData(x, y)
+                has_per_wheel = ('left_speed' in headings_str and 'right_speed' in headings_str
+                                 and value_count > 11)
+                if len(self.plot_curves['motion']) == 0:
+                    pen_set = pg.mkPen(color=palette[4], width=2, style=Qt.PenStyle.DotLine)
+                    pen_actual = pg.mkPen(color=palette[5], width=2)
+                    self.plot_curves['motion'].append(self.motion_plot.plot(name='Set Speed', pen=pen_set))
+                    self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Speed', pen=pen_actual))
+                    if has_per_wheel:
+                        pen_left_s = pg.mkPen(color=palette[1], width=1)
+                        pen_right_s = pg.mkPen(color=palette[2], width=1)
+                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Left Speed', pen=pen_left_s))
+                        self.plot_curves['motion'].append(self.motion_plot.plot(name='Right Speed', pen=pen_right_s))
 
-                    self.output_plot.enableAutoRange()
+                x, y = self._get_valid_data(0, 3)  # set_speed
+                self.plot_curves['motion'][0].setData(x, y)
+                x, y = self._get_valid_data(0, 4)  # actual_speed
+                if len(self.plot_curves['motion']) > 1:
+                    self.plot_curves['motion'][1].setData(x, y)
+                if has_per_wheel and len(self.plot_curves['motion']) > 3:
+                    x, y = self._get_valid_data(0, 10)  # left_speed
+                    self.plot_curves['motion'][2].setData(x, y)
+                    x, y = self._get_valid_data(0, 11)  # right_speed
+                    self.plot_curves['motion'][3].setData(x, y)
+                self.motion_plot.setLabel('left', 'Speed (mm/s)')
+                self.motion_plot.enableAutoRange()
+                self.output_plot.setXLink(self.motion_plot)
 
-                    # Motion plot: set speed (dashed) vs actual speed
-                    if len(values) > 4:
-                        if len(self.plot_curves['motion']) == 0:
-                            self.plot_curves['motion'].append(self.motion_plot.plot(
-                                name='Set Speed', pen=pg.mkPen(color=palette[4], width=2, style=Qt.PenStyle.DashLine)))
-                            self.plot_curves['motion'].append(self.motion_plot.plot(
-                                name='Actual Speed', pen=pg.mkPen(color=palette[5], width=2)))
+            elif 'motor_volts' in headings_str:
+                # Profile: time_ms,set_pos,actual_pos,set_speed,actual_speed,motor_volts
+                if len(self.plot_curves['output']) == 0:
+                    self.plot_curves['output'].append(self.output_plot.plot(
+                        name='Motor Volts', pen=pg.mkPen(color=palette[6], width=2)))
+                x, y = self._get_valid_data(0, 5)
+                self.plot_curves['output'][0].setData(x, y)
+                self.output_plot.enableAutoRange()
 
-                        x, y = self._get_valid_data(0, 3)  # set_speed
-                        self.plot_curves['motion'][0].setData(x, y)
-                        x, y = self._get_valid_data(0, 4)  # actual_speed
-                        if len(self.plot_curves['motion']) > 1:
-                            self.plot_curves['motion'][1].setData(x, y)
-                        self.motion_plot.setLabel('left', 'Speed (mm/s)')
-                        self.motion_plot.enableAutoRange()
-                        self.output_plot.setXLink(self.motion_plot)
+                if value_count > 4:
+                    if len(self.plot_curves['motion']) == 0:
+                        self.plot_curves['motion'].append(self.motion_plot.plot(
+                            name='Actual Speed', pen=pg.mkPen(color=palette[5], width=2)))
+                    x, y = self._get_valid_data(0, 4)
+                    self.plot_curves['motion'][0].setData(x, y)
+                    self.motion_plot.setLabel('left', 'Speed (mm/s)')
+                    self.motion_plot.enableAutoRange()
+                    self.output_plot.setXLink(self.motion_plot)
 
-                elif 'motor_volts' in headings_str:
-                    # Profile: time_ms,set_pos,actual_pos,set_speed,actual_speed,motor_volts
-                    if len(self.plot_curves['output']) == 0:
-                        self.plot_curves['output'].append(self.output_plot.plot(
-                            name='Motor Volts', pen=pg.mkPen(color=palette[6], width=2)))
-                    x, y = self._get_valid_data(0, 5)
-                    self.plot_curves['output'][0].setData(x, y)
-                    self.output_plot.enableAutoRange()
-
-                    if len(values) > 4:
-                        if len(self.plot_curves['motion']) == 0:
-                            self.plot_curves['motion'].append(self.motion_plot.plot(
-                                name='Actual Speed', pen=pg.mkPen(color=palette[5], width=2)))
-                        x, y = self._get_valid_data(0, 4)
-                        self.plot_curves['motion'][0].setData(x, y)
-                        self.motion_plot.setLabel('left', 'Speed (mm/s)')
-                        self.motion_plot.enableAutoRange()
-                        self.output_plot.setXLink(self.motion_plot)
-
-        except Exception as e:
-            # Silently ignore parsing errors to avoid spam
+        except Exception:
+            # Silently ignore plot errors to avoid spam
             pass
 
     def clear_monitor(self):
@@ -1582,7 +1694,9 @@ class Dashboard(QMainWindow):
 
         # Reset telemetry channels
         for channel in self.telemetry:
-            channel.data_ = np.zeros(shape=channel.points, dtype=float)
+            channel.reset()
+        self._plot_dirty = True
+        self._last_value_count = 0
 
         # Reset to default ranges and labels
         styles = {'color': 'cyan', 'font-size': '13px', 'bottom_margin': '50px'}
