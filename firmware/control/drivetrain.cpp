@@ -93,9 +93,10 @@ void Drivetrain::update()
         int32_t d_left    = curr_left - prev_left_ticks_;
         prev_left_ticks_  = curr_left;
         left_change_mm    = d_left * MM_PER_TICK;
-        // Velocity is diagnostic only — PD math uses the per-tick delta.
-        // At 500 Hz the per-tick speed is quantized to ~185 mm/s steps for a
-        // single tick of motion, so this number is noisy by design.
+        // Per-tick velocity is what the PD math wants (it consumes the raw
+        // change directly via fwdChangeMm()); this exposed value is for that
+        // same single-loop use, not for any logging that needs a smooth
+        // trace. Consumers wanting smoothness should window the position.
         left_velocity_mmps_ = left_change_mm / LOOP_INTERVAL_S;
     }
 

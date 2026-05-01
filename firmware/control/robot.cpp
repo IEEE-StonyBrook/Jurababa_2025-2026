@@ -20,12 +20,10 @@ float normalizeYawDelta(float delta)
 
 Robot::Robot(Drivetrain* drivetrain, IMU* imu, ToF* left_tof, ToF* front_tof, ToF* right_tof)
     : drivetrain_(drivetrain), imu_(imu), left_tof_(left_tof), front_tof_(front_tof),
-      right_tof_(right_tof), forward_controller_(), rotation_controller_()
+      right_tof_(right_tof), forward_controller_(FWD_KP, FWD_KD, LOOP_FREQUENCY_HZ),
+      rotation_controller_(ROT_KP, ROT_KD, ROTATION_LOOP_HZ)
 {
-    forward_controller_.setGains(FWD_KP, FWD_KD);
     forward_controller_.setOutputLimit(MAX_VOLTAGE);
-
-    rotation_controller_.setGains(ROT_KP, ROT_KD);
     rotation_controller_.setOutputLimit(MAX_VOLTAGE);
 
     reset();
@@ -56,6 +54,7 @@ void Robot::reset()
     prev_right_cmd_vel_mmps_ = 0.0f;
 
     steering_adjustment_ = 0.0f;
+    rotation_output_     = 0.0f;
     motion_done_         = true;
 }
 
@@ -151,6 +150,7 @@ void Robot::stop()
     prev_left_cmd_vel_mmps_  = 0.0f;
     prev_right_cmd_vel_mmps_ = 0.0f;
     steering_adjustment_     = 0.0f;
+    rotation_output_         = 0.0f;
     drivetrain_->stop();
 
     motion_done_ = true;
@@ -277,26 +277,37 @@ void Robot::runPositionControl()
     float fwd_change_mm  = drivetrain_->fwdChangeMm();
     float rot_change_deg = imu_->robot_rot_change();
 
+    // Read-and-clear the IMU fresh-sample flag exactly once per tick.
+    // Rotation control fires only when this is true; otherwise rotation_output_
+    // holds its last value (zero-order hold between IMU packets).
+    const bool fresh_yaw = imu_->has_new_yaw_sample();
+
     // PD outputs (volts). FeedforwardOnly skips PD; mirror error integration
     // for diagnostics so CSV reflects open-loop tracking error.
-    float forward_output  = 0.0f;
-    float rotation_output = 0.0f;
+    float forward_output = 0.0f;
     if (control_mode_ != ControlMode::FeedforwardOnly)
     {
-        forward_output  = forward_controller_.update(target_forward_vel_mmps_, fwd_change_mm);
-        rotation_output = rotation_controller_.update(target_angular_vel_degps_, rot_change_deg,
-                                                      steering_adjustment_);
+        forward_output = forward_controller_.update(target_forward_vel_mmps_, fwd_change_mm);
+        if (fresh_yaw)
+        {
+            rotation_output_ = rotation_controller_.update(target_angular_vel_degps_,
+                                                           rot_change_deg, steering_adjustment_);
+        }
     }
     else
     {
         forward_error_ += target_forward_vel_mmps_ * LOOP_INTERVAL_S - fwd_change_mm;
-        rotation_error_ += target_angular_vel_degps_ * LOOP_INTERVAL_S - rot_change_deg +
-                           steering_adjustment_ * LOOP_INTERVAL_S;
+        if (fresh_yaw)
+        {
+            rotation_error_ += target_angular_vel_degps_ * ROTATION_INTERVAL_S - rot_change_deg +
+                               steering_adjustment_ * ROTATION_INTERVAL_S;
+        }
     }
 
     // Mix forward + rotation outputs into per-wheel volts (mazerunner shape).
-    float left_volts  = forward_output - rotation_output;
-    float right_volts = forward_output + rotation_output;
+    // rotation_output_ is the last-computed value (held between IMU packets).
+    float left_volts  = forward_output - rotation_output_;
+    float right_volts = forward_output + rotation_output_;
 
     if (control_mode_ != ControlMode::FeedbackOnly)
     {

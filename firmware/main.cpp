@@ -56,8 +56,14 @@
 // ----------------------------------------------------------------------------
 static void uart_out_chars(const char* buf, int length)
 {
+    // Non-blocking mirror to uart0 (BT terminal at 9600 baud). Once the
+    // 32-byte hardware FIFO is full we drop further chars rather than
+    // stalling the 500 Hz control loop. The USB CDC sink (separate stdio
+    // driver) and the dashboard's serial reader continue to receive every
+    // byte at full fidelity. See CLAUDE.md "Loop dt".
     for (int i = 0; i < length; i++)
-        uart_putc_raw(uart0, buf[i]);
+        if (uart_is_writable(uart0))
+            uart_putc_raw(uart0, buf[i]);
 }
 
 static stdio_driver_t bt_driver = {
@@ -73,7 +79,7 @@ static stdio_driver_t bt_driver = {
 static bool selectDriverLab(uint32_t timeout_ms)
 {
     printf("\n==========================================\n");
-    printf("  Jurababa — boot\n");
+    printf("  Jurababa -- boot\n");
     printf("==========================================\n");
     printf("  Press 'N' within %lu s for Normal CLI Mode.\n", timeout_ms / 1000);
     printf("  Otherwise DriverLab will start (default).\n");
@@ -105,7 +111,7 @@ static bool selectDriverLab(uint32_t timeout_ms)
         int seconds_left = static_cast<int>((timeout_ms - elapsed) / 1000);
         if (seconds_left != countdown_print && seconds_left >= 0)
         {
-            printf("  %d…\n", seconds_left);
+            printf("  %d...\n", seconds_left);
             countdown_print = seconds_left;
         }
     }
@@ -151,6 +157,11 @@ static SensorMode selectSensorMode(uint32_t timeout_ms)
 // ----------------------------------------------------------------------------
 static void runDriverLabMode(Battery* battery)
 {
+    // 9600 baud matches the HC-05 Bluetooth module. The CSV mirror in
+    // uart_out_chars is non-blocking, so this slow baud cannot stall the
+    // 500 Hz control loop — chars overflow the FIFO and are dropped on the
+    // BT side instead. The USB CDC sink keeps full fidelity for the
+    // dashboard. See CLAUDE.md "Loop dt".
     uart_init(uart0, 9600);
     gpio_set_function(PIN_BT_TX, GPIO_FUNC_UART);
     gpio_set_function(PIN_BT_RX, GPIO_FUNC_UART);
@@ -173,10 +184,8 @@ static void runDriverLabMode(Battery* battery)
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, true);
     IMU     imu(PIN_IMU_RX);
 
-    Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, battery);
-
-    // Sensor-side hardware constructed first so Robot can see live ToF pointers
-    // when in TOF mode. LineSensor and ToFs share I2C0 — only one branch runs.
+    // DriverLab is standalone — no Drivetrain, no Robot. Drivers only.
+    // LineSensor and ToFs share I2C0 — exactly one branch runs.
     ToF*        left_tof_p    = nullptr;
     ToF*        front_tof_p   = nullptr;
     ToF*        right_tof_p   = nullptr;
@@ -200,15 +209,9 @@ static void runDriverLabMode(Battery* battery)
         printf("ToFs on I2C0\n");
     }
 
-    Robot robot(&drivetrain, &imu, left_tof_p, front_tof_p, right_tof_p);
-
-    DriverLab* driverlab =
-        (sensor_mode == SensorMode::LINE_SENSOR)
-            ? new DriverLab(&left_motor, &right_motor, &left_encoder, &right_encoder, battery,
-                            &robot, line_sensor_p)
-            : new DriverLab(&left_motor, &right_motor, &left_encoder, &right_encoder, battery,
-                            &robot, left_tof_p, front_tof_p, right_tof_p);
-    driverlab->init();
+    DriverLab driverlab(&left_motor, &right_motor, &left_encoder, &right_encoder, &imu, battery,
+                        left_tof_p, front_tof_p, right_tof_p, line_sensor_p);
+    driverlab.init();
 
     printf("\nReady. Type '?' for help.\n\n");
 
@@ -219,8 +222,9 @@ static void runDriverLabMode(Battery* battery)
     while (true)
     {
         uint32_t now_ms = to_ms_since_boot(get_absolute_time());
-        robot.update();
-        driverlab->processSerial();
+        imu.update();              // no-op for omega; reserved for future fusion
+        driverlab.tick();          // advances active trial by exactly one 500 Hz step
+        driverlab.processSerial(); // poll keyboard for new commands
         if (battery && now_ms - last_battery_ms >= 1000)
         {
             battery->update();

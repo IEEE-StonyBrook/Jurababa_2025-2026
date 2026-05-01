@@ -21,8 +21,8 @@ float normalize_yaw_delta(float delta)
 IMU::IMU(int uart_rx_pin)
     : uart_rx_pin_(uart_rx_pin), packet_buffer_index_(0), yaw_data_ready_(false),
       current_yaw_degrees_(0.0f), yaw_reset_offset_(0.0f), filtered_yaw_degrees_(0.0f),
-      prev_raw_yaw_degrees_(0.0f), first_reading_(true), prev_rot_yaw_(0.0f),
-      m_rot_change_deg_(0.0f)
+      prev_raw_yaw_degrees_(0.0f), first_reading_(true), last_packet_yaw_(0.0f),
+      cached_omega_degps_(0.0f), m_rot_change_deg_(0.0f), new_yaw_sample_pending_(false)
 {
     setup_uart();
     setup_interrupt();
@@ -142,7 +142,20 @@ void IMU::parse_packet_and_extract_yaw()
     }
 
     current_yaw_degrees_ = filtered_yaw_degrees_;
-    yaw_data_ready_      = true;
+
+    // Compute per-packet yaw delta and omega at the BNO085's true 100 Hz cadence.
+    // This is the authoritative rate — multiplying by LOOP_FREQUENCY_HZ in the
+    // main loop instead would alias (4 of 5 ticks see "no change", omega = 0).
+    if (yaw_data_ready_)
+    {
+        float delta         = normalize_yaw_delta(current_yaw_degrees_ - last_packet_yaw_);
+        m_rot_change_deg_   = delta;
+        cached_omega_degps_ = delta * IMU_PACKET_HZ;
+    }
+    last_packet_yaw_ = current_yaw_degrees_;
+
+    yaw_data_ready_         = true;
+    new_yaw_sample_pending_ = true; // ISR-context: tells main loop a fresh packet is available
 }
 
 float IMU::robot_angle()
@@ -172,27 +185,35 @@ void IMU::reset()
         return;
     }
     LOG_DEBUG("Resetting IMU yaw to zero");
-    yaw_reset_offset_ = current_yaw_degrees_;
-    prev_rot_yaw_     = 0.0f;
-    m_rot_change_deg_ = 0.0f;
+    yaw_reset_offset_   = current_yaw_degrees_;
+    last_packet_yaw_    = current_yaw_degrees_;
+    m_rot_change_deg_   = 0.0f;
+    cached_omega_degps_ = 0.0f;
 }
 
 void IMU::update()
 {
-    // Mazerunner Encoders::update() shape: sample once per tick, cache delta.
-    // BNO085 quantization (~100 Hz packet rate vs higher loop rate) is visible
-    // in CSV but doesn't affect control — the rotation PD integrates.
-    float current     = robot_angle();
-    m_rot_change_deg_ = normalize_yaw_delta(current - prev_rot_yaw_);
-    prev_rot_yaw_     = current;
+    // No-op: rotation tracking is now ISR-side (parse_packet_and_extract_yaw)
+    // at the BNO085's true 100 Hz cadence. Sampling at the 500 Hz loop rate
+    // would alias the signal — see config/sensors.h IMU_PACKET_HZ comment.
 }
 
 float IMU::robot_omega()
 {
-    return m_rot_change_deg_ * LOOP_FREQUENCY_HZ;
+    return cached_omega_degps_;
 }
 
 float IMU::robot_rot_change()
 {
     return m_rot_change_deg_;
+}
+
+bool IMU::has_new_yaw_sample()
+{
+    // Race-free read-and-clear: the GCC atomic exchange is one instruction
+    // logically, so the UART ISR cannot slip a fresh packet between our
+    // read and our clear. On Cortex-M0+ this compiles to a brief
+    // disable-IRQ / load / store / restore-IRQ sequence; same effect as
+    // a critical section, but expresses the intent ("atomic swap") clearly.
+    return __atomic_exchange_n(&new_yaw_sample_pending_, false, __ATOMIC_SEQ_CST);
 }

@@ -32,10 +32,12 @@ class IMU
     explicit IMU(int uart_rx_pin);
 
     /**
-     * @brief Per-tick sampler. Call once per control loop tick.
+     * @brief Per-tick sampler. No-op for rotation tracking under the new
+     *        IMU model — kept for API parity with mazerunner's Encoders.
      *
-     * Samples current yaw and updates m_rot_change_deg_ as the per-tick yaw
-     * delta. Mirrors mazerunner's `Encoders::update()`.
+     * Omega and per-packet yaw delta are now computed in the UART ISR at the
+     * BNO085's true 100 Hz packet cadence (see parse_packet_and_extract_yaw).
+     * Sampling at the 500 Hz loop rate would alias the signal.
      */
     void update();
 
@@ -46,19 +48,33 @@ class IMU
     float robot_angle();
 
     /**
-     * @brief Returns angular velocity (deg/s).
+     * @brief Returns angular velocity (deg/s), cached in the UART ISR.
      *
-     * Equals `m_rot_change_deg_ * LOOP_FREQUENCY_HZ`, same shape as
-     * mazerunner's `robot_omega() = LOOP_FREQUENCY * m_rot_change`.
-     * Updated by update().
+     * Equals `delta_yaw_per_packet * IMU_PACKET_HZ` (100 Hz). Held flat
+     * between packets, so consumers see a zero-order-hold rather than
+     * a spike of zeros.
      */
     float robot_omega();
 
     /**
-     * @brief Returns the per-tick yaw delta (deg) cached by the last update().
-     *        Mirrors mazerunner's `Encoders::robot_rot_change()`.
+     * @brief Returns the per-PACKET yaw delta (deg), updated in the UART ISR.
+     *        Held flat between packets — matches the rotation PD's gating
+     *        on has_new_yaw_sample().
      */
     float robot_rot_change();
+
+    /**
+     * @brief Read-and-clear: returns true exactly once per fresh BNO085 packet.
+     *
+     * Used by the rotation PID gate. Forward (encoder-paced) control runs
+     * every 500 Hz tick; rotation control fires only when this returns true,
+     * matching the IMU's ~100 Hz packet cadence. Between packets, the rotation
+     * controller's last output is held (zero-order hold).
+     *
+     * Called from the main control loop; the underlying flag is set from the
+     * UART ISR. Implementation must handle ISR/main concurrency.
+     */
+    bool has_new_yaw_sample();
 
     /**
      * @brief Resets yaw offset to make current heading = 0 degrees.
@@ -79,9 +95,17 @@ class IMU
     float prev_raw_yaw_degrees_; // Previous raw yaw for outlier detection
     bool  first_reading_;        // Skip outlier check on first reading
 
-    // Per-tick rotation tracking (mazerunner Encoders shape)
-    float prev_rot_yaw_;     // yaw at last update() call
-    float m_rot_change_deg_; // per-tick yaw delta (deg)
+    // Per-PACKET rotation tracking (computed in UART ISR at 100 Hz cadence).
+    // Cortex-M0+ single-word loads/stores make plain float read-from-main /
+    // write-from-ISR atomic enough for these scalars (same model as
+    // current_yaw_degrees_).
+    float last_packet_yaw_;     // yaw at the last accepted packet
+    float cached_omega_degps_;  // delta_yaw * IMU_PACKET_HZ
+    float m_rot_change_deg_;    // per-packet yaw delta, held between packets
+
+    // Set by parse_packet_and_extract_yaw() (ISR context) when a fresh packet
+    // is accepted. Read-and-cleared by has_new_yaw_sample() (main context).
+    volatile bool new_yaw_sample_pending_;
 
     static IMU* imu_instance_;
 

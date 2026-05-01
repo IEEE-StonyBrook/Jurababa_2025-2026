@@ -50,7 +50,7 @@ void Cli::greet()
 {
     printf("\n");
     printf("==========================================\n");
-    printf("  Jurababa Micromouse — UKMARS-style CLI \n");
+    printf("  Jurababa Micromouse -- UKMARS-style CLI \n");
     printf("==========================================\n");
     printf("Sensor mode: %s\n", deps_.sensor_mode == SensorMode::TOF ? "ToF" : "LineSensor");
     printf("Type a number to run a function, or '?' for help.\n");
@@ -68,7 +68,7 @@ void Cli::greet()
     printf("  10  Battery voltage\n");
     printf("Short commands: ?  B (battery)  X (halt)  RUN n  G (start)\n");
     if (deps_.driver_lab != nullptr)
-        printf("Alpha tokens (OL, STEP, EXPORT, MOVE, …) are forwarded to DriverLab.\n");
+        printf("Alpha tokens (OL, STEP, EXPORT, MOVE, ...) are forwarded to DriverLab.\n");
     else
         printf("Reboot in DriverLab mode (press 'M') for OL/STEP/EXPORT/MOVE/TURN trials.\n");
     printf("\n");
@@ -309,7 +309,7 @@ void Cli::runFunction(int n)
 
     auto startWithGesture = [&](bool tof_available) -> bool
     {
-        printf("Waiting for start gesture (wave hand / send 'G' / BT START)…\n");
+        printf("Waiting for start gesture (wave hand / send 'G' / BT START)...\n");
         StartTrigger t = waitForStartGesture(deps_.bluetooth, tof_available);
         if (t == StartTrigger::CANCELLED)
         {
@@ -347,7 +347,7 @@ void Cli::runFunction(int n)
                 break;
             if (deps_.api != nullptr)
                 deps_.api->setPhaseColor('y');
-            printf("Exploring…\n");
+            printf("Exploring...\n");
             FloodFill::explore(*deps_.mouse, *deps_.api, /*diagonals=*/false);
             printf("Explore done.\n");
             break;
@@ -359,7 +359,7 @@ void Cli::runFunction(int n)
                 break;
             if (!startWithGesture(true))
                 break;
-            printf("Returning to start…\n");
+            printf("Returning to start...\n");
             PathUtils::setAllExplored(deps_.mouse);
             std::vector<std::array<int, 2>> goals = {deps_.start_cell};
             PathUtils::traversePath(deps_.api, deps_.mouse, goals,
@@ -375,7 +375,7 @@ void Cli::runFunction(int n)
                 break;
             if (!startWithGesture(true))
                 break;
-            printf("Speed run (A* + diagonals)…\n");
+            printf("Speed run (A* + diagonals)...\n");
             PathUtils::traversePath(deps_.api, deps_.mouse, deps_.goal_cells,
                                     /*diagonals=*/true, /*all_explored=*/true,
                                     /*avoid_goals=*/false);
@@ -553,7 +553,7 @@ void Cli::runLineFollowEventLoop()
             }
             else
             {
-                printf("Queue empty — continuing forward.\n");
+                printf("Queue empty -- continuing forward.\n");
             }
         }
 

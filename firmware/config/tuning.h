@@ -26,8 +26,8 @@
 // Provisional ratios derived from mazerunner-core Orion config (rotational
 // gain ≈ 1.6× forward, rotational time constant ≈ 1.1× forward). Re-calibrate
 // before relying on closed-loop turning.
-#define ROT_KM 580.0f  // deg/s per volt of differential drive (TODO: calibrate)
-#define ROT_TM 0.106f  // seconds                              (TODO: calibrate)
+#define ROT_KM 580.0f // deg/s per volt of differential drive (TODO: calibrate)
+#define ROT_TM 0.106f // seconds                              (TODO: calibrate)
 
 // ================ Feedforward (per motor) ============== //
 // V = kV * speed + kS + kA * accel (per wheel; characterized independently).
@@ -40,23 +40,23 @@
 #define FORWARD_KAR 0.0006680f       // Right V/(mm/s^2)
 
 // ================ Forward PD Controller ================ //
-// Mazerunner-core formulation (modern design):
+// Mazerunner-core / motorlab formulation:
 //   FWD_KP = 16 * Tm / (Km * zeta^2 * Td^2)
 //   FWD_KD = (8 * Tm - Td) / (Km * Td)        -- per-LOOP diff (not per-second)
-// Td = Tm gives the standard textbook second-order pole placement.
+// Td = Tm/2 matches motorlab's reference design point (config-motorlab.h:11).
+// KP is ~4x more aggressive than Td=Tm; re-run STEP after changing.
 #define FWD_ZETA 0.707f
-#define FWD_TD   MOTOR_TM
-#define FWD_KP                                                                                     \
-    (16.0f * MOTOR_TM / (MOTOR_KM * FWD_ZETA * FWD_ZETA * FWD_TD * FWD_TD))
-#define FWD_KD ((8.0f * MOTOR_TM - FWD_TD) / (MOTOR_KM * FWD_TD))
+#define FWD_TD   (MOTOR_TM / 2.0f)
+#define FWD_KP   (16.0f * MOTOR_TM / (MOTOR_KM * FWD_ZETA * FWD_ZETA * FWD_TD * FWD_TD))
+#define FWD_KD   ((8.0f * MOTOR_TM - FWD_TD) / (MOTOR_KM * FWD_TD))
 
 // ================ Rotation PD Controller =============== //
 // Same formula structure as forward, applied to the rotational plant.
+// Td = Tm/2 again — motorlab parity. Re-run TURN-STEP after changing.
 #define ROT_ZETA 0.707f
-#define ROT_TD   ROT_TM
-#define ROT_KP                                                                                     \
-    (16.0f * ROT_TM / (ROT_KM * ROT_ZETA * ROT_ZETA * ROT_TD * ROT_TD))
-#define ROT_KD ((8.0f * ROT_TM - ROT_TD) / (ROT_KM * ROT_TD))
+#define ROT_TD   (ROT_TM / 2.0f)
+#define ROT_KP   (16.0f * ROT_TM / (ROT_KM * ROT_ZETA * ROT_ZETA * ROT_TD * ROT_TD))
+#define ROT_KD   ((8.0f * ROT_TM - ROT_TD) / (ROT_KM * ROT_TD))
 
 // =================== Line Follower ===================== //
 #define LINE_KP                     0.3f

@@ -46,6 +46,12 @@
 // IMU processing
 #define IMU_RAW_TO_DEGREES_DIVISOR 100.0f
 
+// BNO085 RVC packet rate. The chip emits packets at exactly 100 Hz; this is
+// the authoritative cadence for omega estimation (delta_yaw * IMU_PACKET_HZ),
+// NOT LOOP_FREQUENCY_HZ. Reading omega at the loop rate aliases the signal —
+// 4 out of 5 ticks see "no change since last packet" and report 0.
+#define IMU_PACKET_HZ 100.0f
+
 // IMU yaw sign convention.
 // Positive yaw must mean CCW (left turn) to match the rotation controller:
 // left = forward - rotation, right = forward + rotation, where positive

@@ -6,12 +6,17 @@
 #define CONFIG_MOTION_H
 
 // ===================== Control Loop ===================== //
-// 500 Hz to match mazerunner-core: per-loop `KD * (e - e_prev)` formulation
-// needs LOOP_FREQUENCY phase-lead, and ACC_FF scales with LOOP_FREQUENCY.
-// ToF reads moved to Core 0 to keep the 2 ms tick budget; BNO085 stays at
-// 100 Hz (input ceiling).
+// Forward (encoder-paced) runs at 500 Hz: matches mazerunner-core / motorlab,
+// gives ~26x bandwidth margin over closed-loop omega_n.
+// Rotation (IMU-paced) runs at 100 Hz: BNO085 in RVC mode emits at exactly
+// 100 Hz, so 500 Hz on rotation feedback would alias the D-term. Rotation PID
+// gates on imu->has_new_yaw_sample() and uses a zero-order hold between packets.
 #define LOOP_FREQUENCY_HZ 500.0f
 #define LOOP_INTERVAL_S   (1.0f / LOOP_FREQUENCY_HZ)
+
+// Rotation PID rate — locked to BNO085 RVC packet cadence.
+#define ROTATION_LOOP_HZ    100.0f
+#define ROTATION_INTERVAL_S (1.0f / ROTATION_LOOP_HZ)
 
 // ================ Forward Speed Limits ================= //
 #define ROBOT_MAX_SEARCH_SPEED_MMPS 300.0f // Search mode cruise speed

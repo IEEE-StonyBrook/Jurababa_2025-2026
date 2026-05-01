@@ -129,15 +129,28 @@ DriverLab is for understanding the physical drivetrain, not for maze solving.
 
 ### DriverLab Architecture
 
-DriverLab is a **pure testing wrapper** — it must not reimplement control logic.
+DriverLab is a **standalone calibration tool**. It does **not** use `Robot`.
+Mirrors the mazerunner-core / motorlab split that Peter Harrison uses: shared
+hardware drivers, separate control logic.
 
-* **OL and STEP trials** use raw motor commands (no control loop) for motor characterization.
-* **MOVE and TURN trials** delegate to Robot's control loop (`turnInPlace()`, `moveDistance()`, `updateControl()`). DriverLab only:
-  - Syncs tuning parameters to Robot before the trial
-  - Polls `updateControl()` in a sleep loop
-  - Logs CSV from Robot's diagnostic accessors
-  - Prints diagnostics summary
-* When adding new motion types to DriverLab (e.g. smooth turns), use Robot's existing methods — never reimplement control.
+DriverLab owns:
+
+* Time-based forward and rotation profiles (`DriverLabProfile`).
+* Forward and rotation PD controllers (its own `PID` instances, separate from Robot's).
+* Trial state machines (OL, STEP, MOVE, TURN, TURN-OL, TURN-STEP).
+* A single `tick()` method called once per 500 Hz tick from `main.cpp`.
+
+DriverLab uses `Motor`, `Encoder`, `IMU`, `ToF`, `Battery` directly — these are
+HAL drivers shared with Robot. Drivers are the only seam between the two
+systems.
+
+Trials are **cooperative state machines**, not blocking inner loops. A trial
+records its parameters, sets motor voltages (or arms a profile), then returns.
+The next 500 Hz tick advances the trial by one step. This guarantees the loop
+period stays at exactly `1 / LOOP_FREQUENCY_HZ`.
+
+Robot is exclusively for maze-running CLI mode. Do not import Robot or
+Drivetrain into DriverLab.
 
 ## Mode Selection
 
@@ -394,6 +407,27 @@ Before changing control code, check:
 * Interaction between feedforward and feedback.
 
 A control loop should fail gracefully, not heroically.
+
+### Loop dt: use LOOP_FREQUENCY_HZ, do not measure
+
+The control loop's `dt_s` is `LOOP_INTERVAL_S = 1 / LOOP_FREQUENCY_HZ`. Do
+**not** call `to_us_since_boot()` per tick to "measure" dt. Reasons:
+
+1. **Determinism.** The main loop paces with `sleep_until(next_tick)`, so the
+   tick interval *is* `LOOP_INTERVAL_S` by construction.
+2. **Latency.** Per-tick clock reads cost cycles and can cause the controller
+   to chase its own measurement noise.
+3. **Correctness.** Control gains (kP, kD, kV, kA) were derived against the
+   design dt. Using a fluctuating measured dt mismatches them.
+
+If your loop is taking longer than `LOOP_INTERVAL_S`, fix the loop (remove
+blocking calls, use cooperative state machines, no inner `sleep_ms` in trial
+bodies) — do not patch by measuring runtime dt.
+
+Sensor sample rates are a separate concern. The IMU emits packets at exactly
+100 Hz; its omega cache uses `IMU_PACKET_HZ`, computed once per packet in the
+UART ISR. That is the IMU's *true* cadence — using `LOOP_FREQUENCY_HZ` (500)
+there would alias the signal.
 
 ## Multicore Safety
 

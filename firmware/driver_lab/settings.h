@@ -107,28 +107,27 @@ struct DriverLabSettings
         kA_R = tm / kM_R;
     }
 
-    // Recompute PD gains (kP, kD) from controller design parameters using the
-    // standard 2nd-order pole-placement form, with td as the closed-loop natural
-    // period (1/omega_n) and zeta as the damping ratio:
-    //   kP = omega_n^2 * Tm / kM           = Tm / (kM * td^2)
-    //   kD = (2*zeta*omega_n*Tm - 1) / kM  = (2*zeta*Tm/td - 1) / kM
-    // kD stays positive whenever td < 2*zeta*Tm. Safe to call on any change to
-    // zeta, td, kM, or tm — does not clobber kV/kA.
+    // Recompute PD gains (kP, kD) using the motorlab / mazerunner-core
+    // convention (omega_n = 4/td, td as the closed-loop "rise time" anchor).
+    // MUST match the FWD_KP / FWD_KD macros in config/tuning.h or a STEP trial
+    // will silently slam runtime gains far below the boot-time gains.
+    //   kP = 16 * Tm / (kM * zeta^2 * td^2)
+    //   kD = (8 * Tm - td) / (kM * td)
+    // kD stays positive whenever td < 8*Tm (always true with td = Tm/2).
     void recalculatePD()
     {
-        kP = tm / (kM * td * td);
-        kD = (2.0f * zeta * tm / td - 1.0f) / kM;
+        kP = 16.0f * tm / (kM * zeta * zeta * td * td);
+        kD = (8.0f * tm - td) / (kM * td);
     }
 
-    // Recompute rotation PD (turnKP, turnKD) from the rotation plant
-    // (rot_kM, rot_tm) using the same 2nd-order pole-placement formula as
-    // forward. Same shape: turnKP = rot_tm / (rot_kM * rot_td^2),
-    //                     turnKD = (2*rot_zeta*rot_tm/rot_td - 1) / rot_kM.
-    // Call after TURN-OL / TURN-STEP updates rot_kM / rot_tm.
+    // Recompute rotation PD (turnKP, turnKD) using the same motorlab form
+    // applied to the rotational plant (rot_kM, rot_tm). MUST match the
+    // ROT_KP / ROT_KD macros in config/tuning.h. Call after TURN-OL /
+    // TURN-STEP updates rot_kM / rot_tm.
     void recalculateRotation()
     {
-        turnKP = rot_tm / (rot_kM * rot_td * rot_td);
-        turnKD = (2.0f * rot_zeta * rot_tm / rot_td - 1.0f) / rot_kM;
+        turnKP = 16.0f * rot_tm / (rot_kM * rot_zeta * rot_zeta * rot_td * rot_td);
+        turnKD = (8.0f * rot_tm - rot_td) / (rot_kM * rot_td);
     }
 
     // Recompute everything. Use only when motor model parameters change.

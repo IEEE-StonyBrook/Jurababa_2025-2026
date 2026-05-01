@@ -122,9 +122,17 @@ class Robot
     Profile forward_profile_;
     Profile rotation_profile_;
 
-    // Controllers
+    // Controllers — forward at LOOP_FREQUENCY_HZ (encoder-paced), rotation at
+    // ROTATION_LOOP_HZ (IMU-paced). Each PID instance carries its own loop
+    // rate so KD * diff * loop_frequency scales correctly per axis.
     PID forward_controller_;
     PID rotation_controller_;
+
+    // Last rotation PD output. Held between IMU packets (zero-order hold)
+    // because the rotation PID runs at IMU cadence (~100 Hz) while the rest
+    // of the control loop runs at 500 Hz. Lives at member scope so it
+    // survives across ticks.
+    float rotation_output_ = 0.0f;
 
     // Diagnostic mirrors of controller error (mazerunner exposes these directly).
     float forward_error_  = 0.0f;

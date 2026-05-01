@@ -1,7 +1,5 @@
 #include "control/pid.h"
 
-#include "config/motion.h"
-
 namespace
 {
 float clampAbs(float value, float max_abs)
@@ -14,17 +12,20 @@ float clampAbs(float value, float max_abs)
 }
 } // namespace
 
-PID::PID(float kp, float kd) : kp_(kp), kd_(kd)
+PID::PID(float kp, float kd, float loop_frequency_hz)
+    : kp_(kp), kd_(kd), loop_frequency_hz_(loop_frequency_hz)
 {
 }
 
 float PID::update(float setpoint, float measured_change, float steering_adjustment)
 {
-    m_error_ +=
-        setpoint * LOOP_INTERVAL_S - measured_change + steering_adjustment * LOOP_INTERVAL_S;
+    const float dt_s = 1.0f / loop_frequency_hz_;
+    m_error_ += setpoint * dt_s - measured_change + steering_adjustment * dt_s;
     float diff    = m_error_ - m_prev_error_;
     m_prev_error_ = m_error_;
-    return clampAbs(kp_ * m_error_ + kd_ * diff, output_limit_);
+    // KD * diff * loop_frequency mirrors motorlab/motors.h:147 — pre-bakes
+    // the per-second derivative scaling at runtime instead of compile time.
+    return clampAbs(kp_ * m_error_ + kd_ * diff * loop_frequency_hz_, output_limit_);
 }
 
 void PID::setGains(float kp, float kd)
