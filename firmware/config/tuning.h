@@ -42,26 +42,23 @@
 // ================ Forward PD Controller ================ //
 // Mazerunner-core / motorlab formulation:
 //   FWD_KP = 16 * Tm / (Km * zeta^2 * Td^2)
-//   FWD_KD = (8 * Tm - Td) / (Km * Td)        -- per-LOOP diff (not per-second)
-// Td = Tm/2 matches motorlab's reference design point (config-motorlab.h:11).
-// KP is ~4x more aggressive than Td=Tm; re-run STEP after changing.
+//   FWD_KD = (8 * Tm - Td) / (Km * Td)
 //
-// Pole-placement assumption: these gains are designed assuming feedforward
-// is ON (the motor model V = kV*v + kS + kA*a cancels the plant, leaving
-// the PD to close the loop on residual position error). Validate them with
-// MOVE 480 200 500 0 (FULL_CONTROL).
+// PD controller is u = Kp * e + Kd * (e - e_old). Because this is a
+// sampled system the error change is scaled by the sample time — rather
+// than dividing in the loop we pre-multiply Kd by LOOP_FREQUENCY (see
+// firmware/control/pid.cpp).
 //
-// MOVE ... 1 (NO_FF) is a stress test, not a tuning target. With FF off,
-// the PD must source the entire steady-state voltage out of accumulated
-// position error AND fight static friction (~0.55 V) directly — the
-// closed-loop poles the formula promised no longer exist. Saturation and
-// limit cycling are *expected* in this mode; motorlab's own README warns
-// about it. Do not nudge KP/KD in response to mode-1 ringing.
-//
-// If FULL_CONTROL (mode 0) rings or tracks poorly, the fix is to re-run
-// OL/STEP to re-measure Km/Tm — not to hand-tune KP/KD.
+// Td = Tm here (NOT Tm/2 as in mazerunner-core / motorlab). Reason:
+// Jurababa's gear ratio (29.86) gives Tm ≈ 0.05 s — about 4x snappier
+// than UKMARSBOT's plant. With Td = Tm/2 the formula yields kP ≈ 7,
+// which saturates on a single-tick of encoder noise (0.37 mm/tick at
+// 500 Hz) and produces buzzing rather than the smooth motion that the
+// same formula gives on UKMARSBOT. Setting Td = Tm matches the closed-
+// loop bandwidth to the motor itself instead of trying to double it,
+// landing kP near UKMARS-class values (~1.8 V per mm/s).
 #define FWD_ZETA 0.707f
-#define FWD_TD   (MOTOR_TM / 2.0f)
+#define FWD_TD   (MOTOR_TM)
 #define FWD_KP   (16.0f * MOTOR_TM / (MOTOR_KM * FWD_ZETA * FWD_ZETA * FWD_TD * FWD_TD))
 #define FWD_KD   ((8.0f * MOTOR_TM - FWD_TD) / (MOTOR_KM * FWD_TD))
 

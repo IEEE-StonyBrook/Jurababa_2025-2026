@@ -43,7 +43,7 @@ palette = ("#101418", "#c00000", "#c000c0", "#c06000", "#00c000", "#0072c3", "#6
 
 # Control modes — motorlab parity (matches ukmars/motorlab/python/motorlab-dashboard.py:83-85).
 FULL_CONTROL = 0  # FF + PD
-NO_FF = 1         # PD only (stress test — saturates driver, expected to ring)
+NO_FF = 1         # PD only
 ONLY_FF = 2       # FF only
 
 hline_style = 'border: 2px solid gray'

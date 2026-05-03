@@ -765,9 +765,8 @@ void DriverLab::finishStep()
 void DriverLab::startMoveTrial(float distance, float speed, float accel, int mode)
 {
     printf("Distance: %.1f mm, Speed: %.1f mm/s, Accel: %.1f mm/s^2\n", distance, speed, accel);
-    const char* mode_label = mode == 0 ? "FULL_CONTROL (FF+PD)"
-                             : mode == 1
-                                 ? "NO_FF (PD only — stress test, expected to ring; see tuning.h)"
+    const char* mode_label = mode == 0   ? "FULL_CONTROL (FF+PD)"
+                             : mode == 1 ? "NO_FF (PD only)"
                              : mode == 2 ? "ONLY_FF"
                                          : "(unknown)";
     printf("Mode: %d (%s)\n", mode, mode_label);
