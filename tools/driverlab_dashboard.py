@@ -41,10 +41,10 @@ APP_NAME = 'Jurababa DriverLab'
 # Color palette (from UKMARS)
 palette = ("#101418", "#c00000", "#c000c0", "#c06000", "#00c000", "#0072c3", "#6fdc8c", "#d2a106")
 
-# Control modes
-FULL_CONTROL = 2  # FF + PD
-NO_FF = 1         # PD only
-ONLY_FF = 0       # FF only
+# Control modes — motorlab parity (matches ukmars/motorlab/python/motorlab-dashboard.py:83-85).
+FULL_CONTROL = 0  # FF + PD
+NO_FF = 1         # PD only (stress test — saturates driver, expected to ring)
+ONLY_FF = 2       # FF only
 
 hline_style = 'border: 2px solid gray'
 

@@ -765,7 +765,12 @@ void DriverLab::finishStep()
 void DriverLab::startMoveTrial(float distance, float speed, float accel, int mode)
 {
     printf("Distance: %.1f mm, Speed: %.1f mm/s, Accel: %.1f mm/s^2\n", distance, speed, accel);
-    printf("Mode: %d (%s)\n", mode, mode == 0 ? "FF only" : (mode == 1 ? "PD only" : "FF+PD"));
+    const char* mode_label = mode == 0 ? "FULL_CONTROL (FF+PD)"
+                             : mode == 1
+                                 ? "NO_FF (PD only — stress test, expected to ring; see tuning.h)"
+                             : mode == 2 ? "ONLY_FF"
+                                         : "(unknown)";
+    printf("Mode: %d (%s)\n", mode, mode_label);
 
     move_.distance_mm     = distance;
     move_.top_speed       = speed;
@@ -820,8 +825,10 @@ void DriverLab::tickMove()
     const float fwd_change_mm =
         0.5f * (left_velocity_mmps_ + right_velocity_mmps_) * LOOP_INTERVAL_S;
 
+    // Motorlab numbering: 0 = FULL_CONTROL (FF+PD), 1 = NO_FF (PD only),
+    // 2 = ONLY_FF. Disable PD only when ONLY_FF; disable FF only when NO_FF.
     const float pid_output =
-        (move_.mode != 0) ? forward_pid_.update(set_speed, fwd_change_mm) : 0.0f;
+        (move_.mode != 2) ? forward_pid_.update(set_speed, fwd_change_mm) : 0.0f;
 
     float ff_left  = 0.0f;
     float ff_right = 0.0f;
@@ -1656,7 +1663,8 @@ void DriverLab::cmdHelp()
     printf("=== TRIALS (run in order) ===\n");
     printf("  OL   [max step settle_ms]      Voltage sweep    (default: 4 1 500)\n");
     printf("  STEP [volts duration_ms]        Step response    (default: 3 1000)\n");
-    printf("  MOVE [mm mm/s mm/s^2 mode]      Forward motion   (default: 480 200 500 2)\n");
+    printf("  MOVE [mm mm/s mm/s^2 mode]      Forward motion   (default: 480 200 500 0)\n");
+    printf("    mode: 0=FULL_CONTROL (FF+PD)  1=NO_FF (PD only, stress)  2=ONLY_FF\n");
     printf("       mode: 0=FF only, 1=PD only, 2=FF+PD\n");
     printf("  TURN [deg deg/s deg/s^2]        Turn in place    (default: 90 360 720)\n");
     printf("       +deg=CCW(left), -deg=CW(right)\n");
@@ -2106,7 +2114,7 @@ void DriverLab::cmdMove(const DriverLabArgs& args)
     float dist  = 480.0f;
     float speed = 200.0f;
     float accel = 500.0f;
-    int   mode  = 2;
+    int   mode  = 0; // FULL_CONTROL (FF+PD) — motorlab default
     if (args.argc > 1)
         dist = static_cast<float>(atof(args.argv[1]));
     if (args.argc > 2)
