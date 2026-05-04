@@ -64,9 +64,14 @@
 
 // ================ Rotation PD Controller =============== //
 // Same formula structure as forward, applied to the rotational plant.
-// Td = Tm/2 again — motorlab parity. Re-run TURN-STEP after changing.
+// Td = Tm — mirrors mazerunner-core Orion (`const float ROT_TD = ROT_TM`).
+// motorlab uses Tm/2, but on Jurababa that quadruples ROT_KP and the IMU's
+// 100 Hz / 4-tap-MA feedback can't damp the resulting ringing. Aligning Td
+// with Tm (same choice we already made for forward) puts closed-loop
+// bandwidth at the rotational plant's natural break frequency. Re-run
+// TURN-STEP after any change here.
 #define ROT_ZETA 0.707f
-#define ROT_TD   (ROT_TM / 2.0f)
+#define ROT_TD   (ROT_TM)
 #define ROT_KP   (16.0f * ROT_TM / (ROT_KM * ROT_ZETA * ROT_ZETA * ROT_TD * ROT_TD))
 #define ROT_KD   ((8.0f * ROT_TM - ROT_TD) / (ROT_KM * ROT_TD))
 

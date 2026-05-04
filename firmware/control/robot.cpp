@@ -183,8 +183,16 @@ void Robot::smoothTurn(float degrees, float radius_mm)
 {
     float arc_length_mm = std::fabs(degrees) * (M_PI / 180.0f) * radius_mm;
 
-    forward_profile_.start(arc_length_mm, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS, 0.0f,
-                           ROBOT_BASE_ACCEL_MMPS2);
+    // Forward velocity is held at cruise through the entire rotation —
+    // mirrors mazerunner-core, where `motion.set_target_velocity(SEARCH_TURN_SPEED)`
+    // is held while `motion.turn()` operates only on the rotation profile.
+    // Setting final_speed == top_speed makes brakingDistance() == 0, so the
+    // forward profile cruises for arc_length_mm and lands at top_speed
+    // instead of decelerating to a stop. The rotation profile alone shapes
+    // heading; the curve traced is a clothoid (curvature ramps in/out),
+    // which is physically smoother than a constant-radius arc.
+    forward_profile_.start(arc_length_mm, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS,
+                           ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
     rotation_profile_.start(degrees, ROBOT_MAX_TURN_SPEED_DEGPS, 0.0f,
                             ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
     motion_done_ = false;
