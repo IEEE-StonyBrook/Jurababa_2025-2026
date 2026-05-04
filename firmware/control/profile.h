@@ -7,7 +7,7 @@
  * Time-based: each tick advances `current_velocity_` by `accel * LOOP_INTERVAL_S`
  * and advances `current_position_` by `current_velocity_ * LOOP_INTERVAL_S`.
  * State transitions test the COMMANDED `current_position_` against the braking-
- * distance criterion — never measured position. This decouples profile timing
+ * distance criterion, never measured position. This decouples profile timing
  * from controller tracking error.
  *
  * Units are scalar (mm or deg). Caller integrates controller tracking against
@@ -57,6 +57,7 @@ class Profile
     State state_;
     int   direction_;
     float target_distance_;
+    float target_speed_;
     float top_speed_;
     float final_speed_;
     float acceleration_;

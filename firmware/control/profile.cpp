@@ -5,9 +5,9 @@
 #include "config/motion.h"
 
 Profile::Profile()
-    : state_(State::Idle), direction_(1), target_distance_(0.0f), top_speed_(0.0f),
-      final_speed_(0.0f), acceleration_(0.0f), current_velocity_(0.0f), current_acceleration_(0.0f),
-      current_position_(0.0f)
+    : state_(State::Idle), direction_(1), target_distance_(0.0f), target_speed_(0.0f),
+      top_speed_(0.0f), final_speed_(0.0f), acceleration_(0.0f), current_velocity_(0.0f),
+      current_acceleration_(0.0f), current_position_(0.0f)
 {
 }
 
@@ -24,6 +24,7 @@ void Profile::start(float target_distance, float start_speed, float top_speed, f
     top_speed_       = std::fabs(top_speed);
     final_speed_     = std::fabs(final_speed);
     acceleration_    = std::fabs(acceleration);
+    target_speed_    = direction_ * top_speed_;
 
     current_velocity_     = std::fabs(start_speed) * direction_;
     current_acceleration_ = 0.0f;
@@ -61,46 +62,49 @@ void Profile::update()
         return;
 
     float delta_v        = acceleration_ * LOOP_INTERVAL_S;
-    float remaining_dist = target_distance_ - std::fabs(current_position_);
+    float remaining_dist = remaining();
 
-    // Pick target speed for this tick: braking phase decelerates toward
-    // final_speed; otherwise we keep climbing toward top_speed.
-    float target_speed = top_speed_;
     if (state_ == State::Accelerating && remaining_dist <= brakingDistance())
     {
-        state_       = State::Braking;
-        target_speed = final_speed_;
+        state_ = State::Braking;
     }
-    else if (state_ == State::Braking)
+
+    if (state_ == State::Braking)
     {
-        target_speed = final_speed_;
+        const float finish_speed = (final_speed_ == 0.0f) ? 5.0f : final_speed_;
+        target_speed_            = direction_ * finish_speed;
+    }
+    else
+    {
+        target_speed_ = direction_ * top_speed_;
     }
 
-    float signed_target = target_speed * direction_;
+    const float old_velocity = current_velocity_;
 
-    // Single-axis approach toward signed_target — implicit cruise when v == target.
-    if (current_velocity_ < signed_target)
+    // Single-axis approach toward target_speed_; implicit cruise when v == target.
+    if (current_velocity_ < target_speed_)
     {
         current_velocity_ += delta_v;
-        if (current_velocity_ > signed_target)
-            current_velocity_ = signed_target;
+        if (current_velocity_ > target_speed_)
+            current_velocity_ = target_speed_;
     }
-    else if (current_velocity_ > signed_target)
+    else if (current_velocity_ > target_speed_)
     {
         current_velocity_ -= delta_v;
-        if (current_velocity_ < signed_target)
-            current_velocity_ = signed_target;
+        if (current_velocity_ < target_speed_)
+            current_velocity_ = target_speed_;
     }
 
-    current_acceleration_ =
-        (state_ == State::Braking) ? -acceleration_ * direction_ : acceleration_ * direction_;
-    if (current_velocity_ == signed_target)
-        current_acceleration_ = 0.0f;
-
+    current_acceleration_ = (current_velocity_ - old_velocity) * LOOP_FREQUENCY_HZ;
     current_position_ += current_velocity_ * LOOP_INTERVAL_S;
 
-    if (remaining_dist < 0.125f)
-        state_ = State::Finished;
+    if (remaining() < 0.125f)
+    {
+        current_position_     = direction_ * target_distance_;
+        current_velocity_     = direction_ * final_speed_;
+        current_acceleration_ = 0.0f;
+        state_                = State::Finished;
+    }
 }
 
 void Profile::reset()
@@ -108,6 +112,7 @@ void Profile::reset()
     state_                = State::Idle;
     direction_            = 1;
     target_distance_      = 0.0f;
+    target_speed_         = 0.0f;
     top_speed_            = 0.0f;
     final_speed_          = 0.0f;
     acceleration_         = 0.0f;

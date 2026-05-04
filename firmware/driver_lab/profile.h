@@ -2,17 +2,16 @@
 #define DRIVER_LAB_PROFILE_H
 
 /**
- * @brief Time-based trapezoidal profile for motor lab trials
+ * @brief Time-based trapezoidal profile for DriverLab trials.
  *
- * Unlike control/profile.h which is position-based (uses encoder feedback),
- * this is purely time-based for generating predictable test waveforms.
+ * Mirrors UKMARS profile completion while remaining standalone from
+ * Robot/Drivetrain.
  */
 
 enum class DriverLabProfileState
 {
     IDLE,
     ACCELERATING,
-    CRUISING,
     BRAKING,
     FINISHED
 };
@@ -37,9 +36,11 @@ class DriverLabProfile
   private:
     DriverLabProfileState state_;
     float                 target_distance_;
+    float                 target_speed_;
     float                 top_speed_;
     float                 final_speed_;
     float                 acceleration_;
+    float                 current_acceleration_;
     float                 position_;
     float                 speed_;
     float                 direction_;
