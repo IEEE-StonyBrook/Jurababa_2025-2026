@@ -53,17 +53,50 @@
 
 // ----------------------------------------------------------------------------
 // Bluetooth UART as a stdio driver (used in DriverLab mode for printf mirroring)
+//
+// Software TX ring buffer sits between printf and uart0's 32-byte hardware
+// FIFO. printf can produce instant bursts (multi-line help banners, JSON
+// blobs, multi-row CSV flushes) much larger than the FIFO; without the ring,
+// every byte past 32 in a single printf call was silently dropped. The ring
+// absorbs the burst; bt_drain() pumps ring -> FIFO non-blockingly, called
+// both opportunistically at the end of every printf and once per 500 Hz
+// DriverLab tick to keep the FIFO topped off between printfs.
+//
+// Single-core context (DriverLab is Core 0 only, no UART IRQ wired in this
+// mode) means the ring has exactly one writer and one reader in the same
+// execution context, so no locking is needed. `volatile` is a hedge against
+// future IRQ-driven drain.
 // ----------------------------------------------------------------------------
+static constexpr uint32_t BT_RING_SIZE = 2048; // power of 2 -> AND-mask wrap
+static volatile uint32_t  bt_ring_head = 0;
+static volatile uint32_t  bt_ring_tail = 0;
+static char               bt_ring[BT_RING_SIZE];
+
+static void bt_ring_push(const char* buf, int length)
+{
+    for (int i = 0; i < length; i++)
+    {
+        uint32_t next = (bt_ring_head + 1) & (BT_RING_SIZE - 1);
+        if (next == bt_ring_tail)
+            return; // ring full -> drop. Better than blocking the 500 Hz loop.
+        bt_ring[bt_ring_head] = buf[i];
+        bt_ring_head          = next;
+    }
+}
+
+static void bt_drain()
+{
+    while (bt_ring_tail != bt_ring_head && uart_is_writable(uart0))
+    {
+        uart_putc_raw(uart0, bt_ring[bt_ring_tail]);
+        bt_ring_tail = (bt_ring_tail + 1) & (BT_RING_SIZE - 1);
+    }
+}
+
 static void uart_out_chars(const char* buf, int length)
 {
-    // Non-blocking mirror to uart0 (BT terminal at 115200 baud). Once the
-    // 32-byte hardware FIFO is full we drop further chars rather than
-    // stalling the 500 Hz control loop. The USB CDC sink (separate stdio
-    // driver) and the dashboard's serial reader continue to receive every
-    // byte at full fidelity. See CLAUDE.md "Loop dt".
-    for (int i = 0; i < length; i++)
-        if (uart_is_writable(uart0))
-            uart_putc_raw(uart0, buf[i]);
+    bt_ring_push(buf, length);
+    bt_drain(); // small printfs that fit in the FIFO go straight through
 }
 
 static stdio_driver_t bt_driver = {
@@ -224,6 +257,7 @@ static void runDriverLabMode(Battery* battery)
         imu.update();              // no-op for omega; reserved for future fusion
         driverlab.tick();          // advances active trial by exactly one 500 Hz step
         driverlab.processSerial(); // poll keyboard for new commands
+        bt_drain();                // pump TX ring -> uart0 FIFO between printfs
         sleep_until(next_tick);
         next_tick = delayed_by_us(next_tick, LOOP_PERIOD_US);
     }
