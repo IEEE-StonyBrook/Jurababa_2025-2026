@@ -13,7 +13,8 @@
  * Uses interrupt-driven receive to capture commands without blocking.
  *
  * Hardware config:
- *   - UART0 at 9600 baud (default)
+ *   - UART0 at 115200 baud (default; HC-05 must be reconfigured via
+ *     `AT+UART=115200,0,0` in AT mode — see runDriverLabMode comment)
  *   - TX/RX pins configurable
  *
  * Supported commands (single character):
@@ -35,7 +36,7 @@ class Bluetooth
         UNKNOWN
     };
 
-    Bluetooth(uart_inst_t* uart = uart0, uint32_t baud_rate = 9600, uint8_t tx_pin = 0,
+    Bluetooth(uart_inst_t* uart = uart0, uint32_t baud_rate = 115200, uint8_t tx_pin = 0,
               uint8_t rx_pin = 1);
 
     void init();

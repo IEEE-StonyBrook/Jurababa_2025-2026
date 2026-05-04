@@ -56,7 +56,7 @@
 // ----------------------------------------------------------------------------
 static void uart_out_chars(const char* buf, int length)
 {
-    // Non-blocking mirror to uart0 (BT terminal at 9600 baud). Once the
+    // Non-blocking mirror to uart0 (BT terminal at 115200 baud). Once the
     // 32-byte hardware FIFO is full we drop further chars rather than
     // stalling the 500 Hz control loop. The USB CDC sink (separate stdio
     // driver) and the dashboard's serial reader continue to receive every
@@ -157,12 +157,15 @@ static SensorMode selectSensorMode(uint32_t timeout_ms)
 // ----------------------------------------------------------------------------
 static void runDriverLabMode(Battery* battery)
 {
-    // 9600 baud matches the HC-05 Bluetooth module. The CSV mirror in
-    // uart_out_chars is non-blocking, so this slow baud cannot stall the
-    // 500 Hz control loop — chars overflow the FIFO and are dropped on the
-    // BT side instead. The USB CDC sink keeps full fidelity for the
-    // dashboard. See CLAUDE.md "Loop dt".
-    uart_init(uart0, 9600);
+    // 115200 baud matches the HC-05 Bluetooth module. The HC-05 must be
+    // reconfigured once via AT mode to use this rate (default ships at
+    // 9600): hold KEY high while powering on, open a terminal at 38400
+    // (HC-05 AT mode is always 38400), and send `AT+UART=115200,0,0`. At
+    // 9600, the BT link only carries ~960 B/s versus the reporter's
+    // ~3-9 KB/s peak, so the lossy uart_out_chars dropped trailing bytes
+    // (often the row-terminating '\n') and CSV rows arrived smushed
+    // together. See CLAUDE.md "Loop dt".
+    uart_init(uart0, 115200);
     gpio_set_function(PIN_BT_TX, GPIO_FUNC_UART);
     gpio_set_function(PIN_BT_RX, GPIO_FUNC_UART);
     uart_set_hw_flow(uart0, false, false);
@@ -231,7 +234,7 @@ static void runDriverLabMode(Battery* battery)
 // ----------------------------------------------------------------------------
 static void runCliMode(Battery* battery, SensorMode sensor_mode)
 {
-    Bluetooth bluetooth(uart0, 9600, PIN_BT_TX, PIN_BT_RX);
+    Bluetooth bluetooth(uart0, 115200, PIN_BT_TX, PIN_BT_RX);
     bluetooth.init();
     bluetooth.write("=== Jurababa CLI ===\r\n");
     Log::setBluetoothInterface(&bluetooth);
