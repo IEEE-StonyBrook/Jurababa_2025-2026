@@ -9,6 +9,7 @@
 
 #include "pico/stdlib.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -20,7 +21,7 @@ class ToF;
 class LineSensor;
 
 constexpr int DRIVERLAB_INPUT_BUFFER_SIZE = 64;
-constexpr int DRIVERLAB_MAX_ARGC          = 8;
+constexpr int DRIVERLAB_MAX_ARGC          = 24;
 constexpr int DRIVERLAB_HISTORY_SIZE      = 10;
 
 struct DriverLabArgs
@@ -115,6 +116,7 @@ class DriverLab
     void cmdTurn(const DriverLabArgs& args);
     void cmdTurnOpenLoop(const DriverLabArgs& args);
     void cmdTurnStep(const DriverLabArgs& args);
+    void cmdPath(const DriverLabArgs& args);
     void cmdSetRotZeta(const DriverLabArgs& args);
     void cmdSetRotTd(const DriverLabArgs& args);
     void cmdSetTurnKp(const DriverLabArgs& args);
@@ -148,6 +150,7 @@ class DriverLab
         Turn,         // TURN:      closed-loop rotation profile
         TurnOpenLoop, // TURN-OL:   differential-voltage sweep
         TurnStep,     // TURN-STEP: differential-voltage step response
+        Path,         // PATH:      no-ToF known path with IMU heading hold
     };
 
     // Cooperative countdown: paced by the 500 Hz tick() loop, so the main
@@ -291,6 +294,35 @@ class DriverLab
         std::vector<float> omegas;
     };
 
+    enum class PathSegmentType
+    {
+        Forward,
+        Turn
+    };
+
+    struct PathSegment
+    {
+        PathSegmentType type;
+        float           value; // Forward: mm. Turn: deg.
+    };
+
+    struct PathTrial
+    {
+        std::vector<PathSegment> segments;
+        size_t                   segment_index;
+        float                    speed_mmps;
+        float                    accel_mmps2;
+        float                    omega_degps;
+        float                    alpha_degps2;
+        float                    expected_yaw_deg;
+        float                    total_forward_mm;
+        float                    max_volts;
+        float                    old_left_speed_mmps;
+        float                    old_right_speed_mmps;
+        int                      segment_count;
+        int                      loop_count;
+    };
+
     // ------------------------------------------------------------------
     // Hardware
     // ------------------------------------------------------------------
@@ -341,6 +373,7 @@ class DriverLab
     TurnTrial         turn_;
     TurnOpenLoopTrial tol_;
     TurnStepTrial     tstep_;
+    PathTrial         path_;
 
     // ------------------------------------------------------------------
     // CLI buffers
@@ -389,6 +422,18 @@ class DriverLab
     void startTurnStepTrial(float diff_v, uint32_t duration_ms);
     void tickTurnStep();
     void finishTurnStep();
+
+    bool parsePathSequence(const DriverLabArgs& args, int first_param_index);
+    bool parsePathChunk(const char* chunk);
+    void appendPathForwardCells(int cells);
+    void appendPathTurn(float degrees);
+    void startPathTrial(float speed_mmps, float accel_mmps2, float omega_degps, float alpha_degps2);
+    void armPath();
+    void tickPath();
+    void finishPath();
+    void startNextPathSegment();
+    void tickPathForward(const PathSegment& segment);
+    void tickPathTurn(const PathSegment& segment);
     void printBluetoothDiagnostics();
 
     // Cooperative countdown: announces the trial, then trial_ = Countdown

@@ -6,7 +6,7 @@
 #define CONFIG_GEOMETRY_H
 
 // ===================== Wheels ===================== //
-#define WHEEL_DIAMETER_MM 42.2f // Measured outer diameter
+#define WHEEL_DIAMETER_MM 37.2f // Measured outer diameter
 #define WHEEL_BASE_MM     83.9f // Center-to-center between wheels
 
 // ===================== Encoder ===================== //

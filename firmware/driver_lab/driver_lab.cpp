@@ -45,12 +45,26 @@ inline float loopsToSeconds(int loops)
 
 inline float normalizeYawDelta(float delta)
 {
-    if (delta > 180.0f)
-        return delta - 360.0f;
-    if (delta < -180.0f)
-        return delta + 360.0f;
+    while (delta > 180.0f)
+        delta -= 360.0f;
+    while (delta < -180.0f)
+        delta += 360.0f;
     return delta;
 }
+
+bool startsNumericArg(const char* text)
+{
+    if (text == nullptr || *text == '\0')
+        return false;
+    if (*text == '+' || *text == '-')
+        ++text;
+    return std::isdigit(static_cast<unsigned char>(*text)) || *text == '.';
+}
+
+constexpr float PATH_DEFAULT_SPEED_MMPS   = DRIVERLAB_PATH_SPEED_MMPS;
+constexpr float PATH_DEFAULT_ACCEL_MMPS2  = DRIVERLAB_PATH_ACCEL_MMPS2;
+constexpr float PATH_DEFAULT_OMEGA_DEGPS  = DRIVERLAB_PATH_OMEGA_DEGPS;
+constexpr float PATH_DEFAULT_ALPHA_DEGPS2 = DRIVERLAB_PATH_ALPHA_DEGPS2;
 } // namespace
 
 // ============================================================================
@@ -75,6 +89,18 @@ DriverLab::DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encode
     countdown_.seconds_remaining = 0;
     countdown_.tick_in_second    = 0;
     countdown_.next_state        = TrialState::Idle;
+    path_.segment_index          = 0;
+    path_.speed_mmps             = PATH_DEFAULT_SPEED_MMPS;
+    path_.accel_mmps2            = PATH_DEFAULT_ACCEL_MMPS2;
+    path_.omega_degps            = PATH_DEFAULT_OMEGA_DEGPS;
+    path_.alpha_degps2           = PATH_DEFAULT_ALPHA_DEGPS2;
+    path_.expected_yaw_deg       = 0.0f;
+    path_.total_forward_mm       = 0.0f;
+    path_.max_volts              = 0.0f;
+    path_.old_left_speed_mmps    = 0.0f;
+    path_.old_right_speed_mmps   = 0.0f;
+    path_.segment_count          = 0;
+    path_.loop_count             = 0;
     clearInput();
     temp_buffer_[0] = '\0';
 }
@@ -225,6 +251,9 @@ void DriverLab::tick()
         case TrialState::TurnStep:
             tickTurnStep();
             break;
+        case TrialState::Path:
+            tickPath();
+            break;
     }
 }
 
@@ -312,6 +341,9 @@ void DriverLab::tickCountdown()
             break;
         case TrialState::TurnStep:
             armTurnStep();
+            break;
+        case TrialState::Path:
+            armPath();
             break;
         default:
             // No matching trial — fall back to Idle. Should never happen
@@ -1117,6 +1149,348 @@ void DriverLab::finishTurn()
 }
 
 // ============================================================================
+// PATH — blind known-path runner with IMU heading hold
+// ============================================================================
+
+void DriverLab::appendPathForwardCells(int cells)
+{
+    const float distance_mm = cells * CELL_SIZE_MM;
+    if (!path_.segments.empty() && path_.segments.back().type == PathSegmentType::Forward)
+    {
+        path_.segments.back().value += distance_mm;
+        return;
+    }
+    path_.segments.push_back({PathSegmentType::Forward, distance_mm});
+}
+
+void DriverLab::appendPathTurn(float degrees)
+{
+    path_.segments.push_back({PathSegmentType::Turn, degrees});
+}
+
+bool DriverLab::parsePathChunk(const char* chunk)
+{
+    if (chunk == nullptr)
+        return false;
+
+    const char* p = chunk;
+    while (*p != '\0')
+    {
+        if (*p == '#')
+        {
+            ++p;
+            continue;
+        }
+
+        char token = static_cast<char>(std::toupper(static_cast<unsigned char>(*p)));
+        ++p;
+
+        if (token == 'F')
+        {
+            int  cells      = 0;
+            bool has_digits = false;
+            while (std::isdigit(static_cast<unsigned char>(*p)))
+            {
+                has_digits = true;
+                cells      = cells * 10 + (*p - '0');
+                ++p;
+            }
+            if (has_digits && cells <= 0)
+            {
+                printf("PATH forward count must be positive.\n");
+                return false;
+            }
+            if (cells == 0)
+                cells = 1;
+            appendPathForwardCells(cells);
+            continue;
+        }
+
+        if (token == 'L' || token == 'R' || token == 'B')
+        {
+            if (std::isdigit(static_cast<unsigned char>(*p)))
+            {
+                printf("PATH only supports L/R/B as in-place turns, not %c%c...\n", token, *p);
+                return false;
+            }
+            if (token == 'L')
+                appendPathTurn(-90.0f);
+            else if (token == 'R')
+                appendPathTurn(90.0f);
+            else
+                appendPathTurn(180.0f);
+            continue;
+        }
+
+        printf("Invalid PATH token near '%c'\n", token);
+        return false;
+    }
+
+    return true;
+}
+
+bool DriverLab::parsePathSequence(const DriverLabArgs& args, int first_param_index)
+{
+    path_.segments.clear();
+    for (int i = 1; i < first_param_index; ++i)
+    {
+        if (!parsePathChunk(args.argv[i]))
+        {
+            path_.segments.clear();
+            return false;
+        }
+    }
+
+    if (path_.segments.empty())
+    {
+        printf("PATH expects a sequence, e.g. PATH FFFFLFFFFLFFF\n");
+        return false;
+    }
+    return true;
+}
+
+void DriverLab::startPathTrial(float speed_mmps, float accel_mmps2, float omega_degps,
+                               float alpha_degps2)
+{
+    path_.speed_mmps           = speed_mmps;
+    path_.accel_mmps2          = accel_mmps2;
+    path_.omega_degps          = omega_degps;
+    path_.alpha_degps2         = alpha_degps2;
+    path_.segment_index        = 0;
+    path_.expected_yaw_deg     = 0.0f;
+    path_.total_forward_mm     = 0.0f;
+    path_.max_volts            = 0.0f;
+    path_.old_left_speed_mmps  = 0.0f;
+    path_.old_right_speed_mmps = 0.0f;
+    path_.segment_count        = 0;
+    path_.loop_count           = 0;
+
+    printf("Segments: %lu, Speed: %.1f mm/s, Accel: %.1f mm/s^2, Omega: %.1f deg/s, "
+           "Alpha: %.1f deg/s^2\n",
+           static_cast<unsigned long>(path_.segments.size()), speed_mmps, accel_mmps2, omega_degps,
+           alpha_degps2);
+    beginCountdown("Blind Path Trial", TrialState::Path);
+}
+
+void DriverLab::armPath()
+{
+    if (left_encoder_)
+        left_encoder_->reset();
+    if (right_encoder_)
+        right_encoder_->reset();
+    prev_left_ticks_   = 0;
+    prev_right_ticks_  = 0;
+    left_position_mm_  = 0.0f;
+    right_position_mm_ = 0.0f;
+    resetEncoderMA();
+
+    imu_->reset();
+
+    forward_pid_.setGains(settings_.kP, settings_.kD);
+    rotation_pid_.setGains(settings_.turnKP, settings_.turnKD);
+    forward_pid_.reset();
+    rotation_pid_.reset();
+    forward_profile_.reset();
+    rotation_profile_.reset();
+
+    path_.segment_index        = 0;
+    path_.expected_yaw_deg     = 0.0f;
+    path_.total_forward_mm     = 0.0f;
+    path_.max_volts            = 0.0f;
+    path_.old_left_speed_mmps  = 0.0f;
+    path_.old_right_speed_mmps = 0.0f;
+    path_.segment_count        = 0;
+    path_.loop_count           = 0;
+
+    reporter_.begin();
+    printf("time_ms,segment,type,set_pos,actual_pos,set_speed,actual_speed,set_omega,"
+           "actual_yaw,yaw_error,fwd_pd_v,rot_pd_v,left_v,right_v\n");
+
+    trial_ = TrialState::Path;
+    startNextPathSegment();
+}
+
+void DriverLab::startNextPathSegment()
+{
+    if (path_.segment_index >= path_.segments.size())
+    {
+        finishPath();
+        return;
+    }
+
+    const PathSegment& segment = path_.segments[path_.segment_index];
+    path_.segment_count++;
+
+    if (segment.type == PathSegmentType::Forward)
+    {
+        forward_profile_.reset();
+        forward_profile_.start(segment.value, path_.speed_mmps, path_.accel_mmps2);
+        printf("PATH %lu/%lu: F %.1f mm\n", static_cast<unsigned long>(path_.segment_index + 1),
+               static_cast<unsigned long>(path_.segments.size()), segment.value);
+    }
+    else
+    {
+        rotation_profile_.reset();
+        rotation_profile_.start(segment.value, std::fabs(path_.omega_degps),
+                                std::fabs(path_.alpha_degps2));
+        printf("PATH %lu/%lu: TURN %.1f deg\n", static_cast<unsigned long>(path_.segment_index + 1),
+               static_cast<unsigned long>(path_.segments.size()), segment.value);
+    }
+}
+
+void DriverLab::tickPath()
+{
+    if (path_.segment_index >= path_.segments.size())
+    {
+        finishPath();
+        return;
+    }
+
+    const PathSegment& segment = path_.segments[path_.segment_index];
+    if (segment.type == PathSegmentType::Forward)
+        tickPathForward(segment);
+    else
+        tickPathTurn(segment);
+}
+
+void DriverLab::tickPathForward(const DriverLab::PathSegment& segment)
+{
+    forward_profile_.update(LOOP_INTERVAL_S);
+
+    const float set_speed = forward_profile_.speed();
+    const float fwd_change_mm =
+        0.5f * (left_velocity_mmps_ + right_velocity_mmps_) * LOOP_INTERVAL_S;
+    const float forward_output = forward_pid_.update(set_speed, fwd_change_mm);
+
+    const float rot_change_deg  = imu_->robot_rot_change();
+    const float rotation_output = rotation_pid_.update(0.0f, rot_change_deg);
+
+    const float left_speed_mmps  = set_speed;
+    const float right_speed_mmps = set_speed;
+    const float left_accel_mmps2 =
+        (left_speed_mmps - path_.old_left_speed_mmps) * LOOP_FREQUENCY_HZ;
+    const float right_accel_mmps2 =
+        (right_speed_mmps - path_.old_right_speed_mmps) * LOOP_FREQUENCY_HZ;
+    path_.old_left_speed_mmps  = left_speed_mmps;
+    path_.old_right_speed_mmps = right_speed_mmps;
+
+    const float left_ff_volts = feedforwardVolts(left_speed_mmps, left_accel_mmps2, /*left=*/true);
+    const float right_ff_volts =
+        feedforwardVolts(right_speed_mmps, right_accel_mmps2, /*left=*/false);
+    const float left_volts =
+        utils::clampAbs(left_ff_volts + forward_output - rotation_output, MAX_VOLTAGE);
+    const float right_volts =
+        utils::clampAbs(right_ff_volts + forward_output + rotation_output, MAX_VOLTAGE);
+    setVoltages(left_volts, right_volts);
+
+    const float actual_speed = 0.5f * (left_velocity_mmps_ + right_velocity_mmps_);
+    const float actual_pos   = 0.5f * (left_position_mm_ + right_position_mm_);
+    const float yaw_error    = normalizeYawDelta(path_.expected_yaw_deg - imu_->robot_angle());
+    const float abs_volts    = std::max(std::fabs(left_volts), std::fabs(right_volts));
+    if (abs_volts > path_.max_volts)
+        path_.max_volts = abs_volts;
+
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    if (reporter_.isTimeToReport(now_ms))
+    {
+        const uint32_t elapsed = now_ms - reporter_.startTime();
+        printf("%lu,%lu,F,%.2f,%.2f,%.2f,%.2f,0.00,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f\n",
+               static_cast<unsigned long>(elapsed),
+               static_cast<unsigned long>(path_.segment_index + 1), forward_profile_.position(),
+               actual_pos, set_speed, actual_speed, imu_->robot_angle(), yaw_error, forward_output,
+               rotation_output, left_volts, right_volts);
+        reporter_.incrementSampleCount();
+    }
+
+    path_.loop_count++;
+    if (forward_profile_.finished())
+    {
+        path_.total_forward_mm += segment.value;
+        path_.segment_index++;
+        startNextPathSegment();
+    }
+}
+
+void DriverLab::tickPathTurn(const DriverLab::PathSegment& segment)
+{
+    rotation_profile_.update(LOOP_INTERVAL_S);
+
+    const float set_omega        = rotation_profile_.speed();
+    const float profile_dir      = (segment.value >= 0.0f) ? 1.0f : -1.0f;
+    const float signed_set_omega = profile_dir * set_omega;
+
+    const float wheelbase_radius_mm = WHEEL_BASE_MM / 2.0f;
+    const float tangent_speed_mmps =
+        signed_set_omega * (static_cast<float>(M_PI) / 180.0f) * wheelbase_radius_mm;
+    const float left_speed_mmps  = -tangent_speed_mmps;
+    const float right_speed_mmps = tangent_speed_mmps;
+
+    const float left_accel_mmps2 =
+        (left_speed_mmps - path_.old_left_speed_mmps) * LOOP_FREQUENCY_HZ;
+    const float right_accel_mmps2 =
+        (right_speed_mmps - path_.old_right_speed_mmps) * LOOP_FREQUENCY_HZ;
+    path_.old_left_speed_mmps  = left_speed_mmps;
+    path_.old_right_speed_mmps = right_speed_mmps;
+
+    const float rot_change_deg  = imu_->robot_rot_change();
+    const float rotation_output = rotation_pid_.update(signed_set_omega, rot_change_deg);
+    const float left_ff_volts = feedforwardVolts(left_speed_mmps, left_accel_mmps2, /*left=*/true);
+    const float right_ff_volts =
+        feedforwardVolts(right_speed_mmps, right_accel_mmps2, /*left=*/false);
+
+    const float left_volts  = utils::clampAbs(left_ff_volts - rotation_output, MAX_VOLTAGE);
+    const float right_volts = utils::clampAbs(right_ff_volts + rotation_output, MAX_VOLTAGE);
+    setVoltages(left_volts, right_volts);
+
+    const float signed_profile_position = profile_dir * rotation_profile_.position();
+    const float yaw_error =
+        normalizeYawDelta(path_.expected_yaw_deg + signed_profile_position - imu_->robot_angle());
+    const float abs_volts = std::max(std::fabs(left_volts), std::fabs(right_volts));
+    if (abs_volts > path_.max_volts)
+        path_.max_volts = abs_volts;
+
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    if (reporter_.isTimeToReport(now_ms))
+    {
+        const uint32_t elapsed = now_ms - reporter_.startTime();
+        printf("%lu,%lu,T,0.00,0.00,0.00,0.00,%.2f,%.2f,%.2f,0.000,%.3f,%.3f,%.3f\n",
+               static_cast<unsigned long>(elapsed),
+               static_cast<unsigned long>(path_.segment_index + 1), signed_set_omega,
+               imu_->robot_angle(), yaw_error, rotation_output, left_volts, right_volts);
+        reporter_.incrementSampleCount();
+    }
+
+    path_.loop_count++;
+    if (rotation_profile_.finished())
+    {
+        path_.expected_yaw_deg += segment.value;
+        path_.segment_index++;
+        startNextPathSegment();
+    }
+}
+
+void DriverLab::finishPath()
+{
+    stopMotors();
+
+    const float final_yaw   = imu_->robot_angle();
+    const float final_error = normalizeYawDelta(path_.expected_yaw_deg - final_yaw);
+
+    printf("\n=== Blind Path Complete ===\n");
+    printf("Segments:          %d\n", path_.segment_count);
+    printf("Forward distance:  %.1f mm (%.2f cells)\n", path_.total_forward_mm,
+           path_.total_forward_mm / CELL_SIZE_MM);
+    printf("Expected yaw:      %.2f deg\n", normalizeYawDelta(path_.expected_yaw_deg));
+    printf("Final yaw:         %.2f deg\n", final_yaw);
+    printf("Final yaw error:   %+.2f deg\n", final_error);
+    printf("Max motor volts:   %.2f V\n", path_.max_volts);
+    printf("\n");
+    printBluetoothDiagnostics();
+    printPrompt();
+    trial_ = TrialState::Idle;
+}
+
+// ============================================================================
 // TURN-OL — open-loop differential-voltage sweep, measures rotational kM
 // ============================================================================
 
@@ -1667,6 +2041,8 @@ void DriverLab::executeCommand(const DriverLabArgs& args)
         cmdTurnOpenLoop(args);
     else if (strcmp(cmd, "TURNSTEP") == 0 || strcmp(cmd, "TSTEP") == 0)
         cmdTurnStep(args);
+    else if (strcmp(cmd, "PATH") == 0)
+        cmdPath(args);
     else if (strcmp(cmd, "ROT_ZETA") == 0)
         cmdSetRotZeta(args);
     else if (strcmp(cmd, "ROT_TD") == 0)
@@ -1762,6 +2138,9 @@ void DriverLab::cmdHelp()
     printf("       mode: 0=FF only, 1=PD only, 2=FF+PD\n");
     printf("  TURN [deg deg/s deg/s^2]        Turn in place    (default: 90 360 720)\n");
     printf("       +deg=CCW(left), -deg=CW(right)\n");
+    printf("  PATH seq [spd acc omg alp]      Blind path, defaults use config test speeds\n");
+    printf("       examples: PATH FFFFLFFFFLFFF | PATH F4#L#F4#L#F3\n");
+    printf("       tokens: F/Fn forward cells, L=-90, R=+90, B=180\n");
     printf("  TURNOL  [max step settle_ms]    Rotation OL sweep  (default: 3 0.5 800)\n");
     printf("  TURNSTEP [diff_v duration_ms]   Rotation step      (default: 1.5 1000)\n");
     printf("\n");
@@ -2258,6 +2637,68 @@ void DriverLab::cmdTurnStep(const DriverLabArgs& args)
     if (args.argc > 2)
         duration_ms = static_cast<uint32_t>(atoi(args.argv[2]));
     startTurnStepTrial(diff_v, duration_ms);
+}
+
+void DriverLab::cmdPath(const DriverLabArgs& args)
+{
+    if (trial_ != TrialState::Idle)
+    {
+        printf("A trial is already running. Send X first.\n");
+        return;
+    }
+
+    int first_param_index = args.argc;
+    for (int i = 1; i < args.argc; ++i)
+    {
+        if (startsNumericArg(args.argv[i]))
+        {
+            first_param_index = i;
+            break;
+        }
+    }
+
+    if (!parsePathSequence(args, first_param_index))
+        return;
+
+    float speed = PATH_DEFAULT_SPEED_MMPS;
+    float accel = PATH_DEFAULT_ACCEL_MMPS2;
+    float omega = PATH_DEFAULT_OMEGA_DEGPS;
+    float alpha = PATH_DEFAULT_ALPHA_DEGPS2;
+
+    int param = first_param_index;
+    if (param < args.argc)
+    {
+        if (!parseFloat(args, param, 1.0f, 1000.0f, speed))
+            return;
+        ++param;
+    }
+    if (param < args.argc)
+    {
+        if (!parseFloat(args, param, 1.0f, 5000.0f, accel))
+            return;
+        ++param;
+    }
+    if (param < args.argc)
+    {
+        if (!parseFloat(args, param, 1.0f, 720.0f, omega))
+            return;
+        ++param;
+    }
+    if (param < args.argc)
+    {
+        if (!parseFloat(args, param, 1.0f, 7200.0f, alpha))
+            return;
+        ++param;
+    }
+
+    if (param < args.argc)
+    {
+        printf("PATH usage: PATH <sequence> [speed_mmps] [accel_mmps2] [omega_degps] "
+               "[alpha_degps2]\n");
+        return;
+    }
+
+    startPathTrial(speed, accel, omega, alpha);
 }
 
 void DriverLab::cmdSetRotZeta(const DriverLabArgs& args)

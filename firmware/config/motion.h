@@ -45,6 +45,14 @@
 #define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2     2866.0f // UKMARS SS90E starting point
 #define ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM 95.0f   // Starting ToF trigger calibration
 
+// ================ Blind Path Test Defaults ============= //
+// DriverLab PATH is a no-ToF known-layout test runner. Keep these gentler
+// than the competition defaults so blind maze tests start safely.
+#define DRIVERLAB_PATH_SPEED_MMPS   180.0f
+#define DRIVERLAB_PATH_ACCEL_MMPS2  700.0f
+#define DRIVERLAB_PATH_OMEGA_DEGPS  180.0f
+#define DRIVERLAB_PATH_ALPHA_DEGPS2 720.0f
+
 // =============== Completion Tolerances ================= //
 // Used by line_follower yaw-snap; main Robot now relies purely on profile.finished().
 #define ROBOT_YAW_TOLERANCE_DEG 0.5f

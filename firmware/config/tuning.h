@@ -19,7 +19,7 @@
 
 // ===================== Motor Model ===================== //
 // Forward (linear) motor model — from OL + STEP trials.
-#define MOTOR_KM 359.67f // mm/s per volt  (steady-state gain)
+#define MOTOR_KM 317.06f // mm/s per volt  (steady-state gain)
 #define MOTOR_TM 0.080f  // seconds        (time constant)
 
 // Rotational motor model — from TURN-OL + TURN-STEP trials.
@@ -33,8 +33,8 @@
 #define FORWARD_KVR (1.0f / MOTOR_KM) // Right V/(mm/s)
 #define FORWARD_KSL 0.6907f           // Left  static friction (V)
 #define FORWARD_KSR 0.5701f           // Right static friction (V)
-#define FORWARD_KAL 0.0001934f        // Left  V/(mm/s^2)   = Tm/kM
-#define FORWARD_KAR 0.0001934f        // Right V/(mm/s^2)
+#define FORWARD_KAL 0.0002194f        // Left  V/(mm/s^2)   = Tm/kM
+#define FORWARD_KAR 0.0002194f        // Right V/(mm/s^2)
 
 // ================ Forward PD Controller ================ //
 // Mazerunner-core / motorlab formulation:
