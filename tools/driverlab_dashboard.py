@@ -345,23 +345,44 @@ class Dashboard(QMainWindow):
         rot_grid = QGridLayout()
         rot_grid.setContentsMargins(6, 10, 6, 6)
 
-        self.spin_turn_kp = self.double_spinbox("turnKP", 0.0, 8.0, 0.01, 4)
-        self.spin_turn_kp.setToolTip("Turn proportional gain: higher = snappier turns.\nAlso used for OL steering correction.")
-        self.spin_turn_kd = self.double_spinbox("turnKD", 0.0, 2.0, 0.001, 4)
-        self.spin_turn_kd.setToolTip("Turn derivative gain: damps turn overshoot.\nIncrease if turns ring/oscillate.")
+        self.spin_rot_zeta = self.double_spinbox("rotZeta", 0.0, 2.0, 0.005, 3)
+        self.spin_rot_zeta.setToolTip("Rotation damping ratio: <1 underdamped (turn rings), =1 critical, >1 overdamped (sluggish)")
+        self.spin_rot_td = self.double_spinbox("rotTd", 0.0, 1.00, 0.01, 3)
+        self.spin_rot_td.setToolTip("Rotation derivative time: smaller = snappier turns at risk of saturation.\nDefault Td = ROT_TM (matches plant bandwidth).")
+        self.spin_turn_kp = self.double_spinbox("turnKP", 0.0, 8.0, 0.001, 4)
+        self.spin_turn_kp.setToolTip("Turn proportional gain: auto-computed from rotZeta & rotTd.\nAlso used for OL steering correction.")
+        self.spin_turn_kd = self.double_spinbox("turnKD", 0.0, 2.0, 0.0001, 4)
+        self.spin_turn_kd.setToolTip("Turn derivative gain: auto-computed from rotZeta & rotTd.\nIncrease if turns ring/oscillate.")
 
+        self.spin_rot_zeta.valueChanged.connect(self.parameter_change)
+        self.spin_rot_td.valueChanged.connect(self.parameter_change)
         self.spin_turn_kp.valueChanged.connect(self.parameter_change)
         self.spin_turn_kd.valueChanged.connect(self.parameter_change)
 
+        lbl_rz = QLabel("Damping (rotZeta):")
+        lbl_rz.setAlignment(RA)
+        rot_grid.addWidget(lbl_rz, 0, 0)
+        rot_grid.addWidget(self.spin_rot_zeta, 0, 1)
+
+        lbl_rtd = QLabel("Derivative Time (rotTd):")
+        lbl_rtd.setAlignment(RA)
+        rot_grid.addWidget(lbl_rtd, 1, 0)
+        rot_grid.addWidget(self.spin_rot_td, 1, 1)
+
+        sep = QLabel("--- derived gains ---")
+        sep.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sep.setStyleSheet("color: #666; font-size: 10px;")
+        rot_grid.addWidget(sep, 2, 0, 1, 2)
+
         lbl = QLabel("turnKP:")
         lbl.setAlignment(RA)
-        rot_grid.addWidget(lbl, 0, 0)
-        rot_grid.addWidget(self.spin_turn_kp, 0, 1)
+        rot_grid.addWidget(lbl, 3, 0)
+        rot_grid.addWidget(self.spin_turn_kp, 3, 1)
 
         lbl = QLabel("turnKD:")
         lbl.setAlignment(RA)
-        rot_grid.addWidget(lbl, 1, 0)
-        rot_grid.addWidget(self.spin_turn_kd, 1, 1)
+        rot_grid.addWidget(lbl, 4, 0)
+        rot_grid.addWidget(self.spin_turn_kd, 4, 1)
 
         rot_group.setLayout(rot_grid)
         settings_layout.addWidget(rot_group)
@@ -754,6 +775,18 @@ class Dashboard(QMainWindow):
                 kd = (8 * tm - td) / td / km
                 self.set_safely(self.spin_kp, kp)
                 self.set_safely(self.spin_kd, kd)
+        elif spinner.objectName() == "rotZeta" or spinner.objectName() == "rotTd":
+            if "rot_tm" in self.parameters and "rot_kM" in self.parameters:
+                rot_tm = self.parameters["rot_tm"]
+                rot_km = self.parameters["rot_kM"]
+                z = self.spin_rot_zeta.value()
+                td = self.spin_rot_td.value()
+                td = max(td, 0.005)
+                z = max(z, 0.005)
+                turn_kp = 16 * rot_tm / rot_km / z / z / td / td
+                turn_kd = (8 * rot_tm - td) / td / rot_km
+                self.set_safely(self.spin_turn_kp, turn_kp)
+                self.set_safely(self.spin_turn_kd, turn_kd)
 
     def option_select(self):
         radio_button = self.sender()
@@ -961,6 +994,10 @@ class Dashboard(QMainWindow):
             self.lbl_km_val.setText(f"{self.parameters['kM']:.2f}")
         if 'Tm' in self.parameters:
             self.lbl_tm_val.setText(f"{self.parameters['Tm']:.5f}")
+        if 'rot_zeta' in self.parameters:
+            self.set_safely(self.spin_rot_zeta, self.parameters['rot_zeta'])
+        if 'rot_td' in self.parameters:
+            self.set_safely(self.spin_rot_td, self.parameters['rot_td'])
         if 'turnKP' in self.parameters:
             self.set_safely(self.spin_turn_kp, self.parameters['turnKP'])
         if 'turnKD' in self.parameters:
@@ -984,6 +1021,8 @@ class Dashboard(QMainWindow):
         cmds.append(f"TD {self.spin_td.value()}")
         cmds.append(f"KP {self.spin_kp.value()}")
         cmds.append(f"KD {self.spin_kd.value()}")
+        cmds.append(f"ROT_ZETA {self.spin_rot_zeta.value()}")
+        cmds.append(f"ROT_TD {self.spin_rot_td.value()}")
         cmds.append(f"TURN_KP {self.spin_turn_kp.value()}")
         cmds.append(f"TURN_KD {self.spin_turn_kd.value()}")
 

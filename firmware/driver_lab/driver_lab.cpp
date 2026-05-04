@@ -1,5 +1,6 @@
 #include "driver_lab/driver_lab.h"
 
+#include "common/utils.h"
 #include "config/config.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
@@ -367,6 +368,11 @@ void DriverLab::armOpenLoop()
     right_position_mm_ = 0.0f;
     resetEncoderMA();
 
+    // Capture starting heading as the steering trim's reference. Relative
+    // (not absolute) so the trial works regardless of initial yaw, and we
+    // avoid imu_->reset() to keep absolute yaw intact for any other consumer.
+    ol_.yaw_initial_deg = imu_->robot_angle();
+
     reporter_.begin();
     reporter_.printOpenLoopStereoHeader();
 
@@ -403,22 +409,47 @@ void DriverLab::tickOpenLoop()
     if (ol_.v_count < OpenLoopTrial::VEL_WIN)
         ol_.v_count++;
 
-    // Voltage was set when the step armed; H-bridge holds it.
+    // Heading-hold steering trim: keep the robot tracking straight across
+    // the multi-step sweep so it doesn't drift into walls. Sign convention
+    // matches TURN-OL (setVoltages(-V, +V) -> CCW positive omega), so a
+    // positive heading drift gets a positive trim -> left_v > right_v ->
+    // CW correction.
+    //
+    // Gains derived from the live rotation plant (settings_.rot_kM) so a
+    // TURN-OL recalibration auto-retunes this loop -- same pattern as
+    // recalculateRotation() in settings.h. At this slow bandwidth
+    // (rot_tm * omega_n ~ 0.5 << 1) the plant is approximately a pure
+    // integrator, so the textbook 2nd-order PD design applies:
+    //   kp = omega_n^2          / rot_kM
+    //   kd = 2 * zeta * omega_n / rot_kM
+    const float kp_vpdeg  = (OL_STEERING_OMEGA_N_RAD * OL_STEERING_OMEGA_N_RAD) / settings_.rot_kM;
+    const float kd_vpdps  = (2.0f * OL_STEERING_ZETA * OL_STEERING_OMEGA_N_RAD) / settings_.rot_kM;
+    const float h_err_deg = utils::wrapAngle180(imu_->robot_angle() - ol_.yaw_initial_deg);
+    const float trim_v    = utils::clampAbs(kp_vpdeg * h_err_deg + kd_vpdps * imu_->robot_omega(),
+                                            OL_STEERING_TRIM_MAX_V);
+    const float left_v    = ol_.current_voltage + trim_v;
+    const float right_v   = ol_.current_voltage - trim_v;
+    setVoltages(left_v, right_v);
 
     if (ol_.step_loop_count >= SKIP_SAMPLES)
     {
         ol_.step_left_speeds.push_back(left_speed);
         ol_.step_right_speeds.push_back(right_speed);
-        ol_.step_left_volts.push_back(ol_.current_voltage);
-        ol_.step_right_volts.push_back(ol_.current_voltage);
+        // Log the ACTUAL per-side voltage (post-trim), not the commanded
+        // base. The per-motor regression in finishOpenLoop() consumes the
+        // steady-state mean of these buffers, so any persistent trim bias
+        // (e.g. from drivetrain asymmetry) shifts both regression axes
+        // together along the true plant line -- kM/kS extract correctly
+        // regardless of trim magnitude.
+        ol_.step_left_volts.push_back(left_v);
+        ol_.step_right_volts.push_back(right_v);
 
         const int kept = ol_.step_loop_count - SKIP_SAMPLES;
         if (kept % OUTPUT_EVERY == 0)
         {
             const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
-            reporter_.reportOpenLoopStereo(now_ms, ol_.current_voltage, ol_.current_voltage,
-                                           ol_.current_voltage, left_speed, right_speed,
-                                           imu_->robot_angle());
+            reporter_.reportOpenLoopStereo(now_ms, ol_.current_voltage, left_v, right_v, left_speed,
+                                           right_speed, imu_->robot_angle());
         }
     }
 
@@ -442,12 +473,30 @@ void DriverLab::tickOpenLoop()
         right_ss /= static_cast<float>(avg_count);
     }
 
-    ol_.left_voltages.push_back(ol_.current_voltage);
+    // Steady-state mean of ACTUAL per-side voltage over the same tail used
+    // for left_ss / right_ss. With heading-hold settled, this collapses to
+    // ol_.current_voltage; if trim sits at a bias it carries through to the
+    // regression honestly. Using the same avg_count window keeps voltage and
+    // speed time-aligned.
+    float left_v_ss = 0.0f, right_v_ss = 0.0f;
+    if (avg_count > 0)
+    {
+        for (size_t i = ol_.step_left_volts.size() - avg_count; i < ol_.step_left_volts.size(); i++)
+        {
+            left_v_ss += ol_.step_left_volts[i];
+            right_v_ss += ol_.step_right_volts[i];
+        }
+        left_v_ss /= static_cast<float>(avg_count);
+        right_v_ss /= static_cast<float>(avg_count);
+    }
+
+    ol_.left_voltages.push_back(left_v_ss);
     ol_.left_speeds.push_back(left_ss);
-    ol_.right_voltages.push_back(ol_.current_voltage);
+    ol_.right_voltages.push_back(right_v_ss);
     ol_.right_speeds.push_back(right_ss);
-    const float avg_speed = (left_ss + right_ss) / 2.0f;
-    ol_.combined_voltages.push_back(ol_.current_voltage);
+    const float avg_speed   = (left_ss + right_ss) / 2.0f;
+    const float avg_voltage = (left_v_ss + right_v_ss) / 2.0f;
+    ol_.combined_voltages.push_back(avg_voltage);
     ol_.combined_speeds.push_back(avg_speed);
 
     // 63.2% rise time → coarse Tm sample
@@ -737,11 +786,11 @@ void DriverLab::finishStep()
     if (found && tm_calculated > 0.001f && tm_calculated < 2.0f)
     {
         settings_.tm = tm_calculated;
-        settings_.td = tm_calculated / 2.0f; // mazerunner-core convention
+        settings_.td = tm_calculated; // Jurababa: Td = Tm uniformly (see tuning.h:52-59)
         settings_.recalculateDerived();
         printf("Tm = %.5f s  (motor time constant)\n", settings_.tm);
         printf("  -> kA = %.7f V/(mm/s^2)\n", settings_.kA);
-        printf("  -> Td = %.5f s  (= Tm/2)\n", settings_.td);
+        printf("  -> Td = %.5f s  (= Tm)\n", settings_.td);
         printf("  -> kP = %.5f, kD = %.5f  (recomputed)\n", settings_.kP, settings_.kD);
     }
     else
@@ -1377,7 +1426,7 @@ void DriverLab::finishTurnStep()
     if (found && rot_tm_calc > 0.001f && rot_tm_calc < 1.0f)
     {
         settings_.rot_tm = rot_tm_calc;
-        settings_.rot_td = rot_tm_calc; // mazerunner convention: Td = Tm
+        settings_.rot_td = rot_tm_calc; // Jurababa: Td = Tm uniformly (see tuning.h:52-59)
         settings_.recalculateRotation();
         printf("ROT_TM = %.5f s\n", settings_.rot_tm);
         printf("  -> ROT_TD = %.5f s\n", settings_.rot_td);
@@ -1578,6 +1627,10 @@ void DriverLab::executeCommand(const DriverLabArgs& args)
         cmdTurnOpenLoop(args);
     else if (strcmp(cmd, "TURNSTEP") == 0 || strcmp(cmd, "TSTEP") == 0)
         cmdTurnStep(args);
+    else if (strcmp(cmd, "ROT_ZETA") == 0)
+        cmdSetRotZeta(args);
+    else if (strcmp(cmd, "ROT_TD") == 0)
+        cmdSetRotTd(args);
     else if (strcmp(cmd, "TURN_KP") == 0)
         cmdSetTurnKp(args);
     else if (strcmp(cmd, "TURN_KD") == 0)
@@ -2162,6 +2215,36 @@ void DriverLab::cmdTurnStep(const DriverLabArgs& args)
     if (args.argc > 2)
         duration_ms = static_cast<uint32_t>(atoi(args.argv[2]));
     startTurnStepTrial(diff_v, duration_ms);
+}
+
+void DriverLab::cmdSetRotZeta(const DriverLabArgs& args)
+{
+    float val;
+    if (parseFloat(args, 1, 0.1f, 2.0f, val))
+    {
+        settings_.rot_zeta = val;
+        settings_.recalculateRotation();
+        printf("rot_zeta = %.5f (turnKP, turnKD updated)\n", settings_.rot_zeta);
+    }
+    else if (args.argc == 1)
+    {
+        printf("rot_zeta = %.5f\n", settings_.rot_zeta);
+    }
+}
+
+void DriverLab::cmdSetRotTd(const DriverLabArgs& args)
+{
+    float val;
+    if (parseFloat(args, 1, 0.001f, 1.0f, val))
+    {
+        settings_.rot_td = val;
+        settings_.recalculateRotation();
+        printf("rot_td = %.5f (turnKP, turnKD updated)\n", settings_.rot_td);
+    }
+    else if (args.argc == 1)
+    {
+        printf("rot_td = %.5f\n", settings_.rot_td);
+    }
 }
 
 void DriverLab::cmdSetTurnKp(const DriverLabArgs& args)

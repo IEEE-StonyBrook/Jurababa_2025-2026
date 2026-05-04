@@ -144,4 +144,26 @@ constexpr uint8_t CONTROL_FLAG_USE_FEEDFORWARD = 0x01;
 constexpr uint8_t CONTROL_FLAG_USE_CONTROLLER  = 0x02;
 constexpr uint8_t CONTROL_FLAG_FULL_CONTROL    = 0x03;
 
+// OL steering correction: gentle heading-hold during forward voltage sweeps
+// so the robot tracks straight without bumping walls. Symmetric trim
+// (left_v = base + trim, right_v = base - trim) on the rotation plant. The
+// regression uses the actual per-side voltage logged each tick, so any
+// persistent trim bias is captured truthfully and does not skew kM/kS.
+//
+// Bandwidth deliberately slow (omega_n = 3 rad/s, zeta = 1.0). The original
+// design at omega_n = 5 rad/s caused a ~5 deg limit cycle on the bench:
+// rot_tm = 0.106 s puts omega_n*rot_tm ~ 0.53, which adds ~28 deg of phase
+// erosion right at crossover, on top of IMU 100 Hz ZOH delay and gearbox
+// stiction/backlash that the linear PD design doesn't see. Dropping to
+// 3 rad/s pushes crossover well below the rotation lag pole (omega*tau ~
+// 0.32) and cuts both Kp and Kd, killing the oscillation with margin.
+//
+// Gains derived at use site from settings_.rot_kM, mirroring
+// recalculateRotation() above:
+//   kp_vpdeg = omega_n^2          / rot_kM
+//   kd_vpdps = 2 * zeta * omega_n / rot_kM
+constexpr float OL_STEERING_OMEGA_N_RAD = 3.0f; // closed-loop bandwidth, rad/s
+constexpr float OL_STEERING_ZETA        = 1.0f; // damping ratio (overdamped feel)
+constexpr float OL_STEERING_TRIM_MAX_V  = 0.5f; // |trim| clamp, volts
+
 #endif

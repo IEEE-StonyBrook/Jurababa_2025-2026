@@ -115,6 +115,8 @@ class DriverLab
     void cmdTurn(const DriverLabArgs& args);
     void cmdTurnOpenLoop(const DriverLabArgs& args);
     void cmdTurnStep(const DriverLabArgs& args);
+    void cmdSetRotZeta(const DriverLabArgs& args);
+    void cmdSetRotTd(const DriverLabArgs& args);
     void cmdSetTurnKp(const DriverLabArgs& args);
     void cmdSetTurnKd(const DriverLabArgs& args);
     void cmdVoltage(const DriverLabArgs& args);
@@ -180,6 +182,12 @@ class DriverLab
         float                right_pos_buf[VEL_WIN];
         int                  v_idx;
         int                  v_count;
+
+        // Heading-hold reference: yaw at trial arm. Steering trim drives
+        // (yaw_now - yaw_initial_deg) -> 0 to keep the robot tracking
+        // straight during the multi-step voltage sweep. See
+        // OL_STEERING_* in settings.h.
+        float yaw_initial_deg;
 
         // Per-step rolling buffers (current step only)
         std::vector<float> step_left_speeds;
