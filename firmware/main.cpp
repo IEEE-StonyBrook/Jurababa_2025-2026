@@ -3,12 +3,12 @@
  *
  * Two top-level operating modes:
  *
- *   1. DriverLab (press 'M' within 3 s of boot)
+ *   1. DriverLab (default)
  *        Single-core motor characterization CLI. Core 0 owns motors,
  *        encoders, IMU, and either ToFs or the line sensor (mutually
  *        exclusive on I2C0).
  *
- *   2. Cli (default)
+ *   2. Cli (press 'N' within 3 s of boot)
  *        UKMARS mazerunner-core-style command loop. Same dispatch table
  *        for both ToF and LineSensor sub-modes:
  *          - TOF        : Core 1 launches and runs `Robot` at 500 Hz;
@@ -17,12 +17,11 @@
  *                         `LineFollower`.
  *
  * At boot:
- *   Press 'M' within 3 s → DriverLab.
- *   Else → prompt for sensor mode (T/L), then run Cli.
+ *   Press 'N' within 3 s → prompt for sensor mode (T/L), then run Cli.
+ *   Else → DriverLab.
  */
 
 #include <array>
-#include <stdarg.h>
 #include <stdio.h>
 #include <string>
 #include <vector>
@@ -36,11 +35,11 @@
 #include "app/core1.h"
 #include "app/firmware_api.h"
 #include "app/multicore.h"
+#include "common/bluetooth_stdio.h"
 #include "common/log.h"
 #include "config/config.h"
 #include "control/drivetrain.h"
 #include "control/line_follower.h"
-#include "control/robot.h"
 #include "driver_lab/driver_lab.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
@@ -67,20 +66,48 @@
 // execution context, so no locking is needed. `volatile` is a hedge against
 // future IRQ-driven drain.
 // ----------------------------------------------------------------------------
-static constexpr uint32_t BT_RING_SIZE = 2048; // power of 2 -> AND-mask wrap
-static volatile uint32_t  bt_ring_head = 0;
-static volatile uint32_t  bt_ring_tail = 0;
+static constexpr uint32_t BT_RING_SIZE               = 2048; // power of 2 -> AND-mask wrap
+static constexpr uint32_t BT_LINE_BUFFER_SIZE        = 256;
+static constexpr uint32_t BT_DEFAULT_CSV_INTERVAL_MS = 50;
+static volatile uint32_t  bt_ring_head               = 0;
+static volatile uint32_t  bt_ring_tail               = 0;
+static volatile uint32_t  bt_ring_max_depth          = 0;
+static volatile uint32_t  bt_ring_dropped_bytes      = 0;
+static volatile uint32_t  bt_suppressed_csv_lines    = 0;
+static volatile uint32_t  bt_csv_interval_ms         = BT_DEFAULT_CSV_INTERVAL_MS;
 static char               bt_ring[BT_RING_SIZE];
+static char               bt_line_buffer[BT_LINE_BUFFER_SIZE];
+static uint32_t           bt_line_length        = 0;
+static bool               bt_line_passthrough   = false;
+static bool               bt_line_csv_candidate = false;
+static bool               bt_line_has_comma     = false;
+static uint32_t           bt_last_csv_emit_ms   = 0;
 
-static void bt_ring_push(const char* buf, int length)
+static uint32_t bt_ring_depth()
+{
+    return (bt_ring_head - bt_ring_tail) & (BT_RING_SIZE - 1);
+}
+
+static void bt_note_depth()
+{
+    const uint32_t depth = bt_ring_depth();
+    if (depth > bt_ring_max_depth)
+        bt_ring_max_depth = depth;
+}
+
+static void bt_ring_push_raw(const char* buf, int length)
 {
     for (int i = 0; i < length; i++)
     {
         uint32_t next = (bt_ring_head + 1) & (BT_RING_SIZE - 1);
         if (next == bt_ring_tail)
+        {
+            bt_ring_dropped_bytes += static_cast<uint32_t>(length - i);
             return; // ring full -> drop. Better than blocking the 500 Hz loop.
+        }
         bt_ring[bt_ring_head] = buf[i];
         bt_ring_head          = next;
+        bt_note_depth();
     }
 }
 
@@ -93,9 +120,82 @@ static void bt_drain()
     }
 }
 
+static bool bt_line_starts_csv_data(char ch)
+{
+    return (ch >= '0' && ch <= '9') || ch == '-' || ch == '+';
+}
+
+static bool bt_should_emit_csv_line()
+{
+    const uint32_t interval_ms = bt_csv_interval_ms;
+    if (interval_ms == 0)
+        return true;
+
+    const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+    if (bt_last_csv_emit_ms == 0 || now_ms - bt_last_csv_emit_ms >= interval_ms)
+    {
+        bt_last_csv_emit_ms = now_ms;
+        return true;
+    }
+
+    bt_suppressed_csv_lines++;
+    return false;
+}
+
+static void bt_flush_line_buffer()
+{
+    if (bt_line_length == 0)
+        return;
+
+    const bool csv_data_line = bt_line_csv_candidate && bt_line_has_comma;
+    if (!csv_data_line || bt_should_emit_csv_line())
+        bt_ring_push_raw(bt_line_buffer, static_cast<int>(bt_line_length));
+
+    bt_line_length        = 0;
+    bt_line_passthrough   = false;
+    bt_line_csv_candidate = false;
+    bt_line_has_comma     = false;
+}
+
+static void bt_process_out_char(char ch)
+{
+    if (bt_line_passthrough)
+    {
+        bt_ring_push_raw(&ch, 1);
+        if (ch == '\n' || ch == '\r')
+            bt_line_passthrough = false;
+        return;
+    }
+
+    if (bt_line_length == 0)
+    {
+        bt_line_csv_candidate = bt_line_starts_csv_data(ch);
+        bt_line_has_comma     = false;
+        if (!bt_line_csv_candidate)
+        {
+            bt_line_passthrough = true;
+            bt_ring_push_raw(&ch, 1);
+            if (ch == '\n' || ch == '\r')
+                bt_line_passthrough = false;
+            return;
+        }
+    }
+
+    if (bt_line_length < BT_LINE_BUFFER_SIZE)
+    {
+        bt_line_buffer[bt_line_length++] = ch;
+        if (ch == ',')
+            bt_line_has_comma = true;
+    }
+
+    if (ch == '\n' || ch == '\r' || bt_line_length >= BT_LINE_BUFFER_SIZE)
+        bt_flush_line_buffer();
+}
+
 static void uart_out_chars(const char* buf, int length)
 {
-    bt_ring_push(buf, length);
+    for (int i = 0; i < length; i++)
+        bt_process_out_char(buf[i]);
     bt_drain(); // small printfs that fit in the FIFO go straight through
 }
 
@@ -105,6 +205,40 @@ static stdio_driver_t bt_driver = {
     .in_chars  = nullptr,
     .next      = nullptr,
 };
+
+namespace BluetoothStdio
+{
+void setCsvIntervalMs(uint32_t interval_ms)
+{
+    bt_csv_interval_ms  = interval_ms;
+    bt_last_csv_emit_ms = 0;
+}
+
+uint32_t csvIntervalMs()
+{
+    return bt_csv_interval_ms;
+}
+
+Diagnostics diagnostics()
+{
+    Diagnostics diag;
+    diag.ring_size            = BT_RING_SIZE;
+    diag.depth                = bt_ring_depth();
+    diag.max_depth            = bt_ring_max_depth;
+    diag.dropped_bytes        = bt_ring_dropped_bytes;
+    diag.suppressed_csv_lines = bt_suppressed_csv_lines;
+    diag.csv_interval_ms      = bt_csv_interval_ms;
+    return diag;
+}
+
+void resetDiagnostics()
+{
+    bt_ring_max_depth       = bt_ring_depth();
+    bt_ring_dropped_bytes   = 0;
+    bt_suppressed_csv_lines = 0;
+    bt_last_csv_emit_ms     = 0;
+}
+} // namespace BluetoothStdio
 
 // ----------------------------------------------------------------------------
 // Boot-time selection

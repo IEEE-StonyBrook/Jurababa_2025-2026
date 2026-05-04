@@ -19,8 +19,8 @@
 
 // ===================== Motor Model ===================== //
 // Forward (linear) motor model — from OL + STEP trials.
-#define MOTOR_KM 360.46f  // mm/s per volt  (steady-state gain)
-#define MOTOR_TM 0.09617f // seconds        (time constant)
+#define MOTOR_KM 359.67f  // mm/s per volt  (steady-state gain)
+#define MOTOR_TM 0.080f // seconds        (time constant)
 
 // Rotational motor model — placeholders until TURN-OL + TURN-STEP run.
 // Provisional ratios derived from mazerunner-core Orion config (rotational
@@ -32,12 +32,12 @@
 // ================ Feedforward (per motor) ============== //
 // V = kV * speed + kS + kA * accel (per wheel; characterized independently).
 // Per-wheel asymmetry preserved: the L/R difference (~10% in kS) is real.
-#define FORWARD_KVL (1.0f / 361.10f) // Left  V/(mm/s)     = 1/kM
-#define FORWARD_KVR (1.0f / 359.82f) // Right V/(mm/s)
-#define FORWARD_KSL 0.5630f          // Left  static friction (V)
-#define FORWARD_KSR 0.5077f          // Right static friction (V)
-#define FORWARD_KAL 0.0006680f       // Left  V/(mm/s^2)   = Tm/kM
-#define FORWARD_KAR 0.0006680f       // Right V/(mm/s^2)
+#define FORWARD_KVL (1.0f / MOTOR_KM) // Left  V/(mm/s)     = 1/kM
+#define FORWARD_KVR (1.0f / MOTOR_KM) // Right V/(mm/s)
+#define FORWARD_KSL 0.6907f          // Left  static friction (V)
+#define FORWARD_KSR 0.5701f          // Right static friction (V)
+#define FORWARD_KAL 0.0001934f       // Left  V/(mm/s^2)   = Tm/kM
+#define FORWARD_KAR 0.0001934f       // Right V/(mm/s^2)
 
 // ================ Forward PD Controller ================ //
 // Mazerunner-core / motorlab formulation:
@@ -63,17 +63,22 @@
 #define FWD_KD   ((8.0f * MOTOR_TM - FWD_TD) / (MOTOR_KM * FWD_TD))
 
 // ================ Rotation PD Controller =============== //
-// Same formula structure as forward, applied to the rotational plant.
-// Td = Tm — mirrors mazerunner-core Orion (`const float ROT_TD = ROT_TM`).
-// motorlab uses Tm/2, but on Jurababa that quadruples ROT_KP and the IMU's
-// 100 Hz / 4-tap-MA feedback can't damp the resulting ringing. Aligning Td
-// with Tm (same choice we already made for forward) puts closed-loop
-// bandwidth at the rotational plant's natural break frequency. Re-run
-// TURN-STEP after any change here.
+// MANUALLY TUNED — formula path disabled until TURN-OL / TURN-STEP yields a
+// usable ROT_KM / ROT_TM characterization. ROT_KM and ROT_TM above remain
+// defined (DriverLab feedforward and the OL heading-hold reference them) but
+// are informational placeholders, not the source of these gains.
+//
+// Seed values from UKMARS Orion, scaled to our convention where the loop
+// frequency is multiplied at runtime in PID::update() rather than baked into
+// KD at compile time. Tune ROT_KP first: increase until a 90° spin turn
+// settles in one cycle without overshoot, then back off ~20%. Then tune
+// ROT_KD: increase until audible buzz on the accel ramp, then back off ~30%.
+// ROT_ZETA / ROT_TD kept as informational, in case the formula path is
+// re-enabled after calibration.
 #define ROT_ZETA 0.707f
 #define ROT_TD   (ROT_TM)
-#define ROT_KP   (16.0f * ROT_TM / (ROT_KM * ROT_ZETA * ROT_ZETA * ROT_TD * ROT_TD))
-#define ROT_KD   ((8.0f * ROT_TM - ROT_TD) / (ROT_KM * ROT_TD))
+#define ROT_KP   0.20f  // V per degree of accumulated error
+#define ROT_KD   0.009f // V*s per degree of error rate (loop_freq applied in PID::update)
 
 // =================== Line Follower ===================== //
 #define LINE_KP                     0.3f

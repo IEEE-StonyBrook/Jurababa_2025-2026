@@ -16,13 +16,6 @@ namespace PathUtils
 {
 
 /**
- * @brief Execute an LFR path string
- * @param api API interface for movement commands
- * @param lfr_path Path string (e.g., "F#R#F#L#F")
- */
-void executePath(API* api, const std::string& lfr_path);
-
-/**
  * @brief Traverse path to goals with iterative re-planning
  * @param api API interface for movement
  * @param mouse Mouse state tracker

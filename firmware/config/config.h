@@ -5,11 +5,12 @@
 #ifndef CONFIG_CONFIG_H
 #define CONFIG_CONFIG_H
 
-#include "config/geometry.h" // Robot dimensions, encoder, maze
-#include "config/motion.h"   // Speed/accel limits, tolerances
-#include "config/pins.h"     // GPIO pin assignments
-#include "config/sensors.h"  // Sensor hardware config
-#include "config/tuning.h"   // Calibration: feedforward + PID gains
+#include "config/geometry.h"    // Robot dimensions, encoder, maze
+#include "config/motion.h"      // Speed/accel limits, tolerances
+#include "config/pins.h"        // GPIO pin assignments
+#include "config/sensors.h"     // Sensor hardware config
+#include "config/smooth_turn.h" // UKMARS-style smooth turn parameters
+#include "config/tuning.h"      // Calibration: feedforward + PID gains
 
 // ===================== Motor Hardware ===================== //
 #define PWM_WRAP    999u // PWM counter wrap (10-bit resolution)
@@ -17,12 +18,6 @@
 
 // ===================== Battery ===================== //
 #define DEFAULT_BATTERY_VOLTAGE 8.35f // Nominal 2S LiPo
-
-// ===================== Drivetrain ===================== //
-// MIN_DT and FF_DEADZONE removed: the controller now runs on a fixed-rate tick
-// (LOOP_INTERVAL_S) so dt clamping is unnecessary, and mazerunner-core's FF
-// shape uses sign(v)*KS — no deadzone — to keep low-speed commands moving.
-#define DRIVETRAIN_MAX_VELOCITY_MMPS 2500.0f // Sanity clamp on velocity
 
 // ===================== Multicore ===================== //
 #define CORE_SLEEP_MS 250 // Inter-core sync sleep (ms)

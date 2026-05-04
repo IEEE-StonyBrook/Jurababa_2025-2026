@@ -123,6 +123,7 @@ class DriverLab
     void cmdVoltageLeft(const DriverLabArgs& args);
     void cmdVoltageRight(const DriverLabArgs& args);
     void cmdStop();
+    void cmdBtLog(const DriverLabArgs& args);
     void cmdExport();
     void cmdGpioDiag(const DriverLabArgs& args);
     void cmdDirTest(const DriverLabArgs& args);
@@ -386,6 +387,7 @@ class DriverLab
     void startTurnStepTrial(float diff_v, uint32_t duration_ms);
     void tickTurnStep();
     void finishTurnStep();
+    void printBluetoothDiagnostics();
 
     // Cooperative countdown: announces the trial, then trial_ = Countdown
     // and tickCountdown() decrements once per LOOP_FREQUENCY_HZ ticks. At

@@ -7,15 +7,16 @@ class Battery;
  * @brief Core 1 entry point — owns the 500 Hz real-time control loop.
  *
  * Constructs all motion-side hardware (motors, encoders, IMU, ToFs),
- * builds a `Drivetrain` and `Robot`, then runs `Robot::update()` plus
- * `processCommands()` once per tick. ToFs are read at 50 Hz (every 10
- * ticks) and published through `SensorHub`.
+ * builds a `Drivetrain` and `Robot`, then runs `Robot::update()` plus a
+ * MotorLab-style cooperative motion server once per tick. UKMARS-style
+ * multi-stage mouse actions (`move_ahead`, smooth turns, turn-back centre
+ * correction) are advanced as state machines inside the same tick. ToFs are
+ * read at 50 Hz (every 10 ticks) and published through `SensorHub`.
  *
- * Owns these wires for the cross-core motion-complete handshake:
- *   - Sets `MotionState::active = true` whenever it accepts a motion
- *     command from `CommandHub`.
- *   - Clears `MotionState::active` once `Robot::motionComplete()` is
- *     true AND no further commands are pending in the FIFO.
+ * Core0 queues commands in shared memory. Core1 accepts one command only when
+ * the Robot/search action is idle, publishes the accepted ID, and marks that
+ * same ID complete only after the physical motion finishes. STOP is an
+ * out-of-band flag checked before queued work.
  *
  * Only launched in ToF sensor mode. In line-sensor mode the motor pins
  * are owned by `LineFollower` on Core 0 — launching both would race on

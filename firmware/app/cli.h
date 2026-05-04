@@ -29,22 +29,25 @@ enum class SensorMode
     LINE_SENSOR
 };
 
+constexpr int CLI_MAX_ARGC = 16;
+
+struct Args
+{
+    char* argv[CLI_MAX_ARGC] = {};
+    int   argc               = 0;
+
+    void print() const;
+};
+
 /**
- * @brief UKMARS mazerunner-core-style unified command loop.
+ * @brief UKMARS mazerunner-core-style command line interface.
  *
- * Replaces the three parallel `runNormalMode / runDriverLabMode /
- * runLineFollowingMode` paths with a single dispatch table. Reads lines
- * from USB-CDC stdin, watches Bluetooth for single-byte commands, and
- * routes:
- *   - integer N           → `runFunction(N)` (the dispatch table)
- *   - short single-char    → built-in (?, B, H, X, RUN n, G)
- *   - alpha tokens (OL, …) → DriverLab::executeLine
- *
- * Implements `MotionWaiter` so `API::waitForMotion` can spin on
- * `MotionState::active` while keeping HALT responsive (~20 ms worst
- * case).
+ * Normal CLI intentionally mirrors mazerunner-core's command surface:
+ * one-character commands, `F n` function dispatch, and long commands such as
+ * HELP and SEARCH. Jurababa keeps motor-safe STOP semantics for X and adds
+ * STYLE for stationary/smooth motion execution.
  */
-class Cli : public MotionWaiter
+class CommandLineInterface : public MotionWaiter
 {
   public:
     struct Deps
@@ -61,39 +64,51 @@ class Cli : public MotionWaiter
         std::vector<std::array<int, 2>> goal_cells    = {};
     };
 
-    explicit Cli(const Deps& deps);
+    explicit CommandLineInterface(const Deps& deps);
 
-    void greet();    // banner + numbered-function help
-    void loop();     // never returns
-    bool pollOnce(); // returns true if at least one line was processed
+    void greet();
+    void loop();
+    bool pollOnce() { return process_serial_data(); }
 
-    // MotionWaiter implementation: spins on `MotionState::active`,
-    // interleaves `pollHaltOnly()` so HALT cuts through long motions.
-    void waitForMotionComplete() override;
+    bool process_serial_data();
+    void process_input_line();
 
-    // The numbered dispatch table — `Cli::loop` calls this when the user
-    // types an integer. Each numbered behavior runs its own start-gesture
-    // handshake before sending motion (mazerunner-core convention).
-    void runFunction(int n);
+    // MotionWaiter implementation: waits for Core1 to complete the matching
+    // command ID and interleaves `pollHaltOnly()` so HALT cuts through motion.
+    void waitForMotionComplete(uint16_t command_id) override;
+
+    void runFunction(int n) { run_function(n); }
+    void run_function(int cmd);
+    void help();
+    void prompt();
 
     bool halted() const { return halted_; }
 
   private:
+    static uint8_t read_integer(const char* line, int& value);
+
     // Watch only for HALT signals (Bluetooth HALT, USB 'X'/'x'). Cheap
     // enough to interleave inside `waitForMotionComplete` and inside
     // long-running maze functions.
     void pollHaltOnly();
 
-    // Read one full line from USB stdin into `line_buffer_`, returns true
-    // when a line is complete (terminator stripped). Non-blocking.
-    bool readLineNonBlocking();
-
-    void executeLine();
+    void handle_backspace();
+    void add_to_buffer(char c);
+    int  tokenise(Args& args, char* line);
+    void execute_command(Args& args);
+    void run_short_cmd(const Args& args);
+    void run_long_cmd(const Args& args);
+    void handle_search_command(const Args& args);
+    void handle_style_command(const Args& args);
+    void clear_input_buffer();
     void handleBluetoothCommand();
 
     void dumpSensorsOneShot();
-    void runLineFollowEventLoop();
-    void printEncoderDelta(int32_t l_before, int32_t r_before, int32_t l_after, int32_t r_after);
+    void printMazeView(char mode);
+    void printEncoderSnapshot();
+    bool needsTof(const char* what) const;
+    bool startWithGesture(bool tof_available);
+    void stop();
 
     Deps deps_;
 
@@ -104,5 +119,7 @@ class Cli : public MotionWaiter
     int  last_function_ = -1;
     bool halted_        = false;
 };
+
+using Cli = CommandLineInterface;
 
 #endif

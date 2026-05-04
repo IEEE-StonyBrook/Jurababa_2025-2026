@@ -35,6 +35,8 @@ class Profile
      * @param acceleration     Accel/decel magnitude.
      */
     void start(float target_distance, float top_speed, float final_speed, float acceleration);
+    void start(float target_distance, float start_speed, float top_speed, float final_speed,
+               float acceleration);
 
     /** @brief Advance profile by one fixed-rate tick. */
     void update();
@@ -47,6 +49,9 @@ class Profile
     State state() const { return state_; }
 
     void reset();
+    void setTargetSpeed(float speed);
+    void setPosition(float position);
+    void adjustPosition(float delta);
 
   private:
     State state_;

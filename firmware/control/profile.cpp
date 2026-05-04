@@ -13,13 +13,19 @@ Profile::Profile()
 
 void Profile::start(float target_distance, float top_speed, float final_speed, float acceleration)
 {
+    start(target_distance, 0.0f, top_speed, final_speed, acceleration);
+}
+
+void Profile::start(float target_distance, float start_speed, float top_speed, float final_speed,
+                    float acceleration)
+{
     direction_       = (target_distance >= 0.0f) ? 1 : -1;
     target_distance_ = std::fabs(target_distance);
     top_speed_       = std::fabs(top_speed);
     final_speed_     = std::fabs(final_speed);
     acceleration_    = std::fabs(acceleration);
 
-    current_velocity_     = 0.0f;
+    current_velocity_     = std::fabs(start_speed) * direction_;
     current_acceleration_ = 0.0f;
     current_position_     = 0.0f;
 
@@ -108,4 +114,19 @@ void Profile::reset()
     current_velocity_     = 0.0f;
     current_acceleration_ = 0.0f;
     current_position_     = 0.0f;
+}
+
+void Profile::setTargetSpeed(float speed)
+{
+    top_speed_ = std::fabs(speed);
+}
+
+void Profile::setPosition(float position)
+{
+    current_position_ = position;
+}
+
+void Profile::adjustPosition(float delta)
+{
+    current_position_ += delta;
 }

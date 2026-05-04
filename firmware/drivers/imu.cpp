@@ -214,7 +214,16 @@ float IMU::robot_omega()
 
 float IMU::robot_rot_change()
 {
-    return m_rot_change_deg_;
+    // Per-TICK yaw delta — mirrors UKMARS encoders.robot_rot_change(), which
+    // returns the per-tick rotation increment for a single-rate rotation PD.
+    // We don't have per-tick IMU samples (BNO085 RVC fires at 100 Hz), so we
+    // expose the cached, MA-smoothed angular rate distributed evenly across
+    // ticks: omega * LOOP_INTERVAL_S. Held flat between packets — the
+    // rotation PD's m_error_ accumulates the same total angle per packet
+    // (5 ticks * omega * 0.002 = avg_delta_per_packet), but distributed
+    // evenly instead of stepped, which keeps rotation_output_ smooth in the
+    // 500 Hz differential mixer downstream.
+    return cached_omega_degps_ * LOOP_INTERVAL_S;
 }
 
 bool IMU::has_new_yaw_sample()

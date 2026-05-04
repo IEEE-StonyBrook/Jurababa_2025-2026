@@ -152,18 +152,15 @@ constexpr uint8_t CONTROL_FLAG_FULL_CONTROL    = 0x03;
 //
 // Bandwidth deliberately slow (omega_n = 3 rad/s, zeta = 1.0). The original
 // design at omega_n = 5 rad/s caused a ~5 deg limit cycle on the bench:
-// rot_tm = 0.106 s puts omega_n*rot_tm ~ 0.53, which adds ~28 deg of phase
-// erosion right at crossover, on top of IMU 100 Hz ZOH delay and gearbox
-// stiction/backlash that the linear PD design doesn't see. Dropping to
-// 3 rad/s pushes crossover well below the rotation lag pole (omega*tau ~
-// 0.32) and cuts both Kp and Kd, killing the oscillation with margin.
-//
-// Gains derived at use site from settings_.rot_kM, mirroring
-// recalculateRotation() above:
-//   kp_vpdeg = omega_n^2          / rot_kM
-//   kd_vpdps = 2 * zeta * omega_n / rot_kM
-constexpr float OL_STEERING_OMEGA_N_RAD = 3.0f; // closed-loop bandwidth, rad/s
-constexpr float OL_STEERING_ZETA        = 1.0f; // damping ratio (overdamped feel)
-constexpr float OL_STEERING_TRIM_MAX_V  = 0.5f; // |trim| clamp, volts
+// MANUALLY TUNED heading-hold gains — the previous omega_n / rot_kM formula
+// scaled by an uncalibrated settings_.rot_kM (placeholder ~580) gave too
+// much loop gain combined with the IMU's 100 Hz ZOH on omega, producing
+// ±0.5 V trim oscillation. These constants are direct, conservative defaults
+// independent of rot_kM — heading-hold is a correction loop, not a primary
+// motion goal, so docile beats fast. If drift correction feels too lazy on
+// a noisy floor, raise OL_STEERING_KP first.
+constexpr float OL_STEERING_KP_VPDEG   = 0.015f; // V per deg of yaw error
+constexpr float OL_STEERING_KD_VPDPS   = 0.005f; // V per (deg/s) of yaw rate
+constexpr float OL_STEERING_TRIM_MAX_V = 0.3f;   // |trim| clamp, volts
 
 #endif

@@ -1,27 +1,17 @@
 #include "control/robot.h"
 
-#include "common/log.h"
+#include <cmath>
+
+#include "common/utils.h"
 #include "config/config.h"
 #include "control/drivetrain.h"
 #include "drivers/imu.h"
 #include "drivers/tof.h"
 
-namespace
-{
-float normalizeYawDelta(float delta)
-{
-    if (delta > 180.0f)
-        return delta - 360.0f;
-    if (delta < -180.0f)
-        return delta + 360.0f;
-    return delta;
-}
-} // namespace
-
 Robot::Robot(Drivetrain* drivetrain, IMU* imu, ToF* left_tof, ToF* front_tof, ToF* right_tof)
     : drivetrain_(drivetrain), imu_(imu), left_tof_(left_tof), front_tof_(front_tof),
       right_tof_(right_tof), forward_controller_(FWD_KP, FWD_KD, LOOP_FREQUENCY_HZ),
-      rotation_controller_(ROT_KP, ROT_KD, ROTATION_LOOP_HZ)
+      rotation_controller_(ROT_KP, ROT_KD, LOOP_FREQUENCY_HZ)
 {
     forward_controller_.setOutputLimit(MAX_VOLTAGE);
     rotation_controller_.setOutputLimit(MAX_VOLTAGE);
@@ -31,72 +21,33 @@ Robot::Robot(Drivetrain* drivetrain, IMU* imu, ToF* left_tof, ToF* front_tof, To
 
 void Robot::reset()
 {
-    drivetrain_->reset();
-    resetYaw();
-
-    forward_controller_.reset();
-    rotation_controller_.reset();
-    forward_profile_.reset();
-    rotation_profile_.reset();
-
-    // Errors only zero on a full Robot::reset() (e.g. boot, DriverLab trial start).
-    // Per mazerunner-core: errors must integrate continuously across motions
-    // so small residuals from motion N feed into motion N+1's command.
-    forward_error_  = 0.0f;
-    rotation_error_ = 0.0f;
-
-    target_forward_vel_mmps_  = 0.0f;
-    target_angular_vel_degps_ = 0.0f;
-
-    prev_left_volts_         = 0.0f;
-    prev_right_volts_        = 0.0f;
-    prev_left_cmd_vel_mmps_  = 0.0f;
-    prev_right_cmd_vel_mmps_ = 0.0f;
-
-    steering_adjustment_ = 0.0f;
-    rotation_output_     = 0.0f;
-    motion_done_         = true;
+    reset_drive_system();
 }
 
-// === Sensors ===
+void Robot::reset_drive_system()
+{
+    drivetrain_->stop();
+    drivetrain_->reset();
+    imu_->reset();
+    forward_.reset();
+    rotation_.reset();
+    forward_controller_.reset();
+    rotation_controller_.reset();
+
+    prev_left_cmd_vel_mmps_  = 0.0f;
+    prev_right_cmd_vel_mmps_ = 0.0f;
+}
 
 bool Robot::wallLeft()
 {
-    return left_tof_->get_distance() < TOF_LEFT_WALL_THRESHOLD_MM;
-}
-
-bool Robot::wallFront()
-{
-    return front_tof_->get_distance() < TOF_FRONT_WALL_THRESHOLD_MM;
+    const float distance_mm = left_tof_->get_distance();
+    return distance_mm > 0.0f && distance_mm < TOF_LEFT_WALL_THRESHOLD_MM;
 }
 
 bool Robot::wallRight()
 {
-    return right_tof_->get_distance() < TOF_RIGHT_WALL_THRESHOLD_MM;
-}
-
-float Robot::yaw()
-{
-    return imu_->robot_angle();
-}
-
-float Robot::omega()
-{
-    return imu_->robot_omega();
-}
-
-float Robot::yawDelta()
-{
-    float current       = yaw();
-    float delta         = normalizeYawDelta(current - last_yaw_for_delta_);
-    last_yaw_for_delta_ = current;
-    return delta;
-}
-
-void Robot::resetYaw()
-{
-    imu_->reset();
-    last_yaw_for_delta_ = 0.0f;
+    const float distance_mm = right_tof_->get_distance();
+    return distance_mm > 0.0f && distance_mm < TOF_RIGHT_WALL_THRESHOLD_MM;
 }
 
 float Robot::frontDistance()
@@ -104,150 +55,124 @@ float Robot::frontDistance()
     return front_tof_->get_distance();
 }
 
-float Robot::leftDistance()
+float Robot::position() const
 {
-    return left_tof_->get_distance();
+    return forward_.position();
 }
 
-float Robot::rightDistance()
+float Robot::velocity() const
 {
-    return right_tof_->get_distance();
+    return forward_.velocity();
 }
 
-// === Motion Commands ===
-
-void Robot::moveDistance(float distance_mm, float max_vel_mmps, float accel_mmps2)
+float Robot::acceleration() const
 {
-    forward_profile_.start(distance_mm, max_vel_mmps, 0.0f, accel_mmps2);
-    rotation_profile_.reset();
-    motion_done_ = false;
+    return forward_.acceleration();
 }
 
-void Robot::turnInPlace(float degrees, float max_vel_degps, float accel_degps2)
+float Robot::angle() const
 {
-    rotation_profile_.start(degrees, max_vel_degps, 0.0f, accel_degps2);
-    forward_profile_.reset();
-    motion_done_ = false;
+    return imu_->robot_angle();
 }
 
-void Robot::stop()
+float Robot::omega() const
 {
-    forward_profile_.reset();
-    rotation_profile_.reset();
-
-    target_forward_vel_mmps_  = 0.0f;
-    target_angular_vel_degps_ = 0.0f;
-
-    // Explicit halt: clear errors AND zero the H-bridge. Distinct from
-    // "motion complete", which leaves the controller holding pose.
-    forward_controller_.reset();
-    rotation_controller_.reset();
-    forward_error_  = 0.0f;
-    rotation_error_ = 0.0f;
-
-    prev_left_volts_         = 0.0f;
-    prev_right_volts_        = 0.0f;
-    prev_left_cmd_vel_mmps_  = 0.0f;
-    prev_right_cmd_vel_mmps_ = 0.0f;
-    steering_adjustment_     = 0.0f;
-    rotation_output_         = 0.0f;
-    drivetrain_->stop();
-
-    motion_done_ = true;
+    return imu_->robot_omega();
 }
 
-void Robot::moveToNextCell()
+float Robot::alpha() const
 {
-    moveDistance(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+    return rotation_.acceleration();
 }
 
-void Robot::turnLeft90()
+void Robot::set_target_velocity(float velocity_mmps)
 {
-    turnInPlace(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    forward_.setTargetSpeed(velocity_mmps);
 }
 
-void Robot::turnRight90()
+void Robot::start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
+                       float accel_mmps2)
 {
-    turnInPlace(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    forward_.start(distance_mm, velocity(), top_speed_mmps, final_speed_mmps, accel_mmps2);
 }
 
-void Robot::turnAround()
+bool Robot::move_finished() const
 {
-    static bool turn_right = true;
-    float       angle      = turn_right ? 180.0f : -180.0f;
-    turn_right             = !turn_right;
-    turnInPlace(angle, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    return forward_.finished();
 }
 
-void Robot::smoothTurn(float degrees, float radius_mm)
+void Robot::move(float distance_mm, float top_speed_mmps, float final_speed_mmps, float accel_mmps2)
 {
-    float arc_length_mm = std::fabs(degrees) * (M_PI / 180.0f) * radius_mm;
-
-    // Forward velocity is held at cruise through the entire rotation —
-    // mirrors mazerunner-core, where `motion.set_target_velocity(SEARCH_TURN_SPEED)`
-    // is held while `motion.turn()` operates only on the rotation profile.
-    // Setting final_speed == top_speed makes brakingDistance() == 0, so the
-    // forward profile cruises for arc_length_mm and lands at top_speed
-    // instead of decelerating to a stop. The rotation profile alone shapes
-    // heading; the curve traced is a clothoid (curvature ramps in/out),
-    // which is physically smoother than a constant-radius arc.
-    forward_profile_.start(arc_length_mm, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS,
-                           ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
-    rotation_profile_.start(degrees, ROBOT_MAX_TURN_SPEED_DEGPS, 0.0f,
-                            ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
-    motion_done_ = false;
-
-    LOG_DEBUG("SmoothTurn | Angle: " + std::to_string(degrees) + " deg | Radius: " +
-              std::to_string(radius_mm) + " mm | Arc: " + std::to_string(arc_length_mm) + " mm");
+    start_move(distance_mm, top_speed_mmps, final_speed_mmps, accel_mmps2);
 }
 
-void Robot::backToWall(float max_distance_mm)
+void Robot::start_turn(float degrees, float top_speed_degps, float final_speed_degps,
+                       float accel_degps2)
 {
-    forward_profile_.start(-max_distance_mm, ROBOT_BACKUP_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
-    rotation_profile_.reset();
-    motion_done_ = false;
-
-    LOG_DEBUG("BackToWall | Max distance: " + std::to_string(max_distance_mm) + " mm");
+    rotation_.start(degrees, rotation_.velocity(), top_speed_degps, final_speed_degps,
+                    accel_degps2);
 }
 
-void Robot::centerWithWalls()
+bool Robot::turn_finished() const
 {
-    float left_dist  = leftDistance();
-    float right_dist = rightDistance();
+    return rotation_.finished();
+}
 
-    if (left_dist > TOF_MAX_RANGE_MM || right_dist > TOF_MAX_RANGE_MM)
-    {
-        steering_adjustment_ = 0.0f;
-        LOG_DEBUG("CenterWithWalls | Cannot center - wall(s) not detected");
+void Robot::turn(float degrees, float top_speed_degps, float final_speed_degps, float accel_degps2)
+{
+    start_turn(degrees, top_speed_degps, final_speed_degps, accel_degps2);
+}
+
+void Robot::spin_turn(float degrees, float omega_degps, float alpha_degps2)
+{
+    forward_.reset();
+    rotation_.start(degrees, omega_degps, 0.0f, alpha_degps2);
+}
+
+void Robot::turn_IP180()
+{
+    static int direction = 1;
+    direction *= -1;
+    spin_turn(direction * 180.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+}
+
+void Robot::turn_IP90R()
+{
+    spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+}
+
+void Robot::turn_IP90L()
+{
+    spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+}
+
+void Robot::set_position(float position_mm)
+{
+    forward_.setPosition(position_mm);
+}
+
+void Robot::adjust_forward_position(float delta_mm)
+{
+    forward_.adjustPosition(delta_mm);
+}
+
+void Robot::turn_smooth(int turn_id)
+{
+    if (turn_id < 0 || turn_id >= SMOOTH_TURN_PARAM_COUNT)
         return;
-    }
 
-    // Mazerunner-style: feed the rotation PD an additive omega rate. The
-    // controller integrates `steering_adjustment * LOOP_INTERVAL_S` into its
-    // error each tick, so a momentary lateral offset produces a transient
-    // correction that decays — not the perpetual bias the old direct-injection
-    // pattern caused.
-    float lateral_error  = (right_dist - left_dist) / 2.0f;
-    steering_adjustment_ = lateral_error * CENTERING_CORRECTION_GAIN;
+    const SmoothTurnParameters& params = SMOOTH_TURN_PARAMS[turn_id];
+    const float                 radius_mm =
+        (std::fabs(params.angle_deg) > 1e-3f)
+            ? ((params.speed_mmps / params.omega_degps) * (180.0f / static_cast<float>(M_PI)))
+            : 0.0f;
 
-    LOG_DEBUG("CenterWithWalls | Left: " + std::to_string(left_dist) +
-              " mm | Right: " + std::to_string(right_dist) +
-              " mm | Offset: " + std::to_string(lateral_error) + " mm");
-}
+    if (radius_mm <= 0.0f)
+        return;
 
-bool Robot::motionComplete() const
-{
-    return motion_done_;
-}
-
-float Robot::remainingDistance() const
-{
-    return forward_profile_.remaining();
-}
-
-float Robot::remainingAngle() const
-{
-    return rotation_profile_.remaining();
+    const float arc_length_mm = std::fabs(params.angle_deg) * (M_PI / 180.0f) * radius_mm;
+    forward_.start(arc_length_mm, params.speed_mmps, params.speed_mmps, ROBOT_BASE_ACCEL_MMPS2);
+    rotation_.start(params.angle_deg, params.omega_degps, 0.0f, params.alpha_degps2);
 }
 
 void Robot::update()
@@ -258,116 +183,60 @@ void Robot::update()
     // (substitutes mazerunner's encoder-derived robot_rot_change).
     drivetrain_->update();
     imu_->update();
-    forward_profile_.update();
-    rotation_profile_.update();
-
-    target_forward_vel_mmps_  = forward_profile_.velocity();
-    target_angular_vel_degps_ = rotation_profile_.velocity();
-
-    motion_done_ = forward_profile_.finished() && rotation_profile_.finished();
+    forward_.update();
+    rotation_.update();
 
     runPositionControl();
 }
 
 void Robot::runPositionControl()
 {
-    if (control_mode_ == ControlMode::Disabled)
-    {
-        // Caller is driving the H-bridge directly (DriverLab OL/STEP/TURN-OL/
-        // TURN-STEP). Skip PD (target=0 would poison m_error_), skip FF, and
-        // do NOT call drivetrain_->setVoltage() — that would clobber the
-        // manual set_motor_volts() the trial just issued. drivetrain_->update()
-        // and the profiles already ran in Robot::update(), so encoder-derived
-        // distance/speed remain observable for CSV logging.
-        return;
-    }
-
     float fwd_change_mm  = drivetrain_->fwdChangeMm();
-    float rot_change_deg = imu_->robot_rot_change();
+    float rot_change_deg = imu_->robot_rot_change(); // per-tick delta (omega * dt)
+    float fwd_velocity   = forward_.velocity();
+    float rot_velocity   = rotation_.velocity();
 
-    // Read-and-clear the IMU fresh-sample flag exactly once per tick.
-    // Rotation control fires only when this is true; otherwise rotation_output_
-    // holds its last value (zero-order hold between IMU packets).
-    const bool fresh_yaw = imu_->has_new_yaw_sample();
-
-    // PD outputs (volts). FeedforwardOnly skips PD; mirror error integration
-    // for diagnostics so CSV reflects open-loop tracking error.
-    float forward_output = 0.0f;
-    if (control_mode_ != ControlMode::FeedforwardOnly)
-    {
-        forward_output = forward_controller_.update(target_forward_vel_mmps_, fwd_change_mm);
-        if (fresh_yaw)
-        {
-            rotation_output_ = rotation_controller_.update(target_angular_vel_degps_,
-                                                           rot_change_deg, steering_adjustment_);
-        }
-    }
-    else
-    {
-        forward_error_ += target_forward_vel_mmps_ * LOOP_INTERVAL_S - fwd_change_mm;
-        if (fresh_yaw)
-        {
-            rotation_error_ += target_angular_vel_degps_ * ROTATION_INTERVAL_S - rot_change_deg +
-                               steering_adjustment_ * ROTATION_INTERVAL_S;
-        }
-    }
+    // Single-rate PD — both forward and rotation update every 500 Hz tick,
+    // exactly like UKMARS mazerunner-core. Rotation feedback comes from the
+    // IMU as a held-flat per-tick delta; this removes the 10 ms staircase
+    // that the old 100 Hz gate produced in rotation_output_ and stops the
+    // step-input-driven oscillation on spin turns.
+    const float forward_output  = forward_controller_.update(fwd_velocity, fwd_change_mm);
+    const float rotation_output = rotation_controller_.update(rot_velocity, rot_change_deg);
 
     // Mix forward + rotation outputs into per-wheel volts (mazerunner shape).
-    // rotation_output_ is the last-computed value (held between IMU packets).
-    float left_volts  = forward_output - rotation_output_;
-    float right_volts = forward_output + rotation_output_;
+    float left_volts  = forward_output - rotation_output;
+    float right_volts = forward_output + rotation_output;
 
-    if (control_mode_ != ControlMode::FeedbackOnly)
-    {
-        float wheelbase_radius = WHEEL_BASE_MM / 2.0f;
-        float tangential_vel   = target_angular_vel_degps_ * (M_PI / 180.0f) * wheelbase_radius;
+    float wheelbase_radius = WHEEL_BASE_MM / 2.0f;
+    float tangential_vel   = rot_velocity * (M_PI / 180.0f) * wheelbase_radius;
 
-        float left_vel  = target_forward_vel_mmps_ - tangential_vel;
-        float right_vel = target_forward_vel_mmps_ + tangential_vel;
+    float left_vel  = fwd_velocity - tangential_vel;
+    float right_vel = fwd_velocity + tangential_vel;
 
-        // Per-wheel acceleration via per-loop diff. Multiplying by LOOP_FREQUENCY
-        // converts the per-loop velocity diff into mm/s².
-        float left_accel         = (left_vel - prev_left_cmd_vel_mmps_) * LOOP_FREQUENCY_HZ;
-        float right_accel        = (right_vel - prev_right_cmd_vel_mmps_) * LOOP_FREQUENCY_HZ;
-        prev_left_cmd_vel_mmps_  = left_vel;
-        prev_right_cmd_vel_mmps_ = right_vel;
+    // Per-wheel acceleration via per-loop diff. Multiplying by LOOP_FREQUENCY
+    // converts the per-loop velocity diff into mm/s².
+    float left_accel         = (left_vel - prev_left_cmd_vel_mmps_) * LOOP_FREQUENCY_HZ;
+    float right_accel        = (right_vel - prev_right_cmd_vel_mmps_) * LOOP_FREQUENCY_HZ;
+    prev_left_cmd_vel_mmps_  = left_vel;
+    prev_right_cmd_vel_mmps_ = right_vel;
 
-        float ff_left  = drivetrain_->feedforward(WheelSide::LEFT, left_vel, left_accel);
-        float ff_right = drivetrain_->feedforward(WheelSide::RIGHT, right_vel, right_accel);
-
-        left_volts += ff_left;
-        right_volts += ff_right;
-    }
+    left_volts += drivetrain_->feedforward(WheelSide::LEFT, left_vel, left_accel);
+    right_volts += drivetrain_->feedforward(WheelSide::RIGHT, right_vel, right_accel);
 
     // Clamp at hardware boundary — no slew limit (would blunt FF response).
     left_volts  = utils::clampAbs(left_volts, MAX_VOLTAGE);
     right_volts = utils::clampAbs(right_volts, MAX_VOLTAGE);
 
     drivetrain_->setVoltage(left_volts, right_volts);
-
-    prev_left_volts_  = left_volts;
-    prev_right_volts_ = right_volts;
-
-    forward_error_  = forward_controller_.error();
-    rotation_error_ = rotation_controller_.error();
 }
 
-void Robot::setForwardGains(float kp, float /*ki*/, float kd)
+void Robot::stop()
 {
-    forward_controller_.setGains(kp, kd);
+    drivetrain_->stop();
 }
 
-void Robot::setRotationGains(float kp, float /*ki*/, float kd)
+void Robot::emergency_stop()
 {
-    rotation_controller_.setGains(kp, kd);
-}
-
-void Robot::setControlMode(ControlMode mode)
-{
-    control_mode_ = mode;
-}
-
-void Robot::setFeedforward(WheelSide side, float kv, float ks, float ka)
-{
-    drivetrain_->setFeedforward(side, kv, ks, ka);
+    reset_drive_system();
 }

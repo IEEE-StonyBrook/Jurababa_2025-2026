@@ -60,24 +60,28 @@ class IMU
     float robot_omega();
 
     /**
-     * @brief Returns the per-PACKET yaw delta (deg), MA-smoothed over
-     *        IMU_DELTA_AVG_LENGTH packets. Updated in the UART ISR, held flat
-     *        between packets — matches the rotation PD's gating on
-     *        has_new_yaw_sample(). Same role as Drivetrain::fwdChangeMm() on
-     *        the linear side.
+     * @brief Returns the per-TICK yaw delta (deg), suitable for a 500 Hz
+     *        single-rate rotation PD that mirrors UKMARS mazerunner-core.
+     *
+     * Computed as `cached_omega_degps_ * LOOP_INTERVAL_S` — the IMU's
+     * MA-smoothed angular rate distributed evenly across loop ticks. Held
+     * flat between BNO085 packets (ZOH on rate, not on delta), so consumers
+     * see no zeros and no spikes — instead they see a steady per-tick
+     * increment that integrates to the per-packet delta over any 10 ms
+     * window. Same role as `encoders.robot_rot_change()` in UKMARS, where
+     * encoders naturally produce per-tick deltas.
      */
     float robot_rot_change();
 
     /**
      * @brief Read-and-clear: returns true exactly once per fresh BNO085 packet.
      *
-     * Used by the rotation PID gate. Forward (encoder-paced) control runs
-     * every 500 Hz tick; rotation control fires only when this returns true,
-     * matching the IMU's ~100 Hz packet cadence. Between packets, the rotation
-     * controller's last output is held (zero-order hold).
-     *
-     * Called from the main control loop; the underlying flag is set from the
-     * UART ISR. Implementation must handle ISR/main concurrency.
+     * Was previously the gate for the rotation PID; the rotation PD now runs
+     * single-rate at 500 Hz (UKMARS-faithful) and consumes per-tick deltas
+     * via robot_rot_change() instead. This call remains useful for
+     * diagnostics (edge-detect a new packet) and for any consumer that still
+     * wants packet-rate behaviour. Underlying flag is set in the UART ISR;
+     * implementation handles ISR/main concurrency.
      */
     bool has_new_yaw_sample();
 

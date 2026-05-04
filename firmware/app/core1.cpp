@@ -1,5 +1,6 @@
 #include "app/core1.h"
 
+#include <cmath>
 #include <cstdint>
 
 #include "pico/multicore.h"
@@ -22,95 +23,414 @@ namespace
 {
 Battery* g_battery = nullptr;
 
-/**
- * @brief Translate a CommandHub packet into a Robot motion call.
- *
- * Drains the FIFO each tick. Skips non-STOP commands while a motion is
- * still in progress (Robot rejects overlapping commands anyway), but
- * always honors STOP — that's the e-stop path from `Cli::pollHaltOnly`.
- *
- * Turn-unit convention: TURN_LEFT/TURN_RIGHT carry a count of 45° steps,
- * matching `API::turnLeft45/turnLeft90` (which send param=1 / param=2)
- * and `Mouse::turn45Steps`. The pre-refactor code multiplied by 90° here,
- * which silently doubled every turn on hardware.
- */
+enum class SearchActionState
+{
+    Idle,
+    MoveAhead,
+    SmoothLeadIn,
+    SmoothTurning,
+    SmoothExit,
+    TurnBackStopAtCentre,
+    TurnBackAdjust,
+    TurnBackSpin,
+    TurnBackExit
+};
+
+struct SearchActionSequence
+{
+    SearchActionState    state = SearchActionState::Idle;
+    SmoothTurnParameters params{};
+    float                lead_in_mm           = 0.0f;
+    float                exit_mm              = 0.0f;
+    int                  turn_id              = 0;
+    uint32_t             deadline_ms          = 0;
+    bool                 has_front_wall       = false;
+    bool                 set_sensing_position = false;
+};
+
+SearchActionSequence g_search_action;
+uint16_t             g_active_command_id = 0;
+
+uint32_t nowMs()
+{
+    return to_ms_since_boot(get_absolute_time());
+}
+
+bool timeoutExpired(uint32_t deadline_ms)
+{
+    return static_cast<int32_t>(nowMs() - deadline_ms) >= 0;
+}
+
+bool searchActionActive()
+{
+    return g_search_action.state != SearchActionState::Idle;
+}
+
+bool robotIdle(const Robot* robot)
+{
+    return robot->move_finished() && robot->turn_finished();
+}
+
+bool validFrontDistance(float front_mm)
+{
+    return front_mm > 0.0f && front_mm <= TOF_MAX_RANGE_MM;
+}
+
+bool frontWallVisible(Robot* robot)
+{
+    const float front_mm = robot->frontDistance();
+    return validFrontDistance(front_mm) && front_mm < TOF_FRONT_WALL_THRESHOLD_MM;
+}
+
+void startArcTurn(Robot* robot, float degrees, float radius_mm)
+{
+    const float arc_length_mm = std::fabs(degrees) * (M_PI / 180.0f) * radius_mm;
+    robot->start_move(arc_length_mm, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS,
+                      ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+    robot->start_turn(degrees, ROBOT_MAX_TURN_SPEED_DEGPS, 0.0f, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+}
+
+void startSmoothTurnSequence(Robot* robot, int turn_id)
+{
+    if (turn_id < 0 || turn_id >= SMOOTH_TURN_PARAM_COUNT)
+        return;
+
+    g_search_action.turn_id = turn_id;
+    g_search_action.params  = SMOOTH_TURN_PARAMS[turn_id];
+    g_search_action.lead_in_mm =
+        (CELL_SIZE_MM + HALF_CELL_MM - g_search_action.params.entry_offset_mm) -
+        SENSING_POSITION_MM;
+    g_search_action.exit_mm =
+        SENSING_POSITION_MM - (HALF_CELL_MM + g_search_action.params.exit_offset_mm);
+
+    if (g_search_action.lead_in_mm > 0.125f)
+    {
+        robot->start_move(g_search_action.lead_in_mm, g_search_action.params.speed_mmps,
+                          g_search_action.params.speed_mmps, ROBOT_BASE_ACCEL_MMPS2);
+        g_search_action.state = SearchActionState::SmoothLeadIn;
+        return;
+    }
+
+    robot->turn_smooth(turn_id);
+    g_search_action.state = SearchActionState::SmoothTurning;
+}
+
+void startSmoothArc(Robot* robot)
+{
+    robot->turn_smooth(g_search_action.turn_id);
+    g_search_action.state = SearchActionState::SmoothTurning;
+}
+
+void startMoveAheadSequence(Robot* robot)
+{
+    const bool already_running       = std::fabs(robot->velocity()) > 1.0f;
+    const bool near_sensing_position = robot->position() > HALF_CELL_MM;
+
+    if (already_running || near_sensing_position)
+    {
+        const float adjusted_position_mm = robot->position() - CELL_SIZE_MM;
+        const float remaining_mm         = SENSING_POSITION_MM - adjusted_position_mm;
+        robot->adjust_forward_position(-CELL_SIZE_MM);
+
+        if (remaining_mm > 0.125f)
+        {
+            robot->start_move(remaining_mm, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                              ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+            g_search_action.set_sensing_position = true;
+            g_search_action.state                = SearchActionState::MoveAhead;
+        }
+        else
+        {
+            robot->set_position(SENSING_POSITION_MM);
+            g_search_action.state = SearchActionState::Idle;
+        }
+        return;
+    }
+
+    robot->start_move(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+    g_search_action.set_sensing_position = false;
+    g_search_action.state                = SearchActionState::MoveAhead;
+}
+
+void startTurnBackSpin(Robot* robot, bool move_to_sensing_after_turn)
+{
+    robot->turn_IP180();
+    g_search_action.exit_mm =
+        move_to_sensing_after_turn ? (SENSING_POSITION_MM - HALF_CELL_MM) : 0.0f;
+    g_search_action.state = SearchActionState::TurnBackSpin;
+}
+
+void startTurnBackSequence(Robot* robot)
+{
+    const bool already_running       = std::fabs(robot->velocity()) > 1.0f;
+    const bool near_sensing_position = robot->position() > HALF_CELL_MM;
+
+    if (!already_running && !near_sensing_position)
+    {
+        startTurnBackSpin(robot, false);
+        return;
+    }
+
+    g_search_action.has_front_wall = frontWallVisible(robot);
+    const float remaining_mm       = (CELL_SIZE_MM + HALF_CELL_MM) - robot->position();
+    if (remaining_mm > 0.125f)
+    {
+        const float final_speed_mmps =
+            g_search_action.has_front_wall ? STOP_AT_CENTRE_FRONT_SPEED_MMPS : 0.0f;
+        robot->start_move(remaining_mm, robot->velocity(), final_speed_mmps,
+                          ROBOT_BASE_ACCEL_MMPS2);
+        g_search_action.deadline_ms =
+            nowMs() + (g_search_action.has_front_wall ? STOP_AT_CENTRE_FRONT_TIMEOUT_MS
+                                                      : STOP_AT_CENTRE_PROFILE_TIMEOUT_MS);
+        g_search_action.state = SearchActionState::TurnBackStopAtCentre;
+        return;
+    }
+
+    startTurnBackSpin(robot, true);
+}
+
+void finishTurnBackStopAtCentre(Robot* robot)
+{
+    robot->reset_drive_system();
+
+    if (!g_search_action.has_front_wall)
+    {
+        startTurnBackSpin(robot, true);
+        return;
+    }
+
+    const float front_mm = robot->frontDistance();
+    if (!validFrontDistance(front_mm))
+    {
+        startTurnBackSpin(robot, true);
+        return;
+    }
+
+    const float error_mm = front_mm - FRONT_REFERENCE_MM;
+    if (error_mm > FRONT_CORRECTION_TOLERANCE_MM)
+    {
+        robot->start_move(FRONT_CORRECTION_STEP_MM, FRONT_CORRECTION_SPEED_MMPS, 0.0f,
+                          FRONT_CORRECTION_ACCEL_MMPS2);
+        g_search_action.state = SearchActionState::TurnBackAdjust;
+    }
+    else if (error_mm < -FRONT_CORRECTION_TOLERANCE_MM)
+    {
+        robot->start_move(-FRONT_CORRECTION_STEP_MM, FRONT_CORRECTION_SPEED_MMPS, 0.0f,
+                          FRONT_CORRECTION_ACCEL_MMPS2);
+        g_search_action.state = SearchActionState::TurnBackAdjust;
+    }
+    else
+    {
+        startTurnBackSpin(robot, true);
+    }
+}
+
+void tickSearchActionSequence(Robot* robot)
+{
+    if (!searchActionActive())
+        return;
+
+    if (g_search_action.state == SearchActionState::SmoothLeadIn)
+    {
+        float trigger_mm = g_search_action.params.front_trigger_mm;
+        if (robot->wallLeft())
+            trigger_mm -= EXTRA_WALL_ADJUST_MM;
+        if (robot->wallRight())
+            trigger_mm -= EXTRA_WALL_ADJUST_MM;
+
+        const float front_mm = robot->frontDistance();
+        if (trigger_mm > 0.0f && front_mm > 0.0f && front_mm <= TOF_MAX_RANGE_MM &&
+            front_mm <= trigger_mm)
+        {
+            startSmoothArc(robot);
+            return;
+        }
+    }
+
+    if (g_search_action.state == SearchActionState::TurnBackStopAtCentre &&
+        g_search_action.has_front_wall)
+    {
+        const float front_mm = robot->frontDistance();
+        if ((validFrontDistance(front_mm) && front_mm <= FRONT_REFERENCE_MM) ||
+            timeoutExpired(g_search_action.deadline_ms))
+        {
+            finishTurnBackStopAtCentre(robot);
+            return;
+        }
+    }
+
+    if (!robotIdle(robot))
+        return;
+
+    switch (g_search_action.state)
+    {
+        case SearchActionState::MoveAhead:
+            if (g_search_action.set_sensing_position)
+                robot->set_position(SENSING_POSITION_MM);
+            g_search_action.state = SearchActionState::Idle;
+            break;
+
+        case SearchActionState::SmoothLeadIn:
+            startSmoothArc(robot);
+            break;
+
+        case SearchActionState::SmoothTurning:
+            if (std::fabs(g_search_action.exit_mm) > 0.125f)
+            {
+                robot->start_move(g_search_action.exit_mm, g_search_action.params.speed_mmps,
+                                  ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+                g_search_action.state = SearchActionState::SmoothExit;
+            }
+            else
+            {
+                robot->set_position(SENSING_POSITION_MM);
+                g_search_action.state = SearchActionState::Idle;
+            }
+            break;
+
+        case SearchActionState::SmoothExit:
+            robot->set_position(SENSING_POSITION_MM);
+            g_search_action.state = SearchActionState::Idle;
+            break;
+
+        case SearchActionState::TurnBackStopAtCentre:
+            if (!g_search_action.has_front_wall || timeoutExpired(g_search_action.deadline_ms))
+                finishTurnBackStopAtCentre(robot);
+            break;
+
+        case SearchActionState::TurnBackAdjust:
+            robot->reset_drive_system();
+            startTurnBackSpin(robot, true);
+            break;
+
+        case SearchActionState::TurnBackSpin:
+            if (g_search_action.exit_mm > 0.125f)
+            {
+                robot->start_move(g_search_action.exit_mm, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                                  ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+                g_search_action.state = SearchActionState::TurnBackExit;
+            }
+            else
+            {
+                g_search_action.state = SearchActionState::Idle;
+            }
+            break;
+
+        case SearchActionState::TurnBackExit:
+            robot->set_position(SENSING_POSITION_MM);
+            g_search_action.state = SearchActionState::Idle;
+            break;
+
+        case SearchActionState::Idle:
+            break;
+    }
+}
+
+void completeActiveCommand(MotionResult result)
+{
+    if (g_active_command_id == 0)
+        return;
+
+    MotionState::last_result          = result;
+    MotionState::completed_command_id = g_active_command_id;
+    MotionState::current_command_id   = 0;
+    MotionState::active               = false;
+    g_active_command_id               = 0;
+}
+
+void acceptCommand(const CommandPacket& cmd, Robot* robot)
+{
+    g_active_command_id              = cmd.id;
+    MotionState::accepted_command_id = cmd.id;
+    MotionState::current_command_id  = cmd.id;
+    MotionState::last_result         = MotionResult::None;
+    MotionState::active              = true;
+
+    switch (cmd.type)
+    {
+        case CommandType::MOVE_FWD_HALF:
+            robot->move(HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+            break;
+
+        case CommandType::MOVE_FWD:
+            robot->move(cmd.param * CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f,
+                        ROBOT_BASE_ACCEL_MMPS2);
+            break;
+
+        case CommandType::TURN_LEFT:
+            robot->spin_turn(-45.0f * cmd.param, ROBOT_MAX_TURN_SPEED_DEGPS,
+                             ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+            break;
+
+        case CommandType::TURN_RIGHT:
+            robot->spin_turn(45.0f * cmd.param, ROBOT_MAX_TURN_SPEED_DEGPS,
+                             ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+            break;
+
+        case CommandType::TURN_ARBITRARY:
+            robot->spin_turn(static_cast<float>(cmd.param), ROBOT_MAX_TURN_SPEED_DEGPS,
+                             ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+            break;
+
+        case CommandType::ARC_TURN_LEFT_90:
+            startSmoothTurnSequence(robot, SS90EL);
+            break;
+
+        case CommandType::ARC_TURN_RIGHT_90:
+            startSmoothTurnSequence(robot, SS90ER);
+            break;
+
+        case CommandType::ARC_TURN_LEFT_45:
+            startArcTurn(robot, -45.0f, 45.0f);
+            break;
+
+        case CommandType::ARC_TURN_RIGHT_45:
+            startArcTurn(robot, 45.0f, 45.0f);
+            break;
+
+        case CommandType::TURN_SMOOTH:
+            startSmoothTurnSequence(robot, cmd.param);
+            break;
+
+        case CommandType::MOVE_AHEAD:
+            startMoveAheadSequence(robot);
+            break;
+
+        case CommandType::TURN_BACK:
+            startTurnBackSequence(robot);
+            break;
+
+        case CommandType::STOP:
+            CommandHub::requestStop();
+            completeActiveCommand(MotionResult::Stopped);
+            break;
+
+        case CommandType::NONE:
+        default:
+            completeActiveCommand(MotionResult::Rejected);
+            break;
+    }
+}
+
 void processCommands(Robot* robot)
 {
+    if (CommandHub::stopRequested())
+    {
+        CommandHub::clearStopRequested();
+        CommandHub::clear();
+        robot->emergency_stop();
+        g_search_action.state = SearchActionState::Idle;
+        completeActiveCommand(MotionResult::Stopped);
+        MotionState::last_result = MotionResult::Stopped;
+        return;
+    }
+
+    if (g_active_command_id != 0 || !robotIdle(robot) || searchActionActive())
+        return;
+
     CommandPacket cmd;
-    bool          saw_stop = false;
-
-    while (CommandHub::receiveNonBlocking(cmd))
-    {
-        if (cmd.type == CommandType::STOP)
-        {
-            saw_stop = true;
-            continue;
-        }
-
-        if (!robot->motionComplete())
-            continue;
-
-        // Mark motion in flight as soon as we accept a command. Core 0's
-        // `waitForMotionComplete` on the API side spins on this flag.
-        MotionState::active = true;
-
-        switch (cmd.type)
-        {
-            case CommandType::MOVE_FWD_HALF:
-                robot->moveDistance(HALF_CELL_MM, 400.0f, 1000.0f);
-                break;
-
-            case CommandType::MOVE_FWD:
-                robot->moveDistance(cmd.param * CELL_SIZE_MM, 400.0f, 1000.0f);
-                break;
-
-            case CommandType::CENTER_FROM_EDGE:
-                robot->moveDistance(TO_CENTER_DISTANCE_MM, 400.0f, 1000.0f);
-                break;
-
-            case CommandType::TURN_LEFT:
-                // 45° step convention — see header comment.
-                robot->turnInPlace(-45.0f * cmd.param, 360.0f, 720.0f);
-                break;
-
-            case CommandType::TURN_RIGHT:
-                robot->turnInPlace(45.0f * cmd.param, 360.0f, 720.0f);
-                break;
-
-            case CommandType::TURN_ARBITRARY:
-                robot->turnInPlace(static_cast<float>(cmd.param), 360.0f, 720.0f);
-                break;
-
-            case CommandType::ARC_TURN_LEFT_90:
-                robot->smoothTurn(-90.0f, 45.0f);
-                break;
-
-            case CommandType::ARC_TURN_RIGHT_90:
-                robot->smoothTurn(90.0f, 45.0f);
-                break;
-
-            case CommandType::ARC_TURN_LEFT_45:
-                robot->smoothTurn(-45.0f, 45.0f);
-                break;
-
-            case CommandType::ARC_TURN_RIGHT_45:
-                robot->smoothTurn(45.0f, 45.0f);
-                break;
-
-            case CommandType::SNAPSHOT:
-            case CommandType::NONE:
-            default:
-                break;
-        }
-    }
-
-    if (saw_stop)
-    {
-        robot->stop();
-        // Drop the in-flight flag so Core 0 wakes from `waitForMotionComplete`
-        // immediately rather than spinning until the profile coasts to zero.
-        MotionState::active = false;
-    }
+    if (CommandHub::receiveNonBlocking(cmd))
+        acceptCommand(cmd, robot);
 }
 } // namespace
 
@@ -141,8 +461,8 @@ void core1Entry()
     const uint32_t  CONTROL_PERIOD_US = static_cast<uint32_t>(LOOP_INTERVAL_S * 1.0e6f);
     absolute_time_t next_tick         = make_timeout_time_us(CONTROL_PERIOD_US);
 
-    // ToF reads happen at 50 Hz, not 500 Hz. The control loop never reads ToF
-    // per tick — only `BackToWall` does, and it's a rare path.
+    // ToF publishes happen at 50 Hz, not 500 Hz. Search-action triggers use
+    // direct ToF reads only while one of those cooperative sequences is active.
     int       tof_publish_counter = 0;
     const int TOF_PUBLISH_DIVIDER = 10; // 500 Hz / 10 = 50 Hz
 
@@ -155,15 +475,11 @@ void core1Entry()
         if (g_battery)
             g_battery->update(); // Producer for the Battery filter in ToF/Robot mode.
         robot.update();
+        tickSearchActionSequence(&robot);
         processCommands(&robot);
 
-        // Clear the in-flight flag once motion has finished AND no follow-up
-        // command is queued. The pending-check matters: without it, Core 0
-        // could observe `active == false` in the brief window between its
-        // `send()` and our next `processCommands` pickup, then dispatch a
-        // second motion before the first even started.
-        if (robot.motionComplete() && !CommandHub::hasPending())
-            MotionState::active = false;
+        if (g_active_command_id != 0 && robotIdle(&robot) && !searchActionActive())
+            completeActiveCommand(MotionResult::Completed);
 
         if (++tof_publish_counter >= TOF_PUBLISH_DIVIDER)
         {

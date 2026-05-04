@@ -1,5 +1,6 @@
 #include "driver_lab/driver_lab.h"
 
+#include "common/bluetooth_stdio.h"
 #include "common/utils.h"
 #include "config/config.h"
 #include "drivers/battery.h"
@@ -267,6 +268,7 @@ void DriverLab::beginCountdown(const char* trial_name, TrialState next)
 {
     printf("\n=== %s ===\n", trial_name);
     printf("Battery: %.2f V\n", batteryVoltage());
+    BluetoothStdio::resetDiagnostics();
     countdown_.seconds_remaining = 3;
     countdown_.tick_in_second    = 0;
     countdown_.next_state        = next;
@@ -415,17 +417,12 @@ void DriverLab::tickOpenLoop()
     // positive heading drift gets a positive trim -> left_v > right_v ->
     // CW correction.
     //
-    // Gains derived from the live rotation plant (settings_.rot_kM) so a
-    // TURN-OL recalibration auto-retunes this loop -- same pattern as
-    // recalculateRotation() in settings.h. At this slow bandwidth
-    // (rot_tm * omega_n ~ 0.5 << 1) the plant is approximately a pure
-    // integrator, so the textbook 2nd-order PD design applies:
-    //   kp = omega_n^2          / rot_kM
-    //   kd = 2 * zeta * omega_n / rot_kM
-    const float kp_vpdeg  = (OL_STEERING_OMEGA_N_RAD * OL_STEERING_OMEGA_N_RAD) / settings_.rot_kM;
-    const float kd_vpdps  = (2.0f * OL_STEERING_ZETA * OL_STEERING_OMEGA_N_RAD) / settings_.rot_kM;
+    // Manually tuned gains (independent of settings_.rot_kM) — see
+    // settings.h. The earlier formula path scaled by an uncalibrated rot_kM
+    // and pushed ±0.5 V trim oscillation; direct constants are stable.
     const float h_err_deg = utils::wrapAngle180(imu_->robot_angle() - ol_.yaw_initial_deg);
-    const float trim_v    = utils::clampAbs(kp_vpdeg * h_err_deg + kd_vpdps * imu_->robot_omega(),
+    const float trim_v    = utils::clampAbs(OL_STEERING_KP_VPDEG * h_err_deg +
+                                                OL_STEERING_KD_VPDPS * imu_->robot_omega(),
                                             OL_STEERING_TRIM_MAX_V);
     const float left_v    = ol_.current_voltage + trim_v;
     const float right_v   = ol_.current_voltage - trim_v;
@@ -636,6 +633,7 @@ void DriverLab::finishOpenLoop()
     printf("  -> kV = %.7f V/(mm/s)\n", settings_.kV);
     printf("  -> kA = %.7f V/(mm/s^2)\n", settings_.kA);
     printf("Yaw drift: %.2f deg\n\n", imu_->robot_angle());
+    printBluetoothDiagnostics();
     printPrompt();
 
     trial_ = TrialState::Idle;
@@ -740,6 +738,7 @@ void DriverLab::finishStep()
     if (n < 10)
     {
         printf("\nNot enough samples to calculate Tm\n");
+        printBluetoothDiagnostics();
         printPrompt();
         trial_ = TrialState::Idle;
         return;
@@ -803,6 +802,7 @@ void DriverLab::finishStep()
     }
 
     printf("Samples: %d\n\n", n);
+    printBluetoothDiagnostics();
     printPrompt();
     trial_ = TrialState::Idle;
 }
@@ -961,6 +961,7 @@ void DriverLab::finishMove()
     if (move_.max_speed_error < move_.top_speed * 0.1f && std::fabs(final_pos_error) < 3.0f)
         printf("  Looks good! Speed tracking within 10%%, position error < 3mm.\n");
     printf("\n");
+    printBluetoothDiagnostics();
     printPrompt();
     trial_ = TrialState::Idle;
 }
@@ -1090,6 +1091,7 @@ void DriverLab::finishTurn()
         turn_.max_volts < MAX_VOLTAGE * 0.7f)
         printf("  Looks good! Gains are well-tuned for this speed.\n");
     printf("\n");
+    printBluetoothDiagnostics();
     printPrompt();
     trial_ = TrialState::Idle;
 }
@@ -1298,6 +1300,7 @@ void DriverLab::finishTurnOpenLoop()
     {
         printf("  ! Regression failed -- keeping previous rot_kM/turnKP/turnKD\n");
     }
+    printBluetoothDiagnostics();
     printPrompt();
     trial_ = TrialState::Idle;
 }
@@ -1377,6 +1380,7 @@ void DriverLab::finishTurnStep()
     if (n < 10)
     {
         printf("\nNot enough samples to compute ROT_TM\n");
+        printBluetoothDiagnostics();
         printPrompt();
         trial_ = TrialState::Idle;
         return;
@@ -1395,6 +1399,7 @@ void DriverLab::finishTurnStep()
     if (std::fabs(omega_ss) < 5.0f)
     {
         printf("\nSteady-state omega too small (%.2f deg/s) -- increase diff voltage.\n", omega_ss);
+        printBluetoothDiagnostics();
         printPrompt();
         trial_ = TrialState::Idle;
         return;
@@ -1439,8 +1444,23 @@ void DriverLab::finishTurnStep()
     }
 
     printf("Samples: %d\n\n", n);
+    printBluetoothDiagnostics();
     printPrompt();
     trial_ = TrialState::Idle;
+}
+
+void DriverLab::printBluetoothDiagnostics()
+{
+    const BluetoothStdio::Diagnostics bt = BluetoothStdio::diagnostics();
+    if (bt.dropped_bytes == 0 && bt.suppressed_csv_lines == 0 && bt.max_depth < bt.ring_size / 2)
+        return;
+
+    printf("--- Bluetooth TX ---\n");
+    printf("  CSV interval:      %lu ms\n", static_cast<unsigned long>(bt.csv_interval_ms));
+    printf("  Ring depth/max:    %lu/%lu bytes\n", static_cast<unsigned long>(bt.depth),
+           static_cast<unsigned long>(bt.max_depth));
+    printf("  Suppressed rows:   %lu\n", static_cast<unsigned long>(bt.suppressed_csv_lines));
+    printf("  Dropped bytes:     %lu\n\n", static_cast<unsigned long>(bt.dropped_bytes));
 }
 
 // ============================================================================
@@ -1643,6 +1663,8 @@ void DriverLab::executeCommand(const DriverLabArgs& args)
         cmdVoltageRight(args);
     else if (strcmp(cmd, "STOP") == 0 || strcmp(cmd, "X") == 0)
         cmdStop();
+    else if (strcmp(cmd, "BTLOG") == 0)
+        cmdBtLog(args);
     else if (strcmp(cmd, "EXPORT") == 0)
         cmdExport();
     else if (strcmp(cmd, "GPIO") == 0)
@@ -1738,6 +1760,7 @@ void DriverLab::cmdHelp()
     printf("\n");
     printf("=== OTHER ===\n");
     printf("  V [volts]  X(stop)  GPIO  SETTINGS  INIT  EXPORT  ID\n");
+    printf("  BTLOG [ms|RESET]    Bluetooth CSV interval/diagnostics (default: 50 ms)\n");
     printf("\n");
 }
 
@@ -2328,6 +2351,43 @@ void DriverLab::cmdStop()
     stopMotors();
     trial_ = TrialState::Idle; // abort any active trial
     printf("Motors stopped (any trial aborted)\n");
+    printBluetoothDiagnostics();
+}
+
+void DriverLab::cmdBtLog(const DriverLabArgs& args)
+{
+    if (args.argc > 1)
+    {
+        if (strcmp(args.argv[1], "RESET") == 0)
+        {
+            BluetoothStdio::resetDiagnostics();
+            printf("Bluetooth TX diagnostics reset\n");
+        }
+        else
+        {
+            char*      end    = nullptr;
+            const long ms_val = strtol(args.argv[1], &end, 10);
+            if (end == args.argv[1] || *end != '\0' || ms_val < 0 || ms_val > 1000)
+            {
+                printf("Usage: BTLOG [0..1000|RESET]  (0 = full-rate Bluetooth CSV)\n");
+                return;
+            }
+
+            BluetoothStdio::setCsvIntervalMs(static_cast<uint32_t>(ms_val));
+            printf("Bluetooth CSV interval set to %lu ms", static_cast<unsigned long>(ms_val));
+            if (ms_val == 0)
+                printf(" (full-rate)");
+            printf("\n");
+        }
+    }
+
+    const BluetoothStdio::Diagnostics bt = BluetoothStdio::diagnostics();
+    printf("BT TX: csv_interval=%lu ms, depth=%lu/%lu, max_depth=%lu, suppressed_rows=%lu, "
+           "dropped_bytes=%lu\n",
+           static_cast<unsigned long>(bt.csv_interval_ms), static_cast<unsigned long>(bt.depth),
+           static_cast<unsigned long>(bt.ring_size), static_cast<unsigned long>(bt.max_depth),
+           static_cast<unsigned long>(bt.suppressed_csv_lines),
+           static_cast<unsigned long>(bt.dropped_bytes));
 }
 
 void DriverLab::cmdExport()

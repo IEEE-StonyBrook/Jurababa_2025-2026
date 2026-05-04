@@ -67,17 +67,19 @@
 #define IMU_MAX_YAW_DELTA_PER_SAMPLE 20.0f
 
 // Moving-average window over per-packet yaw deltas. Mirrors the encoder path's
-// ENCODER_AVERAGER_LENGTH (motion.h): we filter the *delta* the rotation PD
-// consumes, not the upstream yaw — so the averaging never gets re-differentiated
-// and adds no group delay to the D-term beyond the window's own (N/2) phase lag.
+// IMU_DELTA_AVG_LENGTH = 1: passthrough, no averaging.
 //
-// 4 taps × 10 ms/packet = 40 ms window, ~20 ms phase lag. The rotation PD runs
-// at 100 Hz with ZOH between packets, so the controller's effective bandwidth
-// is well below 1/(2·40 ms) = 12.5 Hz; 4 taps gives meaningful quantization
-// rejection without crippling step response on fast turns. Increase for a
-// smoother trace at the cost of lag (forces ROT_KD retune, same caveat as
-// the encoder averager in motion.h).
-#define IMU_DELTA_AVG_LENGTH 4
+// Rationale: the encoder MA exists for *quantization* (per-tick encoder count
+// is coarse). The IMU's per-packet yaw delta is 0.01° resolution and arrives
+// pre-fused from the BNO085's internal Kalman filter — there's little raw
+// noise left for an MA to reject, and a 4-tap MA at 100 Hz cost us 15 ms of
+// group delay (vs UKMARS' 7 ms encoder MA at 500 Hz). With the rotation PD
+// now single-rate at 500 Hz consuming `omega * dt`, the held-flat ZOH on
+// rate already smooths the differential mixer; explicit MA on top of that
+// is double-filtering. Re-raise to 2 if turn traces show packet-boundary
+// jitter that costs more KP than the lag does. The ring buffer code below
+// handles any N ≥ 1 correctly — no code change needed beyond this constant.
+#define IMU_DELTA_AVG_LENGTH 1
 
 // ================= Line Sensor Configuration ================= //
 #define LINE_SENSOR_COUNT             8

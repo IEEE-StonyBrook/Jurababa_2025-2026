@@ -4,13 +4,45 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #ifndef SIMULATOR_BUILD
 #include "app/commands.h"
 #endif
 #include "common/log.h"
+#include "config/smooth_turn.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
+
+namespace
+{
+std::string uppercaseToken(std::string token)
+{
+    for (char& c : token)
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return token;
+}
+
+bool parsePositiveInt(const std::string& text, int& value)
+{
+    if (text.empty())
+        return false;
+
+    int parsed = 0;
+    for (char c : text)
+    {
+        if (!std::isdigit(static_cast<unsigned char>(c)))
+            return false;
+        parsed = parsed * 10 + (c - '0');
+    }
+
+    if (parsed <= 0)
+        return false;
+
+    value = parsed;
+    return true;
+}
+} // namespace
 
 API::API(Mouse* mouse) : mouse_(mouse), run_on_simulator(false)
 {
@@ -48,11 +80,11 @@ void API::moveForwardHalf()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::MOVE_FWD_HALF);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::MOVE_FWD_HALF));
     }
 #endif
-    mouse_->moveForward(0.5f);
+    // Half-cell physical moves do not advance the logical maze cell. Diagonal
+    // sequences use GMF/GFM when the virtual mouse should move to the next cell.
 }
 
 void API::moveForward()
@@ -62,8 +94,7 @@ void API::moveForward()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::MOVE_FWD, 1);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::MOVE_FWD, 1));
     }
 #endif
     mouse_->moveForward(1);
@@ -82,8 +113,7 @@ void API::moveForward(int steps)
         return;
     }
 #ifndef SIMULATOR_BUILD
-    CommandHub::send(CommandType::MOVE_FWD, steps);
-    waitForMotion();
+    waitForMotion(CommandHub::send(CommandType::MOVE_FWD, steps));
 #endif
     mouse_->moveForward(steps);
 }
@@ -94,14 +124,6 @@ void API::ghostMoveForward(int steps)
     mouse_->moveForward(steps);
 }
 
-void API::goToCenterFromEdge()
-{
-#ifndef SIMULATOR_BUILD
-    CommandHub::send(CommandType::CENTER_FROM_EDGE);
-    waitForMotion();
-#endif
-}
-
 void API::turnLeft45()
 {
     if (run_on_simulator)
@@ -109,8 +131,7 @@ void API::turnLeft45()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::TURN_LEFT, 1);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::TURN_LEFT, 1));
     }
 #endif
     mouse_->turn45Steps(-1);
@@ -123,8 +144,7 @@ void API::turnLeft90()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::TURN_LEFT, 2);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::TURN_LEFT, 2));
     }
 #endif
     mouse_->turn45Steps(-2);
@@ -137,8 +157,7 @@ void API::turnRight45()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::TURN_RIGHT, 1);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::TURN_RIGHT, 1));
     }
 #endif
     mouse_->turn45Steps(1);
@@ -151,8 +170,7 @@ void API::turnRight90()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::TURN_RIGHT, 2);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::TURN_RIGHT, 2));
     }
 #endif
     mouse_->turn45Steps(2);
@@ -165,11 +183,98 @@ void API::turn(int degrees)
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::TURN_ARBITRARY, degrees);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::TURN_ARBITRARY, degrees));
     }
 #endif
     mouse_->turn45Steps(degrees / 45);
+}
+
+void API::move_ahead()
+{
+    if (run_on_simulator)
+        simulatorResponse("moveForward");
+#ifndef SIMULATOR_BUILD
+    else
+    {
+        waitForMotion(CommandHub::send(CommandType::MOVE_AHEAD));
+    }
+#endif
+    mouse_->moveForward(1);
+}
+
+void API::turn_left()
+{
+    turn_smooth(SS90EL);
+    mouse_->turn45Steps(-2);
+}
+
+void API::turn_right()
+{
+    turn_smooth(SS90ER);
+    mouse_->turn45Steps(2);
+}
+
+void API::turn_back()
+{
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator)
+    {
+        waitForMotion(CommandHub::send(CommandType::TURN_BACK));
+        mouse_->turn45Steps(4);
+        return;
+    }
+#endif
+    turn_IP180();
+    mouse_->turn45Steps(4);
+}
+
+void API::turn_smooth(int turn_id)
+{
+    if (run_on_simulator)
+    {
+        simulatorResponse((turn_id & 1) ? "arcTurnRight90" : "arcTurnLeft90");
+        return;
+    }
+#ifndef SIMULATOR_BUILD
+    waitForMotion(CommandHub::send(CommandType::TURN_SMOOTH, turn_id));
+#endif
+}
+
+void API::turn_IP180()
+{
+    if (run_on_simulator)
+    {
+        simulatorResponse("turnRight");
+        simulatorResponse("turnRight");
+        return;
+    }
+#ifndef SIMULATOR_BUILD
+    waitForMotion(CommandHub::send(CommandType::TURN_ARBITRARY, 180));
+#endif
+}
+
+void API::turn_IP90R()
+{
+    if (run_on_simulator)
+    {
+        simulatorResponse("turnRight");
+        return;
+    }
+#ifndef SIMULATOR_BUILD
+    waitForMotion(CommandHub::send(CommandType::TURN_RIGHT, 2));
+#endif
+}
+
+void API::turn_IP90L()
+{
+    if (run_on_simulator)
+    {
+        simulatorResponse("turnLeft");
+        return;
+    }
+#ifndef SIMULATOR_BUILD
+    waitForMotion(CommandHub::send(CommandType::TURN_LEFT, 2));
+#endif
 }
 
 void API::arcTurnLeft90()
@@ -179,8 +284,7 @@ void API::arcTurnLeft90()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::ARC_TURN_LEFT_90);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::ARC_TURN_LEFT_90));
     }
 #endif
     mouse_->turn45Steps(-2);
@@ -193,8 +297,7 @@ void API::arcTurnRight90()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::ARC_TURN_RIGHT_90);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::ARC_TURN_RIGHT_90));
     }
 #endif
     mouse_->turn45Steps(2);
@@ -207,8 +310,7 @@ void API::arcTurnLeft45()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::ARC_TURN_LEFT_45);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::ARC_TURN_LEFT_45));
     }
 #endif
     mouse_->turn45Steps(-1);
@@ -221,8 +323,7 @@ void API::arcTurnRight45()
 #ifndef SIMULATOR_BUILD
     else
     {
-        CommandHub::send(CommandType::ARC_TURN_RIGHT_45);
-        waitForMotion();
+        waitForMotion(CommandHub::send(CommandType::ARC_TURN_RIGHT_45));
     }
 #endif
     mouse_->turn45Steps(1);
@@ -230,29 +331,125 @@ void API::arcTurnRight45()
 
 void API::executeSequence(const std::string& sequence)
 {
-    std::istringstream ss(sequence);
-    std::string        token;
+    std::istringstream       ss(sequence);
+    std::string              token;
+    std::vector<std::string> tokens;
 
     while (std::getline(ss, token, '#'))
     {
         if (token.empty())
             continue;
 
-        char cmd   = std::toupper(token[0]);
-        int  value = token.size() > 1 ? std::stoi(token.substr(1)) : 0;
+        tokens.push_back(uppercaseToken(token));
+    }
 
-        if (cmd == 'F')
-            moveForward(value > 0 ? value : 1);
-        else if (cmd == 'L')
+    for (size_t i = 0; i < tokens.size(); ++i)
+    {
+        token = tokens[i];
+
+        if (token == "F")
         {
-            LOG_DEBUG("Turning left " + std::to_string(value > 0 ? value : 90) + " degrees");
-            turnLeft90();
+            if (movement_style_ == MovementStyle::Smooth)
+                move_ahead();
+            else
+                moveForward();
+            continue;
         }
-        else if (cmd == 'R')
+
+        if (token == "FH")
         {
-            LOG_DEBUG("Turning right " + std::to_string(value > 0 ? value : 90) + " degrees");
-            turnRight90();
+            moveForwardHalf();
+            continue;
         }
+
+        if (token == "L")
+        {
+            if (movement_style_ == MovementStyle::Smooth)
+            {
+                if (i + 1 < tokens.size() && tokens[i + 1] == "L")
+                {
+                    turn_back();
+                    ++i;
+                }
+                else
+                {
+                    turn_left();
+                }
+            }
+            else
+            {
+                turnLeft90();
+            }
+            continue;
+        }
+
+        if (token == "R")
+        {
+            if (movement_style_ == MovementStyle::Smooth)
+            {
+                if (i + 1 < tokens.size() && tokens[i + 1] == "R")
+                {
+                    turn_back();
+                    ++i;
+                }
+                else
+                {
+                    turn_right();
+                }
+            }
+            else
+            {
+                turnRight90();
+            }
+            continue;
+        }
+
+        if (token == "L45")
+        {
+            if (movement_style_ == MovementStyle::Smooth)
+                arcTurnLeft45();
+            else
+                turnLeft45();
+            continue;
+        }
+
+        if (token == "R45")
+        {
+            if (movement_style_ == MovementStyle::Smooth)
+                arcTurnRight45();
+            else
+                turnRight45();
+            continue;
+        }
+
+        if (token == "GMF" || token == "GFM")
+        {
+            if (token == "GFM")
+                LOG_ERROR("API: Treating diagonalizer token GFM as GMF");
+            ghostMoveForward(1);
+            continue;
+        }
+
+        if (token.size() > 1 && token[0] == 'F')
+        {
+            int steps = 0;
+            if (parsePositiveInt(token.substr(1), steps))
+            {
+                if (movement_style_ == MovementStyle::Smooth)
+                {
+                    for (int step = 0; step < steps; ++step)
+                        move_ahead();
+                }
+                else
+                {
+                    moveForward(steps);
+                }
+                continue;
+            }
+        }
+
+        LOG_ERROR("API: Unknown path token: " + token);
+        return;
     }
 }
 
@@ -328,11 +525,6 @@ std::string API::simulatorResponse(const std::string& cmd)
     std::string resp;
     std::getline(std::cin, resp);
     return resp;
-}
-
-int API::simulatorInt(const std::string& cmd)
-{
-    return std::stoi(simulatorResponse(cmd));
 }
 
 bool API::simulatorBool(const std::string& cmd)

@@ -23,8 +23,4 @@
 #define CELL_SIZE_MM 180.0f // Standard micromouse cell
 #define HALF_CELL_MM (CELL_SIZE_MM / 2.0f)
 
-// ===================== Robot Body ===================== //
-// Distance from wheel axle to front of robot (for wall alignment)
-#define TO_CENTER_DISTANCE_MM ((167.5f - WHEEL_DIAMETER_MM) / 2.0f)
-
 #endif // CONFIG_GEOMETRY_H

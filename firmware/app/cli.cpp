@@ -13,8 +13,6 @@
 #include "app/multicore.h"
 #include "app/start_gesture.h"
 #include "common/log.h"
-#include "control/line_follower.h"
-#include "driver_lab/driver_lab.h"
 #include "drivers/battery.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
@@ -23,193 +21,268 @@
 
 namespace
 {
-bool isAllDigits(const char* s)
+constexpr char kBackspace = 0x08;
+
+const char* movementStyleName(API::MovementStyle style)
 {
-    if (s == nullptr || *s == '\0')
-        return false;
-    if (*s == '-' || *s == '+')
-        ++s;
-    if (*s == '\0')
-        return false;
-    for (; *s; ++s)
-        if (!std::isdigit(static_cast<unsigned char>(*s)))
-            return false;
-    return true;
+    return style == API::MovementStyle::Smooth ? "SMOOTH" : "STATIONARY";
 }
 } // namespace
 
-Cli::Cli(const Deps& deps) : deps_(deps)
+void Args::print() const
 {
-    // Wire ourselves into the API as the motion-complete waiter so every
-    // CommandHub::send blocks here until Core 1 reports done.
+    for (int i = 0; i < argc; ++i)
+        printf("%s ", argv[i]);
+    printf("\n");
+}
+
+CommandLineInterface::CommandLineInterface(const Deps& deps) : deps_(deps)
+{
     if (deps_.api != nullptr)
         deps_.api->setMotionWaiter(this);
 }
 
-void Cli::greet()
+void CommandLineInterface::greet()
 {
     printf("\n");
     printf("==========================================\n");
-    printf("  Jurababa Micromouse -- UKMARS-style CLI \n");
+    printf("  Jurababa Micromouse -- UKMARS CLI\n");
     printf("==========================================\n");
     printf("Sensor mode: %s\n", deps_.sensor_mode == SensorMode::TOF ? "ToF" : "LineSensor");
-    printf("Type a number to run a function, or '?' for help.\n");
-    printf("Numbered functions:\n");
-    printf("   0  STOP / halt\n");
-    printf("   1  Sensor snapshot\n");
-    printf("   2  Explore (FloodFill)            [TOF]\n");
-    printf("   3  Return to start                [TOF]\n");
-    printf("   4  Speed run (A* + diagonals)     [TOF]\n");
-    printf("   5  SS90 right turn (90 deg)\n");
-    printf("   6  Smooth right 90 turn\n");
-    printf("   7  Forward 1 cell (encoder cal)\n");
-    printf("   8  Line follow                    [LINE]\n");
-    printf("   9  TURN-OL (DriverLab IMU spin)\n");
-    printf("  10  Battery voltage\n");
-    printf("Short commands: ?  B (battery)  X (halt)  RUN n  G (start)\n");
-    if (deps_.driver_lab != nullptr)
-        printf("Alpha tokens (OL, STEP, EXPORT, MOVE, ...) are forwarded to DriverLab.\n");
-    else
-        printf("Reboot in DriverLab mode (press 'M') for OL/STEP/EXPORT/MOVE/TURN trials.\n");
-    printf("\n");
+    printf("DriverLab is a separate boot mode; Normal CLI does not run OL/STEP/MOVE/TURN.\n");
+    help();
+    prompt();
 }
 
-void Cli::loop()
+void CommandLineInterface::loop()
 {
     while (true)
     {
-        pollOnce();
+        process_serial_data();
         sleep_ms(2);
     }
 }
 
-bool Cli::pollOnce()
+bool CommandLineInterface::process_serial_data()
 {
     handleBluetoothCommand();
-    // Battery filter producer for LineSensor mode. Skip in ToF mode — Core 1's
-    // tick loop already updates the filter, and a second writer here would
-    // race with it on `reading_sum_` / `reading_index_`.
-    if (deps_.battery && deps_.sensor_mode != SensorMode::TOF)
+
+    if (deps_.battery != nullptr && deps_.sensor_mode != SensorMode::TOF)
         deps_.battery->update();
 
     bool processed = false;
-    if (readLineNonBlocking())
+    while (true)
     {
-        executeLine();
-        processed = true;
+        int c = getchar_timeout_us(0);
+        if (c == PICO_ERROR_TIMEOUT || c < 0)
+            break;
+
+        char ch = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        if (ch == '\r' || ch == '\n')
+        {
+            printf("\n");
+            process_input_line();
+            processed = true;
+            continue;
+        }
+
+        if (ch == kBackspace || ch == 127)
+        {
+            handle_backspace();
+            continue;
+        }
+
+        if (std::isprint(static_cast<unsigned char>(ch)))
+            add_to_buffer(ch);
     }
+
     return processed;
 }
 
-bool Cli::readLineNonBlocking()
+void CommandLineInterface::handle_backspace()
 {
-    int c = getchar_timeout_us(0);
-    if (c == PICO_ERROR_TIMEOUT || c < 0)
-        return false;
+    if (line_index_ <= 0)
+        return;
 
-    char ch = static_cast<char>(c);
-    if (ch == '\r' || ch == '\n')
-    {
-        if (line_index_ == 0)
-            return false; // ignore bare CR/LF
-        line_buffer_[line_index_] = '\0';
-        line_index_               = 0;
-        return true;
-    }
-
-    if (line_index_ < LINE_BUFFER_SIZE - 1)
-    {
-        line_buffer_[line_index_++] = ch;
-        line_buffer_[line_index_]   = '\0';
-    }
-    return false;
+    --line_index_;
+    line_buffer_[line_index_] = '\0';
+    printf("\b \b");
 }
 
-void Cli::executeLine()
+void CommandLineInterface::add_to_buffer(char c)
 {
-    // Strip leading whitespace.
-    char* p = line_buffer_;
-    while (*p == ' ' || *p == '\t')
-        ++p;
-    if (*p == '\0')
+    if (line_index_ >= LINE_BUFFER_SIZE - 1)
         return;
 
-    // Capture the first whitespace-delimited token without destroying the
-    // rest of the line — DriverLab needs the full line for its own tokenizer.
-    char first_token[32];
-    int  i = 0;
-    while (p[i] != '\0' && p[i] != ' ' && p[i] != '\t' && i < 31)
-    {
-        first_token[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(p[i])));
-        ++i;
-    }
-    first_token[i] = '\0';
+    putchar(c);
+    line_buffer_[line_index_++] = c;
+    line_buffer_[line_index_]   = '\0';
+}
 
-    // Pure integer → numbered dispatch.
-    if (isAllDigits(first_token))
+int CommandLineInterface::tokenise(Args& args, char* line)
+{
+    args.argc = 0;
+    for (char* token = std::strtok(line, " ,="); token != nullptr;
+         token       = std::strtok(nullptr, " ,="))
     {
-        int n = std::atoi(first_token);
-        runFunction(n);
-        last_function_ = n;
-        return;
+        args.argv[args.argc++] = token;
+        if (args.argc >= CLI_MAX_ARGC)
+            break;
     }
+    return args.argc;
+}
 
-    // Built-in short commands.
-    if (std::strcmp(first_token, "?") == 0 || std::strcmp(first_token, "HELP") == 0)
-    {
-        greet();
-        return;
-    }
-    if (std::strcmp(first_token, "X") == 0 || std::strcmp(first_token, "HALT") == 0)
-    {
-        runFunction(0);
-        return;
-    }
-    if (std::strcmp(first_token, "B") == 0 || std::strcmp(first_token, "BAT") == 0 ||
-        std::strcmp(first_token, "BATTERY") == 0)
-    {
-        runFunction(10);
-        return;
-    }
-    if (std::strcmp(first_token, "G") == 0 || std::strcmp(first_token, "GO") == 0)
-    {
-        // Re-run the last numbered function (USB analog of Bluetooth START).
-        if (last_function_ >= 0)
-            runFunction(last_function_);
-        else
-            printf("No previous function to re-run.\n");
-        return;
-    }
-    if (std::strcmp(first_token, "RUN") == 0)
-    {
-        // RUN n — same as typing the number.
-        char* arg = p + std::strlen(first_token);
-        while (*arg == ' ' || *arg == '\t')
-            ++arg;
-        if (isAllDigits(arg))
-        {
-            int n = std::atoi(arg);
-            runFunction(n);
-            last_function_ = n;
-        }
-        else
-        {
-            printf("RUN expects an integer argument.\n");
-        }
-        return;
-    }
+void CommandLineInterface::process_input_line()
+{
+    Args args;
+    if (tokenise(args, line_buffer_) > 0)
+        execute_command(args);
 
-    // Anything else: forward the original line to DriverLab unchanged so
-    // OL, STEP, EXPORT, MOVE, TURN, … keep working with their existing
-    // arg parser. We hand `p` (post-whitespace-strip) — DriverLab doesn't
-    // mind leading-stripped lines.
-    if (deps_.driver_lab != nullptr)
-        deps_.driver_lab->executeLine(p);
+    clear_input_buffer();
+    prompt();
+}
+
+void CommandLineInterface::execute_command(Args& args)
+{
+    if (std::strlen(args.argv[0]) == 1)
+        run_short_cmd(args);
     else
-        printf("Unknown command: %s\n", first_token);
+        run_long_cmd(args);
 }
 
-void Cli::handleBluetoothCommand()
+void CommandLineInterface::run_short_cmd(const Args& args)
+{
+    char c = args.argv[0][0];
+    switch (c)
+    {
+        case '?':
+            help();
+            break;
+        case 'X':
+            stop();
+            break;
+        case 'W':
+        case 'C':
+        case 'D':
+            printMazeView(c);
+            break;
+        case 'B':
+            run_function(10);
+            break;
+        case 'S':
+            dumpSensorsOneShot();
+            break;
+        case 'E':
+        case 'Q':
+            printEncoderSnapshot();
+            break;
+        case 'F':
+        {
+            int     function = -1;
+            uint8_t digits   = args.argc >= 2 ? read_integer(args.argv[1], function) : 0;
+            if (digits > 0)
+            {
+                run_function(function);
+                last_function_ = function;
+            }
+            else
+            {
+                printf("F expects a function number.\n");
+            }
+            break;
+        }
+        default:
+            printf("UNKNOWN COMMAND: ");
+            args.print();
+            break;
+    }
+}
+
+void CommandLineInterface::run_long_cmd(const Args& args)
+{
+    if (std::strcmp(args.argv[0], "HELP") == 0)
+    {
+        help();
+        return;
+    }
+    if (std::strcmp(args.argv[0], "SEARCH") == 0)
+    {
+        handle_search_command(args);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "STYLE") == 0)
+    {
+        handle_style_command(args);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "HALT") == 0)
+    {
+        stop();
+        return;
+    }
+
+    printf("UNKNOWN COMMAND: ");
+    args.print();
+}
+
+void CommandLineInterface::handle_search_command(const Args& args)
+{
+    if (!needsTof("SEARCH"))
+        return;
+    if (deps_.api == nullptr || deps_.mouse == nullptr)
+    {
+        printf("Maze API not initialized.\n");
+        return;
+    }
+
+    int x = 7;
+    int y = 7;
+    if (args.argc >= 2)
+        read_integer(args.argv[1], x);
+    if (args.argc >= 3)
+        read_integer(args.argv[2], y);
+
+    if (!startWithGesture(true))
+        return;
+
+    printf("Search to %d,%d\n", x, y);
+    std::vector<std::array<int, 2>> goals = {{x, y}};
+    PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
+                            /*all_explored=*/false, /*avoid_goals=*/false);
+}
+
+void CommandLineInterface::handle_style_command(const Args& args)
+{
+    if (deps_.api == nullptr)
+    {
+        printf("API not initialized.\n");
+        return;
+    }
+
+    if (args.argc < 2)
+    {
+        printf("STYLE: %s\n", movementStyleName(deps_.api->movementStyle()));
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "SMOOTH") == 0)
+    {
+        deps_.api->setMovementStyle(API::MovementStyle::Smooth);
+        printf("STYLE: SMOOTH\n");
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "STATIONARY") == 0 || std::strcmp(args.argv[1], "STILL") == 0)
+    {
+        deps_.api->setMovementStyle(API::MovementStyle::Stationary);
+        printf("STYLE: STATIONARY\n");
+        return;
+    }
+
+    printf("STYLE expects STATIONARY or SMOOTH.\n");
+}
+
+void CommandLineInterface::handleBluetoothCommand()
 {
     Bluetooth* bt = deps_.bluetooth;
     if (bt == nullptr || !bt->hasCommand())
@@ -221,262 +294,172 @@ void Cli::handleBluetoothCommand()
         case Bluetooth::Command::START:
             if (last_function_ >= 0)
             {
-                LOG_INFO("BT START: re-running function " << last_function_);
-                runFunction(last_function_);
+                LOG_INFO("BT START: running F " << last_function_);
+                run_function(last_function_);
             }
             else
             {
-                bt->write("BT START: no last function. Type a number first.\r\n");
+                bt->write("BT START: no last function. Use F n first.\r\n");
             }
             break;
         case Bluetooth::Command::HALT:
             LOG_INFO("BT HALT");
-            runFunction(0);
+            stop();
             break;
         case Bluetooth::Command::RESET:
-            // Full Mouse/Maze reset is a reboot operation — the brain owns
-            // wall state, and reseeding it mid-session has subtle ordering
-            // requirements. Keep RESET as STOP + reboot hint for now.
             LOG_INFO("BT RESET: stopping. Reboot for full Maze reset.");
-            runFunction(0);
+            stop();
             break;
         case Bluetooth::Command::BATTERY:
-            runFunction(10);
+            run_function(10);
             break;
         default:
             break;
     }
 }
 
-void Cli::pollHaltOnly()
+void CommandLineInterface::pollHaltOnly()
 {
-    // USB X / x.
     int c = getchar_timeout_us(0);
     if (c >= 0)
     {
         char ch = static_cast<char>(c);
         if (ch == 'X' || ch == 'x')
         {
-            CommandHub::send(CommandType::STOP);
-            halted_ = true;
+            stop();
             return;
         }
     }
 
-    // Bluetooth HALT.
     Bluetooth* bt = deps_.bluetooth;
     if (bt != nullptr && bt->hasCommand())
     {
         Bluetooth::Command cmd = bt->command();
         if (cmd == Bluetooth::Command::HALT)
-        {
-            CommandHub::send(CommandType::STOP);
-            halted_ = true;
-        }
-        // Other commands are dropped here — they're handled by the main
-        // loop's `handleBluetoothCommand()`. During waitForMotionComplete
-        // we don't want a stray BATTERY query to derail the motion.
+            stop();
     }
 }
 
-void Cli::waitForMotionComplete()
+void CommandLineInterface::waitForMotionComplete(uint16_t command_id)
 {
-    // Worst-case wakeup latency is `sleep_ms(2)` + one Core-1 tick (2 ms),
-    // so HALT cuts through within ~4 ms. Good enough for human reaction
-    // times and well under the 8-deep FIFO's drain rate.
-    while (MotionState::active)
+    if (command_id == 0)
+        return;
+
+    while (MotionState::completed_command_id != command_id)
     {
         pollHaltOnly();
         if (halted_)
         {
-            // Drop the flag so we exit cleanly even if Core 1 hasn't
-            // processed the STOP yet.
-            MotionState::active = false;
             return;
         }
         sleep_ms(2);
     }
 }
 
-void Cli::runFunction(int n)
+void CommandLineInterface::run_function(int cmd)
 {
     halted_ = false;
 
-    auto needsTof = [&](const char* what)
-    {
-        if (deps_.sensor_mode != SensorMode::TOF)
-        {
-            printf("%s requires ToF sensor mode. Reboot and select 'T'.\n", what);
-            return false;
-        }
-        return true;
-    };
+    if (cmd == 0)
+        return;
 
-    auto startWithGesture = [&](bool tof_available) -> bool
+    switch (cmd)
     {
-        printf("Waiting for start gesture (wave hand / send 'G' / BT START)...\n");
-        StartTrigger t = waitForStartGesture(deps_.bluetooth, tof_available);
-        if (t == StartTrigger::CANCELLED)
-        {
-            printf("Cancelled.\n");
-            halted_ = true;
-            return false;
-        }
-        return true;
-    };
-
-    switch (n)
-    {
-        case 0:
-        {
-            CommandHub::send(CommandType::STOP);
-            // Drop the in-flight flag so any Core-0 spin in waitForMotionComplete
-            // unblocks immediately rather than waiting on Core 1's profile coast.
-            MotionState::active = false;
-            halted_             = true;
-            printf("STOP\n");
-            break;
-        }
-
         case 1:
-        {
             dumpSensorsOneShot();
             break;
-        }
 
         case 2:
-        {
-            if (!needsTof("Explore (FloodFill)"))
+            if (!needsTof("Search maze"))
+                break;
+            if (deps_.api == nullptr || deps_.mouse == nullptr)
                 break;
             if (!startWithGesture(true))
                 break;
             if (deps_.api != nullptr)
                 deps_.api->setPhaseColor('y');
-            printf("Exploring...\n");
+            printf("Searching maze...\n");
             FloodFill::explore(*deps_.mouse, *deps_.api, /*diagonals=*/false);
-            printf("Explore done.\n");
+            printf("Search done.\n");
             break;
-        }
 
         case 3:
-        {
-            if (!needsTof("Return to start"))
+            if (!needsTof("Follow to start"))
+                break;
+            if (deps_.api == nullptr || deps_.mouse == nullptr)
                 break;
             if (!startWithGesture(true))
                 break;
-            printf("Returning to start...\n");
+            printf("Follow to start...\n");
             PathUtils::setAllExplored(deps_.mouse);
-            std::vector<std::array<int, 2>> goals = {deps_.start_cell};
-            PathUtils::traversePath(deps_.api, deps_.mouse, goals,
-                                    /*diagonals=*/false, /*all_explored=*/true,
-                                    /*avoid_goals=*/false);
-            printf("Return done.\n");
+            {
+                std::vector<std::array<int, 2>> goals = {deps_.start_cell};
+                PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
+                                        /*all_explored=*/true,
+                                        /*avoid_goals=*/false);
+            }
             break;
-        }
 
         case 4:
-        {
-            if (!needsTof("Speed run"))
+            if (!needsTof("Test SS90E Turn"))
+                break;
+            if (deps_.api == nullptr)
                 break;
             if (!startWithGesture(true))
                 break;
-            printf("Speed run (A* + diagonals)...\n");
-            PathUtils::traversePath(deps_.api, deps_.mouse, deps_.goal_cells,
-                                    /*diagonals=*/true, /*all_explored=*/true,
-                                    /*avoid_goals=*/false);
-            printf("Speed run done.\n");
+            deps_.api->turn_right();
+            printf("SS90E right done.\n");
             break;
-        }
 
         case 5:
-        {
-            if (!startWithGesture(deps_.sensor_mode == SensorMode::TOF))
-                break;
-            // 2 × 45° steps = 90° (turn-unit fix in core1.cpp).
-            CommandHub::send(CommandType::TURN_RIGHT, 2);
-            waitForMotionComplete();
-            printf("SS90 right done.\n");
+            printf("Wander is not implemented on Jurababa.\n");
             break;
-        }
 
         case 6:
-        {
-            if (!startWithGesture(deps_.sensor_mode == SensorMode::TOF))
+            if (!needsTof("Edge detect position test"))
                 break;
-            CommandHub::send(CommandType::ARC_TURN_RIGHT_90);
-            waitForMotionComplete();
-            printf("Smooth 90 right done.\n");
+            dumpSensorsOneShot();
             break;
-        }
 
         case 7:
-        {
-            if (!startWithGesture(deps_.sensor_mode == SensorMode::TOF))
-                break;
-            SensorData before;
-            SensorHub::snapshot(before);
-            CommandHub::send(CommandType::MOVE_FWD, 1);
-            waitForMotionComplete();
-            SensorData after;
-            SensorHub::snapshot(after);
-            printEncoderDelta(before.left_encoder, before.right_encoder, after.left_encoder,
-                              after.right_encoder);
+            printEncoderSnapshot();
             break;
-        }
 
         case 8:
         {
-            if (deps_.sensor_mode != SensorMode::LINE_SENSOR)
-            {
-                printf("Line follow requires LineSensor mode. Reboot and select 'L'.\n");
-                break;
-            }
-            if (deps_.line_follower == nullptr)
-            {
-                printf("Line follower not constructed.\n");
-                break;
-            }
-            // Skip ToF gesture (front ToF isn't available); 'G' / BT START only.
-            if (!startWithGesture(false))
-                break;
-            runLineFollowEventLoop();
+            SensorData snap;
+            SensorHub::snapshot(snap);
+            printf("Front ToF: %d mm\n", snap.tof_front_mm);
             break;
         }
 
         case 9:
-        {
-            if (deps_.driver_lab != nullptr)
-                deps_.driver_lab->executeLine("TURNOL");
-            else
-                printf("DriverLab not initialized.\n");
+            if (!needsTof("Move forward 4 cells"))
+                break;
+            if (deps_.api == nullptr)
+                break;
+            if (!startWithGesture(true))
+                break;
+            deps_.api->moveForward(4);
+            printf("Forward 4 cells done.\n");
             break;
-        }
 
         case 10:
-        {
             if (deps_.battery == nullptr)
             {
                 printf("Battery monitor not initialized.\n");
                 break;
             }
-            // Filter is kept fresh by the per-tick producer (Core 1 in ToF mode,
-            // Cli::pollOnce / runLineFollowEventLoop in LineSensor mode). No
-            // update() call here — it would race with Core 1.
             printf("Battery: %.2f V\n", deps_.battery->voltage());
             break;
-        }
 
         default:
-        {
-            printf("Unknown function: %d. STOP-ing for safety.\n", n);
-            CommandHub::send(CommandType::STOP);
-            halted_ = true;
+            stop();
             break;
-        }
     }
 }
 
-void Cli::dumpSensorsOneShot()
+void CommandLineInterface::dumpSensorsOneShot()
 {
     SensorData snap;
     SensorHub::snapshot(snap);
@@ -484,91 +467,124 @@ void Cli::dumpSensorsOneShot()
            snap.tof_front_mm, snap.tof_right_mm, static_cast<double>(snap.imu_yaw),
            static_cast<long>(snap.left_encoder), static_cast<long>(snap.right_encoder));
     if (deps_.battery != nullptr)
-    {
-        // No update() here — see runFunction case 10 / Cli::pollOnce.
         printf("Battery: %.2f V\n", deps_.battery->voltage());
-    }
 }
 
-void Cli::printEncoderDelta(int32_t l_before, int32_t r_before, int32_t l_after, int32_t r_after)
+void CommandLineInterface::printMazeView(char mode)
 {
-    int32_t dl = l_after - l_before;
-    int32_t dr = r_after - r_before;
-    printf("Encoder delta over 1 cell:  L=%ld ticks   R=%ld ticks\n", static_cast<long>(dl),
-           static_cast<long>(dr));
-}
-
-void Cli::runLineFollowEventLoop()
-{
-    // Body lifted from the pre-refactor `runLineFollowingMode`. The intersection
-    // event queue is hardcoded here so this function is self-contained — once
-    // the CLI grows a `LINE-QUEUE` command we can pull it from input instead.
-    LineFollower* lf = deps_.line_follower;
-    if (lf == nullptr)
+    if (deps_.api == nullptr)
+    {
+        printf("Maze API not initialized.\n");
         return;
-
-    const char  default_queue[] = "L#F#R#";
-    const char* events          = default_queue;
-    char        parsed[32]      = {};
-    int         parsed_len      = 0;
-    for (int i = 0; events[i] != '\0' && parsed_len < 31; ++i)
-    {
-        char ch = events[i];
-        if (ch == 'L' || ch == 'l' || ch == 'F' || ch == 'f' || ch == 'R' || ch == 'r')
-            parsed[parsed_len++] = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
-    }
-    parsed[parsed_len] = '\0';
-
-    int queue_index = 0;
-    printf("Line follow starting. Queue: %s (%d events)\n", parsed, parsed_len);
-    lf->startFollowing();
-
-    const uint32_t  CONTROL_PERIOD_US = 2000; // 500 Hz
-    absolute_time_t next_tick         = make_timeout_time_us(CONTROL_PERIOD_US);
-    absolute_time_t last_tick         = get_absolute_time();
-
-    while (!halted_)
-    {
-        // Halt and command-line responsiveness while the follower runs.
-        pollHaltOnly();
-        handleBluetoothCommand();
-
-        absolute_time_t now = get_absolute_time();
-        float           dt  = absolute_time_diff_us(last_tick, now) * 1e-6f;
-        last_tick           = now;
-
-        if (deps_.battery)
-            deps_.battery->update(); // Battery filter producer for LineSensor mode.
-        lf->update(dt);
-
-        if (lf->isIntersectionDetected() && lf->isMotionDone())
-        {
-            if (queue_index < parsed_len)
-            {
-                char action = parsed[queue_index++];
-                printf("Intersection: %c (%d/%d)\n", action, queue_index, parsed_len);
-                switch (action)
-                {
-                    case 'L':
-                        lf->turnLeft90();
-                        break;
-                    case 'R':
-                        lf->turnRight90();
-                        break;
-                    case 'F':
-                    default:
-                        break;
-                }
-            }
-            else
-            {
-                printf("Queue empty -- continuing forward.\n");
-            }
-        }
-
-        sleep_until(next_tick);
-        next_tick = delayed_by_us(next_tick, CONTROL_PERIOD_US);
     }
 
-    printf("Line follow halted.\n");
+    if (mode == 'C')
+        printf("Cost view is not stored separately; printing walls.\n");
+    if (mode == 'D')
+        printf("Direction view is not stored separately; printing walls.\n");
+    deps_.api->printMaze();
+}
+
+void CommandLineInterface::printEncoderSnapshot()
+{
+    SensorData snap;
+    SensorHub::snapshot(snap);
+    printf("L:%ld R:%ld P:encoder-mm-unavailable A:%.2f\n", static_cast<long>(snap.left_encoder),
+           static_cast<long>(snap.right_encoder), static_cast<double>(snap.imu_yaw));
+}
+
+bool CommandLineInterface::needsTof(const char* what) const
+{
+    if (deps_.sensor_mode == SensorMode::TOF)
+        return true;
+
+    printf("%s requires ToF sensor mode. Reboot Normal CLI and select 'T'.\n", what);
+    return false;
+}
+
+bool CommandLineInterface::startWithGesture(bool tof_available)
+{
+    printf("Waiting for start gesture (wave hand / send G / BT START)...\n");
+    StartTrigger trigger = waitForStartGesture(deps_.bluetooth, tof_available);
+    if (trigger == StartTrigger::CANCELLED)
+    {
+        printf("Cancelled.\n");
+        halted_ = true;
+        return false;
+    }
+    return true;
+}
+
+void CommandLineInterface::stop()
+{
+    if (deps_.sensor_mode == SensorMode::TOF)
+        CommandHub::requestStop();
+    halted_ = true;
+    printf("STOP\n");
+}
+
+uint8_t CommandLineInterface::read_integer(const char* line, int& value)
+{
+    if (line == nullptr)
+        return 0;
+
+    const char* ptr      = line;
+    bool        is_minus = false;
+    uint8_t     digits   = 0;
+
+    if (*ptr == '-')
+    {
+        is_minus = true;
+        ++ptr;
+    }
+
+    int32_t number = 0;
+    while (*ptr >= '0' && *ptr <= '9')
+    {
+        number = 10 * number + (*ptr - '0');
+        ++digits;
+        ++ptr;
+    }
+
+    if (digits > 0)
+        value = is_minus ? -number : number;
+    return digits;
+}
+
+void CommandLineInterface::clear_input_buffer()
+{
+    line_index_     = 0;
+    line_buffer_[0] = '\0';
+}
+
+void CommandLineInterface::prompt()
+{
+    printf("\n> ");
+}
+
+void CommandLineInterface::help()
+{
+    printf("? : this text\n");
+    printf("X : stop motion\n");
+    printf("W : display maze walls\n");
+    printf("C : display maze costs\n");
+    printf("D : display maze with directions\n");
+    printf("B : show battery voltage\n");
+    printf("S : show sensor readings\n");
+    printf("E : show encoder/IMU readings\n");
+    printf("Q : show encoder/IMU readings\n");
+    printf("F n : Run user function n\n");
+    printf(" 0 = ---\n");
+    printf(" 1 = Sensor Static Calibration\n");
+    printf(" 2 = Search to the goal and back\n");
+    printf(" 3 = Follow to start\n");
+    printf(" 4 = Test SS90E Turn\n");
+    printf(" 5 = Wander\n");
+    printf(" 6 = Test Edge Detect Position\n");
+    printf(" 7 = Sensor Spin Calibration\n");
+    printf(" 8 = Get Front Sensor table\n");
+    printf(" 9 = move forward 4 cells\n");
+    printf("SEARCH x y : search to location (x,y)\n");
+    printf("STYLE [STATIONARY|SMOOTH] : select path execution style\n");
+    printf("HELP : this text\n");
 }

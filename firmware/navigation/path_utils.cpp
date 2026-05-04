@@ -15,39 +15,6 @@
 namespace PathUtils
 {
 
-void executePath(API* api, const std::string& lfr_path)
-{
-    std::stringstream ss(lfr_path);
-    std::string       token;
-
-    std::vector<std::string> tokens;
-    while (std::getline(ss, token, '#'))
-    {
-        if (!token.empty())
-            tokens.push_back(token);
-    }
-
-    for (const std::string& t : tokens)
-    {
-        if (t == "R")
-            api->turnRight90();
-        else if (t == "L")
-            api->turnLeft90();
-        else if (t == "F")
-            api->moveForward();
-        else if (t == "R45")
-            api->turnRight45();
-        else if (t == "L45")
-            api->turnLeft45();
-        else if (t == "FH")
-            api->moveForwardHalf();
-        else if (t == "GMF")
-            api->ghostMoveForward(1);
-        else
-            LOG_ERROR("PathUtils: Unknown token: " + t);
-    }
-}
-
 void setAllExplored(Mouse* mouse)
 {
     int cols = mouse->mazeWidth();
@@ -117,7 +84,7 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
         {
             std::string diag = Diagonalizer::diagonalize(lfr);
             LOG_INFO("Diagonalized Path: " + diag);
-            executePath(api, diag);
+            api->executeSequence(diag);
             return true;
         }
 
