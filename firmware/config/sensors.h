@@ -61,8 +61,23 @@
 #define IMU_YAW_SIGN (-1.0f)
 
 // ================= IMU Filtering ================= //
-#define IMU_YAW_FILTER_ALPHA         0.3f  // EMA filter for yaw (0.3 = moderate smoothing)
-#define IMU_MAX_YAW_DELTA_PER_SAMPLE 20.0f // Max degrees change per 10ms (2000°/s physical limit)
+// Outlier guard: drop packets whose raw yaw step exceeds this. 20° per 10 ms =
+// 2000°/s, which is past any physical turn rate Jurababa can produce — so any
+// jump larger than this is a UART/I2C glitch, not motion.
+#define IMU_MAX_YAW_DELTA_PER_SAMPLE 20.0f
+
+// Moving-average window over per-packet yaw deltas. Mirrors the encoder path's
+// ENCODER_AVERAGER_LENGTH (motion.h): we filter the *delta* the rotation PD
+// consumes, not the upstream yaw — so the averaging never gets re-differentiated
+// and adds no group delay to the D-term beyond the window's own (N/2) phase lag.
+//
+// 4 taps × 10 ms/packet = 40 ms window, ~20 ms phase lag. The rotation PD runs
+// at 100 Hz with ZOH between packets, so the controller's effective bandwidth
+// is well below 1/(2·40 ms) = 12.5 Hz; 4 taps gives meaningful quantization
+// rejection without crippling step response on fast turns. Increase for a
+// smoother trace at the cost of lag (forces ROT_KD retune, same caveat as
+// the encoder averager in motion.h).
+#define IMU_DELTA_AVG_LENGTH 4
 
 // ================= Line Sensor Configuration ================= //
 #define LINE_SENSOR_COUNT             8

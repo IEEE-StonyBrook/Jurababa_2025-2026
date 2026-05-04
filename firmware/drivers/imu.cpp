@@ -20,11 +20,13 @@ float normalize_yaw_delta(float delta)
 
 IMU::IMU(int uart_rx_pin)
     : uart_rx_pin_(uart_rx_pin), packet_buffer_index_(0), yaw_data_ready_(false),
-      current_yaw_degrees_(0.0f), yaw_reset_offset_(0.0f), filtered_yaw_degrees_(0.0f),
-      prev_raw_yaw_degrees_(0.0f), first_reading_(true), last_packet_yaw_(0.0f),
-      cached_omega_degps_(0.0f), m_rot_change_deg_(0.0f), new_yaw_sample_pending_(false),
-      packet_seq_(0)
+      current_yaw_degrees_(0.0f), yaw_reset_offset_(0.0f), prev_raw_yaw_degrees_(0.0f),
+      first_reading_(true), last_packet_yaw_(0.0f), cached_omega_degps_(0.0f),
+      m_rot_change_deg_(0.0f), delta_history_total_(0.0f), delta_history_index_(0),
+      new_yaw_sample_pending_(false), packet_seq_(0)
 {
+    for (uint8_t i = 0; i < IMU_DELTA_AVG_LENGTH; i++)
+        delta_history_[i] = 0.0f;
     setup_uart();
     setup_interrupt();
     LOG_DEBUG("IMU initialized successfully");
@@ -120,38 +122,34 @@ void IMU::parse_packet_and_extract_yaw()
     prev_raw_yaw_degrees_ = yaw_degrees;
     first_reading_        = false;
 
-    // Apply EMA filter to smooth yaw readings
-    if (!yaw_data_ready_)
-    {
-        filtered_yaw_degrees_ = yaw_degrees; // Initialize filter on first valid reading
-    }
-    else
-    {
-        float alpha = IMU_YAW_FILTER_ALPHA;
-        // Handle wraparound for filtering (compute shortest path)
-        float diff = yaw_degrees - filtered_yaw_degrees_;
-        if (diff > 180.0f)
-            diff -= 360.0f;
-        if (diff < -180.0f)
-            diff += 360.0f;
-        filtered_yaw_degrees_ += alpha * diff;
-        // Renormalize to [-180, 180]
-        if (filtered_yaw_degrees_ > 180.0f)
-            filtered_yaw_degrees_ -= 360.0f;
-        if (filtered_yaw_degrees_ < -180.0f)
-            filtered_yaw_degrees_ += 360.0f;
-    }
-
-    current_yaw_degrees_ = filtered_yaw_degrees_;
+    // No EMA on position. The BNO085 RVC stream is already fused internally;
+    // smoothing yaw and then differentiating it would inject the filter's
+    // group delay into the rotation D-term — exactly the noise-amplification
+    // anti-pattern the encoder path's MA-on-deltas was written to avoid.
+    current_yaw_degrees_ = yaw_degrees;
 
     // Compute per-packet yaw delta and omega at the BNO085's true 100 Hz cadence.
     // This is the authoritative rate — multiplying by LOOP_FREQUENCY_HZ in the
     // main loop instead would alias (4 of 5 ticks see "no change", omega = 0).
     if (yaw_data_ready_)
     {
-        float delta         = normalize_yaw_delta(current_yaw_degrees_ - last_packet_yaw_);
-        m_rot_change_deg_   = delta;
-        cached_omega_degps_ = delta * IMU_PACKET_HZ;
+        float delta = normalize_yaw_delta(current_yaw_degrees_ - last_packet_yaw_);
+
+        // IMU_DELTA_AVG_LENGTH-tap moving averager — drop the oldest sample at
+        // this index, add the newest. Structurally mirrors
+        // Drivetrain::update()'s encoder averager (and motorlab/encoders.h),
+        // so both the rotation PD's measured_change input (robot_rot_change())
+        // and external omega observers see the smoothed value.
+        delta_history_total_ -= delta_history_[delta_history_index_];
+        delta_history_total_ += delta;
+        delta_history_[delta_history_index_] = delta;
+        delta_history_index_                 = (delta_history_index_ + 1) % IMU_DELTA_AVG_LENGTH;
+
+        constexpr float inv_avg   = 1.0f / static_cast<float>(IMU_DELTA_AVG_LENGTH);
+        const float     avg_delta = delta_history_total_ * inv_avg;
+
+        m_rot_change_deg_   = avg_delta;
+        cached_omega_degps_ = avg_delta * IMU_PACKET_HZ;
     }
     last_packet_yaw_ = current_yaw_degrees_;
 
@@ -191,6 +189,15 @@ void IMU::reset()
     last_packet_yaw_    = current_yaw_degrees_;
     m_rot_change_deg_   = 0.0f;
     cached_omega_degps_ = 0.0f;
+
+    // Wipe the delta MA window. Without this, deltas accumulated before a
+    // heading reset would keep contributing to omega for IMU_DELTA_AVG_LENGTH
+    // packets after reset — most visible at run start when the user expects
+    // omega ≈ 0 immediately after pressing GO.
+    for (uint8_t i = 0; i < IMU_DELTA_AVG_LENGTH; i++)
+        delta_history_[i] = 0.0f;
+    delta_history_total_ = 0.0f;
+    delta_history_index_ = 0;
 }
 
 void IMU::update()

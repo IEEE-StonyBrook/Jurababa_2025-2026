@@ -50,16 +50,21 @@ class IMU
     /**
      * @brief Returns angular velocity (deg/s), cached in the UART ISR.
      *
-     * Equals `delta_yaw_per_packet * IMU_PACKET_HZ` (100 Hz). Held flat
-     * between packets, so consumers see a zero-order-hold rather than
-     * a spike of zeros.
+     * Equals `avg_delta_yaw_per_packet * IMU_PACKET_HZ`, where avg_delta is
+     * the IMU_DELTA_AVG_LENGTH-tap moving average of per-packet yaw deltas.
+     * Mirrors the encoder path: filter the delta the PD consumes, not the
+     * upstream yaw position — so no extra phase lag enters the D-term.
+     * Held flat between packets (ZOH), so consumers see a steady value
+     * rather than a spike of zeros.
      */
     float robot_omega();
 
     /**
-     * @brief Returns the per-PACKET yaw delta (deg), updated in the UART ISR.
-     *        Held flat between packets — matches the rotation PD's gating
-     *        on has_new_yaw_sample().
+     * @brief Returns the per-PACKET yaw delta (deg), MA-smoothed over
+     *        IMU_DELTA_AVG_LENGTH packets. Updated in the UART ISR, held flat
+     *        between packets — matches the rotation PD's gating on
+     *        has_new_yaw_sample(). Same role as Drivetrain::fwdChangeMm() on
+     *        the linear side.
      */
     float robot_rot_change();
 
@@ -99,8 +104,10 @@ class IMU
     float        current_yaw_degrees_;
     float        yaw_reset_offset_;
 
-    // Filtering state for noise reduction
-    float filtered_yaw_degrees_; // EMA-filtered yaw
+    // Outlier-rejection state. Raw (unfiltered) yaw is fed straight through —
+    // no EMA on position. The MA below filters the delta instead, mirroring
+    // the encoder path so the rotation D-term never sees re-differentiated
+    // smoothing.
     float prev_raw_yaw_degrees_; // Previous raw yaw for outlier detection
     bool  first_reading_;        // Skip outlier check on first reading
 
@@ -109,8 +116,17 @@ class IMU
     // write-from-ISR atomic enough for these scalars (same model as
     // current_yaw_degrees_).
     float last_packet_yaw_;    // yaw at the last accepted packet
-    float cached_omega_degps_; // delta_yaw * IMU_PACKET_HZ
-    float m_rot_change_deg_;   // per-packet yaw delta, held between packets
+    float cached_omega_degps_; // avg_delta_yaw * IMU_PACKET_HZ
+    float m_rot_change_deg_;   // averaged per-packet yaw delta, held between packets
+
+    // Moving-average ring buffer over per-packet yaw deltas. Structurally
+    // mirrors Drivetrain::update()'s encoder averager (motorlab/encoders.h),
+    // but with float entries — yaw deltas are real-valued degrees, and a
+    // single packet can carry several degrees during a 360°/s turn (well past
+    // int8_t range). Subtract oldest, add newest, advance index — O(1).
+    float   delta_history_[IMU_DELTA_AVG_LENGTH];
+    float   delta_history_total_;
+    uint8_t delta_history_index_;
 
     // Set by parse_packet_and_extract_yaw() (ISR context) when a fresh packet
     // is accepted. Read-and-cleared by has_new_yaw_sample() (main context).
