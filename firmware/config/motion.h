@@ -6,16 +6,13 @@
 #define CONFIG_MOTION_H
 
 // ===================== Control Loop ===================== //
-// Forward (encoder-paced) runs at 500 Hz: matches mazerunner-core / motorlab,
-// gives ~26x bandwidth margin over closed-loop omega_n.
-// Rotation (IMU-paced) runs at 100 Hz: BNO085 in RVC mode emits at exactly
-// 100 Hz, so 500 Hz on rotation feedback would alias the D-term. Rotation PID
-// gates on imu->has_new_yaw_sample() and uses a zero-order hold between packets.
+// Forward and rotation controllers run at 500 Hz, matching mazerunner-core /
+// motorlab. Jurababa's rotation feedback still comes from the 100 Hz BNO085
+// RVC stream; IMU::robot_rot_change() distributes the latest packet-rate yaw
+// delta into an equivalent per-500 Hz tick change so the controller keeps the
+// UKMARS single-rate shape without switching away from the IMU.
 #define LOOP_FREQUENCY_HZ 500.0f
 #define LOOP_INTERVAL_S   (1.0f / LOOP_FREQUENCY_HZ)
-
-// Rotation PID rate — locked to BNO085 RVC packet cadence.
-#define ROTATION_LOOP_HZ 100.0f
 
 // 8-tap moving average over per-tick encoder deltas, applied in
 // Drivetrain::update() and DriverLab::sampleEncoders() to mirror

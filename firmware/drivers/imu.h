@@ -18,9 +18,8 @@
  * with checksum validation.
  *
  * API mirrors mazerunner-core's `Encoders` rotation interface — substituting an
- * IMU as the rotation source. Caller invokes update() once per control tick to
- * sample yaw and refresh rot_change; robot_omega() / robot_rot_change() then
- * return cached values.
+ * IMU as the rotation source. Caller invokes update() once per control tick
+ * for API parity; robot_omega() / robot_rot_change() return ISR-cached values.
  */
 class IMU
 {
@@ -74,23 +73,9 @@ class IMU
     float robot_rot_change();
 
     /**
-     * @brief Read-and-clear: returns true exactly once per fresh BNO085 packet.
-     *
-     * Was previously the gate for the rotation PID; the rotation PD now runs
-     * single-rate at 500 Hz (UKMARS-faithful) and consumes per-tick deltas
-     * via robot_rot_change() instead. This call remains useful for
-     * diagnostics (edge-detect a new packet) and for any consumer that still
-     * wants packet-rate behaviour. Underlying flag is set in the UART ISR;
-     * implementation handles ISR/main concurrency.
-     */
-    bool has_new_yaw_sample();
-
-    /**
      * @brief Monotonic counter incremented once per accepted packet (ISR-side).
      *        Wraps at 2^32 (~14 months at 100 Hz). Read-only — use a local
-     *        `last_seq` and compare for edge detection without consuming the
-     *        has_new_yaw_sample() pending flag (which is owned by the
-     *        rotation PID gate).
+     *        `last_seq` and compare for packet-edge diagnostics.
      */
     uint32_t packet_seq() const;
 
@@ -121,7 +106,6 @@ class IMU
     // current_yaw_degrees_).
     float last_packet_yaw_;    // yaw at the last accepted packet
     float cached_omega_degps_; // avg_delta_yaw * IMU_PACKET_HZ
-    float m_rot_change_deg_;   // averaged per-packet yaw delta, held between packets
 
     // Moving-average ring buffer over per-packet yaw deltas. Structurally
     // mirrors Drivetrain::update()'s encoder averager (motorlab/encoders.h),
@@ -132,14 +116,9 @@ class IMU
     float   delta_history_total_;
     uint8_t delta_history_index_;
 
-    // Set by parse_packet_and_extract_yaw() (ISR context) when a fresh packet
-    // is accepted. Read-and-cleared by has_new_yaw_sample() (main context).
-    volatile bool new_yaw_sample_pending_;
-
     // ISR-side monotonic packet counter. Incremented once per accepted packet
-    // alongside new_yaw_sample_pending_. Read-only via packet_seq(); used by
-    // DriverLab TURN-STEP to gate Tm-fit samples on packet edges without
-    // racing the rotation PID's has_new_yaw_sample() consumer.
+    // and read via packet_seq(); used by DriverLab TURN-STEP to gate Tm-fit
+    // samples on packet edges.
     volatile uint32_t packet_seq_;
 
     static IMU* imu_instance_;

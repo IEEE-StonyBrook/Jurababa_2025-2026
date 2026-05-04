@@ -884,6 +884,16 @@ class Dashboard(QMainWindow):
         y_data = self.telemetry[value_channel_idx].data()
         return x_data, y_data
 
+    def _heading_index(self, *names):
+        """Return the CSV column index for the first matching heading."""
+        headings = [heading.strip().lower() for heading in self.csv_headings]
+        for name in names:
+            try:
+                return headings.index(name.lower())
+            except ValueError:
+                continue
+        return None
+
     def log_data(self):
         """Batch log all data lines in a single update for performance."""
         if self.data:
@@ -1570,27 +1580,53 @@ class Dashboard(QMainWindow):
                 self.motion_plot.enableAutoRange()
                 self.output_plot.setXLink(self.motion_plot)
 
-            elif 'set_omega' in headings_str and 'ctrl_v' in headings_str:
-                # Turn (controller): time_ms,set_omega,actual_yaw,actual_omega,error,ctrl_v,total_v_left,total_v_right
-                # MotorLab-style: separate Ctrl V from per-wheel applied voltages.
-                # No FF trace — TURN currently has no rotation feedforward
-                # (rotation_pid_.update is the only contribution in tickTurn).
+            elif 'set_omega' in headings_str and ('ctrl_v' in headings_str or 'rot_pd_v' in headings_str):
+                # Turn (controller), old PD-only schema:
+                #   time_ms,set_omega,actual_yaw,actual_omega,error,ctrl_v,total_v_left,total_v_right
+                # New UKMARS-style schema:
+                #   time_ms,set_omega,set_alpha,actual_yaw,actual_omega,error,rot_pd_v,
+                #   left_ff_v,right_ff_v,left_v,right_v
+                rot_pd_idx = self._heading_index('rot_pd_v', 'ctrl_v')
+                left_ff_idx = self._heading_index('left_ff_v')
+                right_ff_idx = self._heading_index('right_ff_v')
+                left_v_idx = self._heading_index('left_v', 'total_v_left')
+                right_v_idx = self._heading_index('right_v', 'total_v_right')
+                set_omega_idx = self._heading_index('set_omega')
+                actual_omega_idx = self._heading_index('actual_omega')
+                actual_yaw_idx = self._heading_index('actual_yaw')
+
                 if len(self.plot_curves['output']) == 0:
-                    pen_ctrl = pg.mkPen(color=palette[2], width=2)
+                    pen_rot = pg.mkPen(color=palette[2], width=2)
+                    pen_ff_l = pg.mkPen(color=palette[1], width=1)
+                    pen_ff_r = pg.mkPen(color=palette[5], width=1)
                     pen_left = pg.mkPen(color=palette[6], width=1)
                     pen_right = pg.mkPen(color=palette[3], width=1)
-                    self.plot_curves['output'].append(self.output_plot.plot(name='Ctrl V', pen=pen_ctrl))
+                    self.plot_curves['output'].append(self.output_plot.plot(name='Rot PD', pen=pen_rot))
+                    if left_ff_idx is not None and right_ff_idx is not None:
+                        self.plot_curves['output'].append(self.output_plot.plot(name='FF Left', pen=pen_ff_l))
+                        self.plot_curves['output'].append(self.output_plot.plot(name='FF Right', pen=pen_ff_r))
                     self.plot_curves['output'].append(self.output_plot.plot(name='Motor Left', pen=pen_left))
                     self.plot_curves['output'].append(self.output_plot.plot(name='Motor Right', pen=pen_right))
 
-                x, y = self._get_valid_data(0, 5)  # ctrl_v
-                self.plot_curves['output'][0].setData(x, y)
-                x, y = self._get_valid_data(0, 6)  # total_v_left
-                if len(self.plot_curves['output']) > 1:
-                    self.plot_curves['output'][1].setData(x, y)
-                x, y = self._get_valid_data(0, 7)  # total_v_right
-                if len(self.plot_curves['output']) > 2:
-                    self.plot_curves['output'][2].setData(x, y)
+                curve_idx = 0
+                if rot_pd_idx is not None:
+                    x, y = self._get_valid_data(0, rot_pd_idx)
+                    self.plot_curves['output'][curve_idx].setData(x, y)
+                    curve_idx += 1
+                if left_ff_idx is not None and right_ff_idx is not None and len(self.plot_curves['output']) > curve_idx + 1:
+                    x, y = self._get_valid_data(0, left_ff_idx)
+                    self.plot_curves['output'][curve_idx].setData(x, y)
+                    curve_idx += 1
+                    x, y = self._get_valid_data(0, right_ff_idx)
+                    self.plot_curves['output'][curve_idx].setData(x, y)
+                    curve_idx += 1
+                if left_v_idx is not None and len(self.plot_curves['output']) > curve_idx:
+                    x, y = self._get_valid_data(0, left_v_idx)
+                    self.plot_curves['output'][curve_idx].setData(x, y)
+                    curve_idx += 1
+                if right_v_idx is not None and len(self.plot_curves['output']) > curve_idx:
+                    x, y = self._get_valid_data(0, right_v_idx)
+                    self.plot_curves['output'][curve_idx].setData(x, y)
                 self.output_plot.enableAutoRange()
 
                 if len(self.plot_curves['motion']) == 0:
@@ -1601,13 +1637,14 @@ class Dashboard(QMainWindow):
                     self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Omega', pen=pen_omega))
                     self.plot_curves['motion'].append(self.motion_plot.plot(name='Actual Yaw', pen=pen_yaw))
 
-                x, y = self._get_valid_data(0, 1)  # set_omega
-                self.plot_curves['motion'][0].setData(x, y)
-                x, y = self._get_valid_data(0, 3)  # actual_omega
-                if len(self.plot_curves['motion']) > 1:
+                if set_omega_idx is not None:
+                    x, y = self._get_valid_data(0, set_omega_idx)
+                    self.plot_curves['motion'][0].setData(x, y)
+                if actual_omega_idx is not None and len(self.plot_curves['motion']) > 1:
+                    x, y = self._get_valid_data(0, actual_omega_idx)
                     self.plot_curves['motion'][1].setData(x, y)
-                x, y = self._get_valid_data(0, 2)  # actual_yaw
-                if len(self.plot_curves['motion']) > 2:
+                if actual_yaw_idx is not None and len(self.plot_curves['motion']) > 2:
+                    x, y = self._get_valid_data(0, actual_yaw_idx)
                     self.plot_curves['motion'][2].setData(x, y)
                 self.motion_plot.setLabel('left', 'Angle (deg) / Omega (deg/s)')
                 self.motion_plot.enableAutoRange()

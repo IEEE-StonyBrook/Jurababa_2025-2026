@@ -14,9 +14,10 @@
  *   output        = kp * m_error + kd * diff * loop_frequency_hz_;
  *
  * The `* loop_frequency_hz_` on the D-term mirrors motorlab's
- * `KD * diff * LOOP_FREQUENCY` (motors.h:147). Each PID instance carries its
- * own loop rate so forward (encoder-paced 500 Hz) and rotation (IMU-paced
- * 100 Hz) controllers can coexist without one polluting the other's dt.
+ * `KD * diff * LOOP_FREQUENCY` (motors.h:147). In Jurababa's maze runner and
+ * DriverLab TURN paths, forward and rotation both use the 500 Hz UKMARS
+ * control cadence; the IMU driver converts its 100 Hz yaw packets into a
+ * per-tick measured_change for rotation.
  *
  * `setpoint` is the COMMANDED velocity (mm/s for forward, deg/s for rotation).
  * `measured_change` is the per-tick position delta (mm or deg) actually moved.

@@ -6,8 +6,8 @@
 #define CONFIG_GEOMETRY_H
 
 // ===================== Wheels ===================== //
-#define WHEEL_DIAMETER_MM 42.2f  // Measured outer diameter
-#define WHEEL_BASE_MM     81.95f // Center-to-center between wheels
+#define WHEEL_DIAMETER_MM 42.2f // Measured outer diameter
+#define WHEEL_BASE_MM     83.9f // Center-to-center between wheels
 
 // ===================== Encoder ===================== //
 #define ENCODER_CPR 12     // Counts per motor shaft revolution

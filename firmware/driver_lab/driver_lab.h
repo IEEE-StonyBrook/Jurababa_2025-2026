@@ -251,6 +251,8 @@ class DriverLab
         float peak_overshoot_deg;
         float max_yaw_error;
         float max_volts;
+        float old_left_speed_mmps;
+        float old_right_speed_mmps;
         bool  past_target;
         int   loop_count;
     };

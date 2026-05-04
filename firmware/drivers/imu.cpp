@@ -22,8 +22,7 @@ IMU::IMU(int uart_rx_pin)
     : uart_rx_pin_(uart_rx_pin), packet_buffer_index_(0), yaw_data_ready_(false),
       current_yaw_degrees_(0.0f), yaw_reset_offset_(0.0f), prev_raw_yaw_degrees_(0.0f),
       first_reading_(true), last_packet_yaw_(0.0f), cached_omega_degps_(0.0f),
-      m_rot_change_deg_(0.0f), delta_history_total_(0.0f), delta_history_index_(0),
-      new_yaw_sample_pending_(false), packet_seq_(0)
+      delta_history_total_(0.0f), delta_history_index_(0), packet_seq_(0)
 {
     for (uint8_t i = 0; i < IMU_DELTA_AVG_LENGTH; i++)
         delta_history_[i] = 0.0f;
@@ -148,14 +147,12 @@ void IMU::parse_packet_and_extract_yaw()
         constexpr float inv_avg   = 1.0f / static_cast<float>(IMU_DELTA_AVG_LENGTH);
         const float     avg_delta = delta_history_total_ * inv_avg;
 
-        m_rot_change_deg_   = avg_delta;
         cached_omega_degps_ = avg_delta * IMU_PACKET_HZ;
     }
     last_packet_yaw_ = current_yaw_degrees_;
 
-    yaw_data_ready_         = true;
-    new_yaw_sample_pending_ = true; // ISR-context: tells main loop a fresh packet is available
-    packet_seq_++;                  // monotonic ISR-side counter for edge-detection consumers
+    yaw_data_ready_ = true;
+    packet_seq_++; // monotonic ISR-side counter for edge-detection consumers
 }
 
 float IMU::robot_angle()
@@ -187,7 +184,6 @@ void IMU::reset()
     LOG_DEBUG("Resetting IMU yaw to zero");
     yaw_reset_offset_   = current_yaw_degrees_;
     last_packet_yaw_    = current_yaw_degrees_;
-    m_rot_change_deg_   = 0.0f;
     cached_omega_degps_ = 0.0f;
 
     // Wipe the delta MA window. Without this, deltas accumulated before a
@@ -224,16 +220,6 @@ float IMU::robot_rot_change()
     // evenly instead of stepped, which keeps rotation_output_ smooth in the
     // 500 Hz differential mixer downstream.
     return cached_omega_degps_ * LOOP_INTERVAL_S;
-}
-
-bool IMU::has_new_yaw_sample()
-{
-    // Race-free read-and-clear: the GCC atomic exchange is one instruction
-    // logically, so the UART ISR cannot slip a fresh packet between our
-    // read and our clear. On Cortex-M0+ this compiles to a brief
-    // disable-IRQ / load / store / restore-IRQ sequence; same effect as
-    // a critical section, but expresses the intent ("atomic swap") clearly.
-    return __atomic_exchange_n(&new_yaw_sample_pending_, false, __ATOMIC_SEQ_CST);
 }
 
 uint32_t IMU::packet_seq() const

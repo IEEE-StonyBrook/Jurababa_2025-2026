@@ -63,10 +63,10 @@ DriverLab::DriverLab(Motor* left_motor, Motor* right_motor, Encoder* left_encode
     : left_motor_(left_motor), right_motor_(right_motor), left_encoder_(left_encoder),
       right_encoder_(right_encoder), imu_(imu), battery_(battery), left_tof_(left_tof),
       front_tof_(front_tof), right_tof_(right_tof), line_sensor_(line_sensor), reporter_(10),
-      // Forward PID runs at the encoder-paced 500 Hz rate. Rotation PID runs
-      // at the IMU's 100 Hz packet rate; gated by imu_->has_new_yaw_sample()
-      // in tickTurn(), with a zero-order hold between packets.
-      forward_pid_(0.0f, 0.0f, LOOP_FREQUENCY_HZ), rotation_pid_(0.0f, 0.0f, ROTATION_LOOP_HZ),
+      // Forward and rotation PD both run at the 500 Hz MotorLab/UKMARS
+      // control cadence. Rotation feedback uses the IMU's 100 Hz yaw delta
+      // distributed into per-tick changes by IMU::robot_rot_change().
+      forward_pid_(0.0f, 0.0f, LOOP_FREQUENCY_HZ), rotation_pid_(0.0f, 0.0f, LOOP_FREQUENCY_HZ),
       prev_left_ticks_(0), prev_right_ticks_(0), left_velocity_mmps_(0.0f),
       right_velocity_mmps_(0.0f), left_position_mm_(0.0f), right_position_mm_(0.0f),
       trial_(TrialState::Idle), input_index_(0), echo_enabled_(false), history_count_(0),
@@ -97,8 +97,8 @@ void DriverLab::init()
     rotation_pid_.setOutputLimit(MAX_VOLTAGE);
 
     printf("\n%s\n", DRIVERLAB_VERSION);
-    printf("Loop frequency: %.0f Hz (forward PD), %.0f Hz (rotation PD, IMU-gated)\n",
-           LOOP_FREQUENCY_HZ, ROTATION_LOOP_HZ);
+    printf("Loop frequency: %.0f Hz (forward PD), %.0f Hz (rotation PD, IMU-fed)\n",
+           LOOP_FREQUENCY_HZ, LOOP_FREQUENCY_HZ);
     printf("Using mm/s units (MM_PER_TICK = %.4f)\n", MM_PER_TICK);
     printf("Type '?' for help\n\n");
     printPrompt();
@@ -975,14 +975,16 @@ void DriverLab::startTurnTrial(float degrees, float omega, float alpha)
     printf("Angle: %.1f deg, Speed: %.1f deg/s, Accel: %.1f deg/s^2\n", degrees, omega, alpha);
     printf("TURN_KP: %.4f, TURN_KD: %.4f\n", settings_.turnKP, settings_.turnKD);
 
-    turn_.degrees            = degrees;
-    turn_.top_omega          = omega;
-    turn_.alpha              = alpha;
-    turn_.peak_overshoot_deg = 0.0f;
-    turn_.max_yaw_error      = 0.0f;
-    turn_.max_volts          = 0.0f;
-    turn_.past_target        = false;
-    turn_.loop_count         = 0;
+    turn_.degrees              = degrees;
+    turn_.top_omega            = omega;
+    turn_.alpha                = alpha;
+    turn_.peak_overshoot_deg   = 0.0f;
+    turn_.max_yaw_error        = 0.0f;
+    turn_.max_volts            = 0.0f;
+    turn_.old_left_speed_mmps  = 0.0f;
+    turn_.old_right_speed_mmps = 0.0f;
+    turn_.past_target          = false;
+    turn_.loop_count           = 0;
 
     beginCountdown("Turn Trial", TrialState::Turn);
 }
@@ -997,34 +999,51 @@ void DriverLab::armTurn()
 
     imu_->reset(); // zero yaw reference for this trial
 
+    turn_.old_left_speed_mmps  = 0.0f;
+    turn_.old_right_speed_mmps = 0.0f;
+
     reporter_.begin();
-    // TURN has no rotation feedforward — last_rotation_volts is purely the
-    // PID output (see tickTurn). So unlike MOVE we emit only ctrl_v plus the
-    // per-wheel applied voltages. If a rotation FF term is ever added,
-    // expand this header to include ff_v.
-    printf("time_ms,set_omega,actual_yaw,actual_omega,error,ctrl_v,total_v_left,total_v_right\n");
+    printf("time_ms,set_omega,set_alpha,actual_yaw,actual_omega,error,rot_pd_v,left_ff_v,"
+           "right_ff_v,left_v,right_v\n");
 
     trial_ = TrialState::Turn;
 }
 
 void DriverLab::tickTurn()
 {
-    // Rotation profile is integrated at 500 Hz like forward; the rotation PD,
-    // however, only fires when the IMU has a fresh packet (~100 Hz). Between
-    // packets the controller's last output is held (zero-order hold).
+    // UKMARS/MotorLab shape: update the rotation profile, run the PD, add
+    // per-wheel feedforward from commanded wheel speeds, then mix to motors
+    // every 500 Hz tick. The IMU remains the rotation sensor; it exposes the
+    // 100 Hz packet yaw delta as a distributed per-tick change.
     rotation_profile_.update(LOOP_INTERVAL_S);
     const float set_omega        = rotation_profile_.speed();
     const float profile_dir      = (turn_.degrees >= 0.0f) ? 1.0f : -1.0f;
     const float signed_set_omega = profile_dir * set_omega;
+    const float signed_set_alpha = rotation_profile_.acceleration();
 
-    static float last_rotation_volts = 0.0f;
+    const float wheelbase_radius_mm = WHEEL_BASE_MM / 2.0f;
+    const float tangent_speed_mmps =
+        signed_set_omega * (static_cast<float>(M_PI) / 180.0f) * wheelbase_radius_mm;
+    const float left_speed_mmps  = -tangent_speed_mmps;
+    const float right_speed_mmps = +tangent_speed_mmps;
 
-    if (imu_->has_new_yaw_sample())
-    {
-        const float rot_change = imu_->robot_rot_change(); // per-PACKET delta (deg)
-        last_rotation_volts    = rotation_pid_.update(signed_set_omega, rot_change);
-    }
-    setVoltages(-last_rotation_volts, +last_rotation_volts);
+    const float left_accel_mmps2 =
+        (left_speed_mmps - turn_.old_left_speed_mmps) * LOOP_FREQUENCY_HZ;
+    const float right_accel_mmps2 =
+        (right_speed_mmps - turn_.old_right_speed_mmps) * LOOP_FREQUENCY_HZ;
+    turn_.old_left_speed_mmps  = left_speed_mmps;
+    turn_.old_right_speed_mmps = right_speed_mmps;
+
+    const float rot_change_deg = imu_->robot_rot_change(); // per-500 Hz tick delta (deg)
+    const float rot_output     = rotation_pid_.update(signed_set_omega, rot_change_deg);
+    const float left_ff_volts  = feedforwardVolts(left_speed_mmps, left_accel_mmps2,
+                                                  /*left=*/true);
+    const float right_ff_volts = feedforwardVolts(right_speed_mmps, right_accel_mmps2,
+                                                  /*left=*/false);
+
+    const float left_volts  = utils::clampAbs(left_ff_volts - rot_output, MAX_VOLTAGE);
+    const float right_volts = utils::clampAbs(right_ff_volts + rot_output, MAX_VOLTAGE);
+    setVoltages(left_volts, right_volts);
 
     // Diagnostics
     const float actual_yaw   = imu_->robot_angle();
@@ -1034,7 +1053,7 @@ void DriverLab::tickTurn()
     const float abs_error = std::fabs(rot_error);
     if (abs_error > turn_.max_yaw_error)
         turn_.max_yaw_error = abs_error;
-    const float abs_volts = std::fabs(last_rotation_volts);
+    const float abs_volts = std::max(std::fabs(left_volts), std::fabs(right_volts));
     if (abs_volts > turn_.max_volts)
         turn_.max_volts = abs_volts;
 
@@ -1051,9 +1070,10 @@ void DriverLab::tickTurn()
     if (reporter_.isTimeToReport(now_ms))
     {
         const uint32_t elapsed = now_ms - reporter_.startTime();
-        printf("%lu,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f\n", static_cast<unsigned long>(elapsed),
-               signed_set_omega, actual_yaw, actual_omega, rot_error, last_rotation_volts,
-               -last_rotation_volts, +last_rotation_volts);
+        printf("%lu,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
+               static_cast<unsigned long>(elapsed), signed_set_omega, signed_set_alpha, actual_yaw,
+               actual_omega, rot_error, rot_output, left_ff_volts, right_ff_volts, left_volts,
+               right_volts);
         reporter_.incrementSampleCount();
     }
 
