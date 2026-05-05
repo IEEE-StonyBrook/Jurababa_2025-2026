@@ -25,12 +25,10 @@ class ToF
     /**
      * @brief Returns measured distance to nearest object.
      *
-     * Reads hardware directly. On a valid measurement, caches the value
-     * and returns it. On an invalid measurement (RangeStatus != 0,
-     * e.g., out-of-range, signal too low) returns the last cached value.
-     * Before the first valid read the cache is initialized to the VL53L0X
-     * out-of-range sentinel (8191 mm), so cold-start reads can never lie
-     * about wall presence.
+     * Reads hardware directly. On a valid measurement, returns the measured
+     * range in millimeters. On an invalid measurement (RangeStatus != 0,
+     * e.g., out-of-range or signal too low), returns the VL53L0X
+     * out-of-range sentinel from config.
      *
      * @return Distance in millimeters.
      */
@@ -44,7 +42,6 @@ class ToF
 
     VL53L0X_Dev_t sensor_device_;
     char          sensor_position_;
-    float         last_valid_distance_ = 8191.0f;
 };
 
 #endif

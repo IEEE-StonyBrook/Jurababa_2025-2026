@@ -77,12 +77,11 @@ float ToF::get_distance()
     VL53L0X_GetRangingMeasurementData(&sensor_device_, &measurement_data);
     VL53L0X_ClearInterruptMask(&sensor_device_, VL53L0X_REG_SYSTEM_INTERRUPT_GPIO_NEW_SAMPLE_READY);
 
-    // RangeStatus == 0 means a valid measurement. On error we leave the
-    // cache untouched, so callers see the last good reading (or the 8191
-    // out-of-range sentinel if no valid read has happened yet).
+    // RangeStatus == 0 means a valid measurement. Invalid readings are
+    // open space for wall logic, not "keep reporting the previous wall".
     if (measurement_data.RangeStatus == 0)
     {
-        last_valid_distance_ = measurement_data.RangeMilliMeter;
+        return measurement_data.RangeMilliMeter;
     }
-    return last_valid_distance_;
+    return TOF_OUT_OF_RANGE_MM;
 }

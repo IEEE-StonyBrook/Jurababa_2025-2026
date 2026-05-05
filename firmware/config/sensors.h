@@ -7,9 +7,10 @@
 
 // ================= ToF Sensor Configuration ================= //
 // VL53L0X timing and measurement settings
-#define TOF_TIMING_BUDGET_US      20000 // Measurement time budget (µs)
-#define TOF_MEASUREMENT_PERIOD_MS 20    // Match timing budget for 50Hz updates
-#define TOF_MAX_RANGE_MM          500   // Maximum reliable range (mm)
+#define TOF_TIMING_BUDGET_US      20000   // Measurement time budget (µs)
+#define TOF_MEASUREMENT_PERIOD_MS 20      // Match timing budget for 50Hz updates
+#define TOF_MAX_RANGE_MM          500     // Maximum reliable range (mm)
+#define TOF_OUT_OF_RANGE_MM       8191.0f // VL53L0X invalid/open-space sentinel
 
 // Wall detection thresholds (mm)
 #define TOF_LEFT_WALL_THRESHOLD_MM  100
