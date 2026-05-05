@@ -42,6 +42,19 @@ struct MotionState
     static inline volatile int16_t  wall_check_right_mm     = 0;
     static inline volatile float    wall_check_yaw_deg      = 0.0f;
     static inline volatile uint32_t wall_check_timestamp_ms = 0;
+
+    // Latest live wall-steering diagnostic values from Robot. These are
+    // primitive copies so the app layer can inspect steering without the
+    // control layer depending on app headers.
+    static inline volatile uint8_t  steering_source           = 0;
+    static inline volatile bool     steering_allowed          = false;
+    static inline volatile bool     steering_front_blocked    = false;
+    static inline volatile float    steering_left_error_mm    = 0.0f;
+    static inline volatile float    steering_right_error_mm   = 0.0f;
+    static inline volatile float    steering_side_error_mm    = 0.0f;
+    static inline volatile float    steering_adjustment_degps = 0.0f;
+    static inline volatile float    steering_yaw_deg          = 0.0f;
+    static inline volatile uint32_t steering_timestamp_ms     = 0;
 };
 
 #endif

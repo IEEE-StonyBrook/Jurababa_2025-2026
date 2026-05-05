@@ -1,6 +1,7 @@
 #ifndef CONTROL_ROBOT_H
 #define CONTROL_ROBOT_H
 
+#include "common/tof_wall_utils.h"
 #include "control/pid.h"
 #include "control/profile.h"
 
@@ -24,12 +25,14 @@ class Robot
     void reset();
 
     // === Wall sensing (ToF) ===
-    void  set_wall_distances(float left_mm, float front_mm, float right_mm);
-    bool  wallLeft();
-    bool  wallRight();
-    float leftDistance();
-    float frontDistance();
-    float rightDistance();
+    void                set_wall_distances(float left_mm, float front_mm, float right_mm);
+    bool                wallLeft();
+    bool                wallRight();
+    float               leftDistance();
+    float               frontDistance();
+    float               rightDistance();
+    tof_wall::WallState wallSteeringState() const;
+    float               wallSteeringAdjustmentDegps() const;
 
     // === Mazerunner-core compatible motion names ===
     void  reset_drive_system();
@@ -99,8 +102,10 @@ class Robot
     float front_wall_mm_ = 0.0f;
     float right_wall_mm_ = 0.0f;
 
-    float side_error_prev_mm_    = 0.0f;
-    bool  side_error_prev_valid_ = false;
+    tof_wall::WallState latest_wall_state_{};
+    float               latest_steering_adjustment_degps_ = 0.0f;
+    float               side_error_prev_mm_               = 0.0f;
+    bool                side_error_prev_valid_            = false;
 };
 
 #endif

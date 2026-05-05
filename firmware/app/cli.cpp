@@ -38,6 +38,12 @@ const char* tofReadingName(int16_t mm)
         return "invalid";
     return mm >= static_cast<int16_t>(TOF_OUT_OF_RANGE_MM) ? "open" : "valid";
 }
+
+const char* liveSteeringSourceName()
+{
+    return tof_wall::sourceName(
+        static_cast<tof_wall::SteeringSource>(MotionState::steering_source));
+}
 } // namespace
 
 CommandLineInterface::CommandLineInterface(const Deps& deps) : deps_(deps)
@@ -312,6 +318,11 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         stop();
         return;
     }
+    if (std::strcmp(args.argv[0], "RESET") == 0)
+    {
+        reset();
+        return;
+    }
 
     printFormat("UNKNOWN COMMAND: ");
     printArgs(args);
@@ -497,8 +508,8 @@ void CommandLineInterface::handleBluetoothCommand()
             stop();
             break;
         case Bluetooth::Command::RESET:
-            LOG_INFO("BT RESET: stopping. Reboot for full Maze reset.");
-            stop();
+            LOG_INFO("BT RESET: resetting search state");
+            reset();
             break;
         case Bluetooth::Command::BATTERY:
             run_function(10);
@@ -555,6 +566,7 @@ void CommandLineInterface::waitForWallCheck(uint16_t command_id)
     if (command_id == 0)
         return;
 
+    uint32_t wait_started_ms = to_ms_since_boot(get_absolute_time());
     while (!MotionState::wall_check_ready || MotionState::wall_check_command_id != command_id)
     {
         pollHaltOnly();
@@ -564,6 +576,23 @@ void CommandLineInterface::waitForWallCheck(uint16_t command_id)
         if (MotionState::completed_command_id == command_id &&
             (!MotionState::wall_check_ready || MotionState::wall_check_command_id != command_id))
         {
+            return;
+        }
+
+        const uint16_t accepted_id      = MotionState::accepted_command_id;
+        const uint16_t current_id       = MotionState::current_command_id;
+        const bool     active           = MotionState::active;
+        const bool     pending          = CommandHub::hasPending();
+        const bool     command_not_live = accepted_id != command_id && current_id != command_id;
+        const bool     no_motion_owner  = !active && current_id == 0;
+        const uint32_t now_ms           = to_ms_since_boot(get_absolute_time());
+        if (command_not_live && no_motion_owner && now_ms - wait_started_ms > 250)
+        {
+            printFormat("Motion command %u was not accepted; clearing stale STOP/queue state "
+                        "(pending=%d depth=%u accepted=%u current=%u).\n",
+                        command_id, pending, MotionState::queue_depth, accepted_id, current_id);
+            CommandHub::clearStopRequested();
+            CommandHub::clear();
             return;
         }
         sleep_ms(2);
@@ -751,17 +780,29 @@ void CommandLineInterface::printTofSnapshot()
                 ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
                 : 0.0f;
         printFormat(
-            "Side error=%.1f mm steering_preview=%.1f deg/s allowed=%d refs L=%.1f R=%.1f\n",
-            static_cast<double>(wall_state.side_error_mm), static_cast<double>(steering_preview),
-            wall_state.steering_allowed, static_cast<double>(TOF_LEFT_CENTER_REFERENCE_MM),
-            static_cast<double>(TOF_RIGHT_CENTER_REFERENCE_MM));
+            "Side src=%s err=%.1f mm Lerr=%.1f Rerr=%.1f preview=%.1f deg/s allowed=%d "
+            "front_blocked=%d\n",
+            tof_wall::sourceName(wall_state.source), static_cast<double>(wall_state.side_error_mm),
+            static_cast<double>(wall_state.left_error_mm),
+            static_cast<double>(wall_state.right_error_mm), static_cast<double>(steering_preview),
+            wall_state.steering_allowed, wall_state.front_blocked);
     }
     else
     {
-        printFormat("Side error=unavailable steering_preview=0.0 deg/s refs L=%.1f R=%.1f\n",
-                    static_cast<double>(TOF_LEFT_CENTER_REFERENCE_MM),
-                    static_cast<double>(TOF_RIGHT_CENTER_REFERENCE_MM));
+        printFormat("Side src=NONE err=unavailable preview=0.0 deg/s front_blocked=%d\n",
+                    wall_state.front_blocked);
     }
+    printFormat("Refs L=%.1f R=%.1f  live src=%s err=%.1f mm adjust=%.1f deg/s allowed=%d\n",
+                static_cast<double>(TOF_LEFT_CENTER_REFERENCE_MM),
+                static_cast<double>(TOF_RIGHT_CENTER_REFERENCE_MM), liveSteeringSourceName(),
+                static_cast<double>(MotionState::steering_side_error_mm),
+                static_cast<double>(MotionState::steering_adjustment_degps),
+                MotionState::steering_allowed);
+    const std::string wall_check_yaw =
+        MotionState::wall_check_ready ? std::to_string(MotionState::wall_check_yaw_deg) : "NA";
+    printFormat("Yaw current=%.2f deg steering_yaw=%.2f deg wall_check_yaw=%s\n",
+                static_cast<double>(snap.imu_yaw),
+                static_cast<double>(MotionState::steering_yaw_deg), wall_check_yaw.c_str());
 
     if (deps_.mouse != nullptr)
     {
@@ -810,6 +851,13 @@ bool CommandLineInterface::startWithGesture(bool tof_available)
         default:
             break;
     }
+
+    if (deps_.sensor_mode == SensorMode::TOF)
+    {
+        CommandHub::clearStopRequested();
+        CommandHub::clear();
+        MotionState::wall_check_ready = false;
+    }
     return true;
 }
 
@@ -832,6 +880,37 @@ void CommandLineInterface::stop()
         CommandHub::requestStop();
     halted_ = true;
     printFormat("STOP\n");
+}
+
+void CommandLineInterface::reset()
+{
+    if (deps_.sensor_mode == SensorMode::TOF)
+    {
+        CommandHub::requestStop();
+        for (int i = 0; i < 50 && CommandHub::stopRequested(); ++i)
+        {
+            drainConsole();
+            sleep_ms(2);
+        }
+        CommandHub::clearStopRequested();
+        CommandHub::clear();
+        MotionState::wall_check_ready = false;
+    }
+
+    if (deps_.maze != nullptr)
+        deps_.maze->reset();
+    if (deps_.mouse != nullptr)
+        deps_.mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
+    if (deps_.api != nullptr)
+    {
+        deps_.api->clearWallSample();
+        deps_.api->setPhaseColor('y');
+        deps_.api->setUp(deps_.start_cell, deps_.goal_cells);
+    }
+
+    halted_        = false;
+    last_function_ = -1;
+    printFormat("RESET: search state reset\n");
 }
 
 uint8_t CommandLineInterface::read_integer(const char* line, int& value)
@@ -899,5 +978,6 @@ void CommandLineInterface::help()
     printFormat("STAGE n : run competition stage 1..5\n");
     printFormat("COMP : run stages 1..5\n");
     printFormat("STYLE [STATIONARY|SMOOTH] : select path execution style\n");
+    printFormat("RESET : reset search state without rebooting\n");
     printFormat("HELP : this text\n");
 }

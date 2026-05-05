@@ -115,6 +115,7 @@ class CommandLineInterface : public MotionWaiter
     bool startWithGesture(bool tof_available);
     bool startCenter();
     void stop();
+    void reset();
     void print(const char* text);
     void print(const std::string& text);
     void printFormat(const char* format, ...);

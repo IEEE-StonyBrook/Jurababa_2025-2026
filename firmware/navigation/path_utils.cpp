@@ -19,6 +19,7 @@
 #include "navigation/path_converter.h"
 
 #ifndef SIMULATOR_BUILD
+#include "app/motion_state.h"
 #include "app/multicore.h"
 #endif
 
@@ -51,6 +52,14 @@ std::string wallBits(Cell* cell)
 
 bool readWallSample(API* api, int16_t& left_mm, int16_t& front_mm, int16_t& right_mm);
 
+#ifndef SIMULATOR_BUILD
+const char* liveSteeringSourceName()
+{
+    return tof_wall::sourceName(
+        static_cast<tof_wall::SteeringSource>(MotionState::steering_source));
+}
+#endif
+
 void logNoPathDiagnostics(API* api, Mouse* mouse)
 {
     if (mouse == nullptr)
@@ -79,8 +88,13 @@ void logNoPathDiagnostics(API* api, Mouse* mouse)
               " R=" + std::to_string(right_mm) + " inferred_walls L=" +
               std::to_string(wall_state.left_wall) + " F=" + std::to_string(wall_state.front_wall) +
               " R=" + std::to_string(wall_state.right_wall) +
+              " src=" + tof_wall::sourceName(wall_state.source) +
+              " left_err_mm=" + std::to_string(wall_state.left_error_mm) +
+              " right_err_mm=" + std::to_string(wall_state.right_error_mm) +
               " side_error_mm=" + std::to_string(wall_state.side_error_mm) +
-              " steering_degps=" + std::to_string(steering_preview));
+              " steering_degps=" + std::to_string(steering_preview) + " front_blocked=" +
+              std::to_string(wall_state.front_blocked) + " live_src=" + liveSteeringSourceName() +
+              " live_steering_degps=" + std::to_string(MotionState::steering_adjustment_degps));
 #endif
 
     if (api != nullptr)
@@ -122,19 +136,30 @@ void logSearchTrace(API* api, Mouse* mouse)
     int16_t front_mm = 0;
     int16_t right_mm = 0;
     readWallSample(api, left_mm, front_mm, right_mm);
+    SensorData snap;
+    SensorHub::snapshot(snap);
     const tof_wall::WallState wall_state = tof_wall::evaluate(left_mm, front_mm, right_mm);
     const float               steering_preview =
         wall_state.steering_allowed
             ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
             : 0.0f;
+    const std::string wall_check_yaw =
+        MotionState::wall_check_ready ? std::to_string(MotionState::wall_check_yaw_deg) : "NA";
 
     LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
              ") heading=" + mouse->currentDirection() + " ToF L/F/R=" + std::to_string(left_mm) +
              "/" + std::to_string(front_mm) + "/" + std::to_string(right_mm) +
              " walls L/F/R=" + std::to_string(wall_state.left_wall) + "/" +
              std::to_string(wall_state.front_wall) + "/" + std::to_string(wall_state.right_wall) +
+             " src=" + tof_wall::sourceName(wall_state.source) +
+             " Lerr/Rerr=" + std::to_string(wall_state.left_error_mm) + "/" +
+             std::to_string(wall_state.right_error_mm) +
              " side_error_mm=" + std::to_string(wall_state.side_error_mm) +
-             " steering_degps=" + std::to_string(steering_preview));
+             " steering_degps=" + std::to_string(steering_preview) +
+             " allowed=" + std::to_string(wall_state.steering_allowed) + " front_blocked=" +
+             std::to_string(wall_state.front_blocked) + " live_src=" + liveSteeringSourceName() +
+             " live_steering_degps=" + std::to_string(MotionState::steering_adjustment_degps) +
+             " wall_yaw=" + wall_check_yaw + " current_yaw=" + std::to_string(snap.imu_yaw));
 #else
     LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
              ") heading=" + mouse->currentDirection());

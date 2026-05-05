@@ -119,6 +119,16 @@ void Cell::setWall(char direction)
     }
 }
 
+void Cell::reset()
+{
+    wall_north_ = false;
+    wall_east_  = false;
+    wall_south_ = false;
+    wall_west_  = false;
+    explored_   = false;
+    clearPathfindingState();
+}
+
 void Cell::addWall(char direction)
 {
     switch (direction)
@@ -257,6 +267,17 @@ int Maze::width() const
 int Maze::height() const
 {
     return cells_[0].size();
+}
+
+void Maze::reset()
+{
+    for (size_t col = 0; col < cells_.size(); col++)
+    {
+        for (size_t row = 0; row < cells_[0].size(); row++)
+        {
+            cells_[col][row]->reset();
+        }
+    }
 }
 
 void Maze::printASCII()

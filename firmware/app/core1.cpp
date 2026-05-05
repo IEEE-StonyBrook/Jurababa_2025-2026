@@ -122,6 +122,20 @@ void publishWallCheck(Robot* robot)
     MotionState::wall_check_ready      = true;
 }
 
+void publishSteeringDiagnostics(Robot* robot)
+{
+    const tof_wall::WallState wall_state   = robot->wallSteeringState();
+    MotionState::steering_source           = static_cast<uint8_t>(wall_state.source);
+    MotionState::steering_allowed          = wall_state.steering_allowed;
+    MotionState::steering_front_blocked    = wall_state.front_blocked;
+    MotionState::steering_left_error_mm    = wall_state.left_error_mm;
+    MotionState::steering_right_error_mm   = wall_state.right_error_mm;
+    MotionState::steering_side_error_mm    = wall_state.side_error_mm;
+    MotionState::steering_adjustment_degps = robot->wallSteeringAdjustmentDegps();
+    MotionState::steering_yaw_deg          = robot->angle();
+    MotionState::steering_timestamp_ms     = nowMs();
+}
+
 void startSearchForward(Robot* robot, float distance_mm, float wall_check_position_mm)
 {
     g_search_action.wall_check_position_mm = wall_check_position_mm;
@@ -597,6 +611,7 @@ void core1Entry()
         if (g_battery)
             g_battery->update(); // Producer for the Battery filter in ToF/Robot mode.
         robot.update();
+        publishSteeringDiagnostics(&robot);
         tickSearchActionSequence(&robot);
         processCommands(&robot);
 

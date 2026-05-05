@@ -24,6 +24,7 @@ class Cell
     void markExplored();
     void setNeighbor(Cell* cell, char direction);
     void setWall(char direction);
+    void reset();
 
     static bool equal(Cell* c1, Cell* c2);
 
@@ -58,6 +59,7 @@ class Maze
 
     int  width() const;
     int  height() const;
+    void reset();
     void printASCII();
 
   private:

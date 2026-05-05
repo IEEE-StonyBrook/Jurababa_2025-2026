@@ -26,11 +26,11 @@
 #define TOF_RIGHT_WALL_THRESHOLD_MM (TOF_RIGHT_CENTER_REFERENCE_MM + TOF_SIDE_WALL_MARGIN_MM)
 #define TOF_FRONT_WALL_THRESHOLD_MM 120.0f
 
-// UKMARS-style wall steering. The side error is fed to the rotation controller
-// as an angular-rate correction while driving straight.
-#define TOF_STEERING_KP_DEGPS_PER_MM        0.8f
+// UKMARS-style wall steering. Jurababa yaw/omega is positive left, negative
+// right, so positive side error commands a left angular-rate correction.
+#define TOF_STEERING_KP_DEGPS_PER_MM        0.25f
 #define TOF_STEERING_KD_DEG_PER_MM          0.0f
-#define TOF_STEERING_ADJUST_LIMIT_DEGPS     35.0f
+#define TOF_STEERING_ADJUST_LIMIT_DEGPS     10.0f
 #define TOF_FRONT_WALL_RELIABILITY_LIMIT_MM 160.0f
 
 // ================= IMU Configuration ================= //

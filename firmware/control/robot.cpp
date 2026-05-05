@@ -2,7 +2,6 @@
 
 #include <cmath>
 
-#include "common/tof_wall_utils.h"
 #include "common/utils.h"
 #include "config/config.h"
 #include "control/drivetrain.h"
@@ -33,10 +32,12 @@ void Robot::reset_drive_system()
     forward_controller_.reset();
     rotation_controller_.reset();
 
-    prev_left_cmd_vel_mmps_  = 0.0f;
-    prev_right_cmd_vel_mmps_ = 0.0f;
-    side_error_prev_mm_      = 0.0f;
-    side_error_prev_valid_   = false;
+    prev_left_cmd_vel_mmps_           = 0.0f;
+    prev_right_cmd_vel_mmps_          = 0.0f;
+    side_error_prev_mm_               = 0.0f;
+    side_error_prev_valid_            = false;
+    latest_wall_state_                = {};
+    latest_steering_adjustment_degps_ = 0.0f;
 }
 
 void Robot::set_wall_distances(float left_mm, float front_mm, float right_mm)
@@ -69,6 +70,16 @@ float Robot::frontDistance()
 float Robot::rightDistance()
 {
     return right_wall_mm_;
+}
+
+tof_wall::WallState Robot::wallSteeringState() const
+{
+    return latest_wall_state_;
+}
+
+float Robot::wallSteeringAdjustmentDegps() const
+{
+    return latest_steering_adjustment_degps_;
 }
 
 float Robot::position() const
@@ -224,6 +235,9 @@ void Robot::runPositionControl()
         rotation_controller_.reset();
         prev_left_cmd_vel_mmps_  = 0.0f;
         prev_right_cmd_vel_mmps_ = 0.0f;
+        side_error_prev_valid_   = false;
+        latest_wall_state_ = tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
+        latest_steering_adjustment_degps_ = 0.0f;
         return;
     }
 
@@ -276,24 +290,28 @@ float Robot::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_
     if (!straight_move)
     {
         side_error_prev_valid_ = false;
+        latest_wall_state_     = tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
+        latest_steering_adjustment_degps_ = 0.0f;
         return 0.0f;
     }
 
-    const tof_wall::WallState wall_state =
-        tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
-    if (!wall_state.steering_allowed)
+    latest_wall_state_ = tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
+    if (!latest_wall_state_.steering_allowed)
     {
-        side_error_prev_valid_ = false;
+        side_error_prev_valid_            = false;
+        latest_steering_adjustment_degps_ = 0.0f;
         return 0.0f;
     }
 
     const float side_error_delta_mmps =
         side_error_prev_valid_
-            ? (wall_state.side_error_mm - side_error_prev_mm_) * LOOP_FREQUENCY_HZ
+            ? (latest_wall_state_.side_error_mm - side_error_prev_mm_) * LOOP_FREQUENCY_HZ
             : 0.0f;
-    side_error_prev_mm_    = wall_state.side_error_mm;
+    side_error_prev_mm_    = latest_wall_state_.side_error_mm;
     side_error_prev_valid_ = true;
-    return tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, side_error_delta_mmps);
+    latest_steering_adjustment_degps_ =
+        tof_wall::steeringAdjustmentDegps(latest_wall_state_.side_error_mm, side_error_delta_mmps);
+    return latest_steering_adjustment_degps_;
 }
 
 void Robot::stop()

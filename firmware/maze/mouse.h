@@ -27,6 +27,8 @@ class Mouse
     Cell*              currentCell();
     std::string        currentDirection();
     std::array<int, 2> currentDirectionArray();
+    void               reset(std::array<int, 2> start_pos, std::string start_dir,
+                             std::vector<std::array<int, 2>> goals);
     void               setPosition(Cell* cell);
     void               moveForward(int cells);
     bool               canMoveBetween(Cell* from, Cell* to, bool diagonals = false);

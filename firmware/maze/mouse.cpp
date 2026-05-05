@@ -32,6 +32,15 @@ std::array<int, 2> Mouse::currentDirectionArray()
     return dir_offsets_.at(direction_);
 }
 
+void Mouse::reset(std::array<int, 2> start_pos, std::string start_dir,
+                  std::vector<std::array<int, 2>> goals)
+{
+    position_  = start_pos;
+    direction_ = start_dir;
+    goals_     = goals;
+    resetPathfinding();
+}
+
 void Mouse::setPosition(Cell* cell)
 {
     position_ = {cell->x(), cell->y()};

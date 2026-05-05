@@ -151,8 +151,17 @@ void API::search_start_from_wall_check()
     if (!MotionState::wall_check_ready ||
         MotionState::wall_check_command_id != active_search_command_id_)
     {
-        active_search_command_id_ = 0;
-        return;
+        if (!CommandHub::stopRequested())
+        {
+            active_search_command_id_ = CommandHub::send(CommandType::SEARCH_START_FROM_WALL_CHECK);
+            waitForWallCheck(active_search_command_id_);
+        }
+        if (!MotionState::wall_check_ready ||
+            MotionState::wall_check_command_id != active_search_command_id_)
+        {
+            active_search_command_id_ = 0;
+            return;
+        }
     }
 
     setWallSample(MotionState::wall_check_left_mm, MotionState::wall_check_front_mm,
@@ -175,8 +184,17 @@ void API::search_advance()
     if (!MotionState::wall_check_ready ||
         MotionState::wall_check_command_id != active_search_command_id_)
     {
-        active_search_command_id_ = 0;
-        return;
+        if (!CommandHub::stopRequested())
+        {
+            active_search_command_id_ = CommandHub::send(CommandType::SEARCH_ADVANCE);
+            waitForWallCheck(active_search_command_id_);
+        }
+        if (!MotionState::wall_check_ready ||
+            MotionState::wall_check_command_id != active_search_command_id_)
+        {
+            active_search_command_id_ = 0;
+            return;
+        }
     }
 
     setWallSample(MotionState::wall_check_left_mm, MotionState::wall_check_front_mm,
