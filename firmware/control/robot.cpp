@@ -2,15 +2,14 @@
 
 #include <cmath>
 
+#include "common/tof_wall_utils.h"
 #include "common/utils.h"
 #include "config/config.h"
 #include "control/drivetrain.h"
 #include "drivers/imu.h"
-#include "drivers/tof.h"
 
-Robot::Robot(Drivetrain* drivetrain, IMU* imu, ToF* left_tof, ToF* front_tof, ToF* right_tof)
-    : drivetrain_(drivetrain), imu_(imu), left_tof_(left_tof), front_tof_(front_tof),
-      right_tof_(right_tof), forward_controller_(FWD_KP, FWD_KD, LOOP_FREQUENCY_HZ),
+Robot::Robot(Drivetrain* drivetrain, IMU* imu)
+    : drivetrain_(drivetrain), imu_(imu), forward_controller_(FWD_KP, FWD_KD, LOOP_FREQUENCY_HZ),
       rotation_controller_(ROT_KP, ROT_KD, LOOP_FREQUENCY_HZ)
 {
     forward_controller_.setOutputLimit(MAX_VOLTAGE);
@@ -36,23 +35,30 @@ void Robot::reset_drive_system()
 
     prev_left_cmd_vel_mmps_  = 0.0f;
     prev_right_cmd_vel_mmps_ = 0.0f;
+    side_error_prev_mm_      = 0.0f;
+    side_error_prev_valid_   = false;
+}
+
+void Robot::set_wall_distances(float left_mm, float front_mm, float right_mm)
+{
+    left_wall_mm_  = left_mm;
+    front_wall_mm_ = front_mm;
+    right_wall_mm_ = right_mm;
 }
 
 bool Robot::wallLeft()
 {
-    const float distance_mm = left_tof_->get_distance();
-    return distance_mm > 0.0f && distance_mm < TOF_LEFT_WALL_THRESHOLD_MM;
+    return tof_wall::wallLeft(left_wall_mm_);
 }
 
 bool Robot::wallRight()
 {
-    const float distance_mm = right_tof_->get_distance();
-    return distance_mm > 0.0f && distance_mm < TOF_RIGHT_WALL_THRESHOLD_MM;
+    return tof_wall::wallRight(right_wall_mm_);
 }
 
 float Robot::frontDistance()
 {
-    return front_tof_->get_distance();
+    return front_wall_mm_;
 }
 
 float Robot::position() const
@@ -211,8 +217,10 @@ void Robot::runPositionControl()
     // IMU as a held-flat per-tick delta; this removes the 10 ms staircase
     // that the old 100 Hz gate produced in rotation_output_ and stops the
     // step-input-driven oscillation on spin turns.
-    const float forward_output  = forward_controller_.update(fwd_velocity, fwd_change_mm);
-    const float rotation_output = rotation_controller_.update(rot_velocity, rot_change_deg);
+    const float forward_output      = forward_controller_.update(fwd_velocity, fwd_change_mm);
+    const float steering_adjustment = wallSteeringAdjustment(fwd_velocity, rot_velocity);
+    const float rotation_output =
+        rotation_controller_.update(rot_velocity, rot_change_deg, steering_adjustment);
 
     // Mix forward + rotation outputs into per-wheel volts (mazerunner shape).
     float left_volts  = forward_output - rotation_output;
@@ -239,6 +247,33 @@ void Robot::runPositionControl()
     right_volts = utils::clampAbs(right_volts, MAX_VOLTAGE);
 
     drivetrain_->setVoltage(left_volts, right_volts);
+}
+
+float Robot::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps)
+{
+    const bool straight_move = forward_.active() && !rotation_.active() &&
+                               fwd_velocity_mmps > 1.0f && std::fabs(rot_velocity_degps) < 1.0f;
+    if (!straight_move)
+    {
+        side_error_prev_valid_ = false;
+        return 0.0f;
+    }
+
+    const tof_wall::WallState wall_state =
+        tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
+    if (!wall_state.steering_allowed)
+    {
+        side_error_prev_valid_ = false;
+        return 0.0f;
+    }
+
+    const float side_error_delta_mmps =
+        side_error_prev_valid_
+            ? (wall_state.side_error_mm - side_error_prev_mm_) * LOOP_FREQUENCY_HZ
+            : 0.0f;
+    side_error_prev_mm_    = wall_state.side_error_mm;
+    side_error_prev_valid_ = true;
+    return tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, side_error_delta_mmps);
 }
 
 void Robot::stop()

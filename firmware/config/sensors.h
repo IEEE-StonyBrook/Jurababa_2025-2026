@@ -12,10 +12,26 @@
 #define TOF_MAX_RANGE_MM          500     // Maximum reliable range (mm)
 #define TOF_OUT_OF_RANGE_MM       8191.0f // VL53L0X invalid/open-space sentinel
 
-// Wall detection thresholds (mm)
-#define TOF_LEFT_WALL_THRESHOLD_MM  100
-#define TOF_RIGHT_WALL_THRESHOLD_MM 100
-#define TOF_FRONT_WALL_THRESHOLD_MM 120
+// Wall detection and centering calibration (mm)
+//
+// Side references are the readings measured when the robot is centered in a
+// cell with the side walls present. The left and right ToFs do not have to
+// agree mechanically; UKMARS normalizes each side independently before wall
+// detection and steering, so Jurababa does the same in distance units.
+#define TOF_LEFT_CENTER_REFERENCE_MM  132.0f
+#define TOF_RIGHT_CENTER_REFERENCE_MM 100.0f
+#define TOF_SIDE_WALL_MARGIN_MM       40.0f
+
+#define TOF_LEFT_WALL_THRESHOLD_MM  (TOF_LEFT_CENTER_REFERENCE_MM + TOF_SIDE_WALL_MARGIN_MM)
+#define TOF_RIGHT_WALL_THRESHOLD_MM (TOF_RIGHT_CENTER_REFERENCE_MM + TOF_SIDE_WALL_MARGIN_MM)
+#define TOF_FRONT_WALL_THRESHOLD_MM 120.0f
+
+// UKMARS-style wall steering. The side error is fed to the rotation controller
+// as an angular-rate correction while driving straight.
+#define TOF_STEERING_KP_DEGPS_PER_MM        0.8f
+#define TOF_STEERING_KD_DEG_PER_MM          0.0f
+#define TOF_STEERING_ADJUST_LIMIT_DEGPS     35.0f
+#define TOF_FRONT_WALL_RELIABILITY_LIMIT_MM 160.0f
 
 // ================= IMU Configuration ================= //
 // BNO085 UART settings

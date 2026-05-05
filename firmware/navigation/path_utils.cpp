@@ -11,7 +11,7 @@
 
 #include "app/api.h"
 #include "common/log.h"
-#include "config/sensors.h"
+#include "common/tof_wall_utils.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
 #include "navigation/a_star.h"
@@ -49,13 +49,6 @@ std::string wallBits(Cell* cell)
            " S=" + std::to_string(cell->hasWall('S')) + " W=" + std::to_string(cell->hasWall('W'));
 }
 
-#ifndef SIMULATOR_BUILD
-bool wallFromTofMm(int16_t mm, int threshold_mm)
-{
-    return mm > 0 && mm < threshold_mm;
-}
-#endif
-
 void logNoPathDiagnostics(API* api, Mouse* mouse)
 {
     if (mouse == nullptr)
@@ -72,14 +65,20 @@ void logNoPathDiagnostics(API* api, Mouse* mouse)
 #ifndef SIMULATOR_BUILD
     SensorData snap;
     SensorHub::snapshot(snap);
-    bool left_wall  = wallFromTofMm(snap.tof_left_mm, TOF_LEFT_WALL_THRESHOLD_MM);
-    bool front_wall = wallFromTofMm(snap.tof_front_mm, TOF_FRONT_WALL_THRESHOLD_MM);
-    bool right_wall = wallFromTofMm(snap.tof_right_mm, TOF_RIGHT_WALL_THRESHOLD_MM);
+    const tof_wall::WallState wall_state =
+        tof_wall::evaluate(snap.tof_left_mm, snap.tof_front_mm, snap.tof_right_mm);
+    const float steering_preview =
+        wall_state.steering_allowed
+            ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
+            : 0.0f;
 
     LOG_ERROR("No-path ToF L=" + std::to_string(snap.tof_left_mm) + " F=" +
               std::to_string(snap.tof_front_mm) + " R=" + std::to_string(snap.tof_right_mm) +
-              " inferred_walls L=" + std::to_string(left_wall) +
-              " F=" + std::to_string(front_wall) + " R=" + std::to_string(right_wall));
+              " inferred_walls L=" + std::to_string(wall_state.left_wall) +
+              " F=" + std::to_string(wall_state.front_wall) +
+              " R=" + std::to_string(wall_state.right_wall) +
+              " side_error_mm=" + std::to_string(wall_state.side_error_mm) +
+              " steering_degps=" + std::to_string(steering_preview));
 #endif
 
     if (api != nullptr)
@@ -102,15 +101,21 @@ void logSearchTrace(Mouse* mouse)
 #ifndef SIMULATOR_BUILD
     SensorData snap;
     SensorHub::snapshot(snap);
-    bool left_wall  = wallFromTofMm(snap.tof_left_mm, TOF_LEFT_WALL_THRESHOLD_MM);
-    bool front_wall = wallFromTofMm(snap.tof_front_mm, TOF_FRONT_WALL_THRESHOLD_MM);
-    bool right_wall = wallFromTofMm(snap.tof_right_mm, TOF_RIGHT_WALL_THRESHOLD_MM);
+    const tof_wall::WallState wall_state =
+        tof_wall::evaluate(snap.tof_left_mm, snap.tof_front_mm, snap.tof_right_mm);
+    const float steering_preview =
+        wall_state.steering_allowed
+            ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
+            : 0.0f;
 
     LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
-             ") heading=" + mouse->currentDirection() + " ToF L/F/R=" +
-             std::to_string(snap.tof_left_mm) + "/" + std::to_string(snap.tof_front_mm) + "/" +
-             std::to_string(snap.tof_right_mm) + " walls L/F/R=" + std::to_string(left_wall) + "/" +
-             std::to_string(front_wall) + "/" + std::to_string(right_wall));
+             ") heading=" + mouse->currentDirection() +
+             " ToF L/F/R=" + std::to_string(snap.tof_left_mm) + "/" +
+             std::to_string(snap.tof_front_mm) + "/" + std::to_string(snap.tof_right_mm) +
+             " walls L/F/R=" + std::to_string(wall_state.left_wall) + "/" +
+             std::to_string(wall_state.front_wall) + "/" + std::to_string(wall_state.right_wall) +
+             " side_error_mm=" + std::to_string(wall_state.side_error_mm) +
+             " steering_degps=" + std::to_string(steering_preview));
 #else
     LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
              ") heading=" + mouse->currentDirection());

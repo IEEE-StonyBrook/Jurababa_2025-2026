@@ -15,6 +15,7 @@
 #include "app/multicore.h"
 #include "app/start_gesture.h"
 #include "common/log.h"
+#include "common/tof_wall_utils.h"
 #include "config/geometry.h"
 #include "config/sensors.h"
 #include "drivers/battery.h"
@@ -30,11 +31,6 @@ constexpr char kBackspace = 0x08;
 const char* movementStyleName(API::MovementStyle style)
 {
     return style == API::MovementStyle::Smooth ? "SMOOTH" : "STATIONARY";
-}
-
-bool wallFromTofMm(int16_t mm, int threshold_mm)
-{
-    return mm > 0 && mm < threshold_mm;
 }
 
 const char* tofReadingName(int16_t mm)
@@ -723,17 +719,37 @@ void CommandLineInterface::printTofSnapshot()
     SensorData snap;
     SensorHub::snapshot(snap);
 
-    bool left_wall  = wallFromTofMm(snap.tof_left_mm, TOF_LEFT_WALL_THRESHOLD_MM);
-    bool front_wall = wallFromTofMm(snap.tof_front_mm, TOF_FRONT_WALL_THRESHOLD_MM);
-    bool right_wall = wallFromTofMm(snap.tof_right_mm, TOF_RIGHT_WALL_THRESHOLD_MM);
+    const tof_wall::WallState wall_state =
+        tof_wall::evaluate(snap.tof_left_mm, snap.tof_front_mm, snap.tof_right_mm);
 
     printFormat("ToF L=%d mm (%s) F=%d mm (%s) R=%d mm (%s)\n", snap.tof_left_mm,
                 tofReadingName(snap.tof_left_mm), snap.tof_front_mm,
                 tofReadingName(snap.tof_front_mm), snap.tof_right_mm,
                 tofReadingName(snap.tof_right_mm));
-    printFormat("Walls L=%d F=%d R=%d  thresholds L=%d F=%d R=%d  open=%d\n", left_wall, front_wall,
-                right_wall, TOF_LEFT_WALL_THRESHOLD_MM, TOF_FRONT_WALL_THRESHOLD_MM,
-                TOF_RIGHT_WALL_THRESHOLD_MM, static_cast<int>(TOF_OUT_OF_RANGE_MM));
+    printFormat("Walls L=%d F=%d R=%d  thresholds L=%.1f F=%.1f R=%.1f  open=%d\n",
+                wall_state.left_wall, wall_state.front_wall, wall_state.right_wall,
+                static_cast<double>(TOF_LEFT_WALL_THRESHOLD_MM),
+                static_cast<double>(TOF_FRONT_WALL_THRESHOLD_MM),
+                static_cast<double>(TOF_RIGHT_WALL_THRESHOLD_MM),
+                static_cast<int>(TOF_OUT_OF_RANGE_MM));
+    if (wall_state.side_error_valid)
+    {
+        const float steering_preview =
+            wall_state.steering_allowed
+                ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
+                : 0.0f;
+        printFormat(
+            "Side error=%.1f mm steering_preview=%.1f deg/s allowed=%d refs L=%.1f R=%.1f\n",
+            static_cast<double>(wall_state.side_error_mm), static_cast<double>(steering_preview),
+            wall_state.steering_allowed, static_cast<double>(TOF_LEFT_CENTER_REFERENCE_MM),
+            static_cast<double>(TOF_RIGHT_CENTER_REFERENCE_MM));
+    }
+    else
+    {
+        printFormat("Side error=unavailable steering_preview=0.0 deg/s refs L=%.1f R=%.1f\n",
+                    static_cast<double>(TOF_LEFT_CENTER_REFERENCE_MM),
+                    static_cast<double>(TOF_RIGHT_CENTER_REFERENCE_MM));
+    }
 
     if (deps_.mouse != nullptr)
     {
@@ -855,7 +871,7 @@ void CommandLineInterface::help()
     printFormat("B : show battery voltage\n");
     printFormat("S : show combined sensor readings\n");
     printFormat("E : show encoder/IMU readings\n");
-    printFormat("Q : show ToF readings and wall decisions\n");
+    printFormat("Q : show ToF readings, wall decisions, and side steering error\n");
     printFormat("F n : Run user function n\n");
     printFormat(" 0 = ---\n");
     printFormat(" 1 = Sensor Static Calibration\n");

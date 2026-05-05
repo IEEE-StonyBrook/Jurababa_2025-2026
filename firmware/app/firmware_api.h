@@ -12,11 +12,9 @@
  * in `firmware/config/sensors.h`.
  *
  * Reads come exclusively from `SensorHub::snapshot()` because Core 1 owns
- * the physical I2C — we never touch a ToF object directly from Core 0.
- *
- * A ToF reading of 0 mm means "invalid / out of range" on the VL53L0X, so
- * the predicate is `0 < distance_mm < threshold_mm` — zero conservatively
- * reports "no wall", which is the same convention mazerunner-core uses.
+ * the physical I2C — we never touch a ToF object directly from Core 0. Wall
+ * decisions use the shared UKMARS-style ToF calibration helper so the maze
+ * model, CLI diagnostics, and Robot steering agree on the same thresholds.
  */
 class FirmwareApi : public API
 {

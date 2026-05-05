@@ -458,7 +458,7 @@ void core1Entry()
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, true);
 
     Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder, g_battery);
-    Robot      robot(&drivetrain, &imu, &left_tof, &front_tof, &right_tof);
+    Robot      robot(&drivetrain, &imu);
 
     LOG_DEBUG("Core1: Hardware initialized");
     robot.reset();
@@ -468,14 +468,16 @@ void core1Entry()
     const uint32_t  CONTROL_PERIOD_US = static_cast<uint32_t>(LOOP_INTERVAL_S * 1.0e6f);
     absolute_time_t next_tick         = make_timeout_time_us(CONTROL_PERIOD_US);
 
-    // ToF publishes happen at 50 Hz, not 500 Hz. Search-action triggers use
-    // direct ToF reads only while one of those cooperative sequences is active.
+    // ToF publishes happen at 50 Hz, not 500 Hz. Robot consumes these cached
+    // distances for UKMARS-style wall steering and smooth-turn triggers so the
+    // 500 Hz loop never performs I2C reads.
     int       tof_publish_counter = 0;
     const int TOF_PUBLISH_DIVIDER = 10; // 500 Hz / 10 = 50 Hz
 
-    int16_t cached_tof_left_mm  = 0;
-    int16_t cached_tof_front_mm = 0;
-    int16_t cached_tof_right_mm = 0;
+    int16_t cached_tof_left_mm  = static_cast<int16_t>(TOF_OUT_OF_RANGE_MM);
+    int16_t cached_tof_front_mm = static_cast<int16_t>(TOF_OUT_OF_RANGE_MM);
+    int16_t cached_tof_right_mm = static_cast<int16_t>(TOF_OUT_OF_RANGE_MM);
+    robot.set_wall_distances(cached_tof_left_mm, cached_tof_front_mm, cached_tof_right_mm);
 
     while (true)
     {
@@ -494,6 +496,7 @@ void core1Entry()
             cached_tof_left_mm  = static_cast<int16_t>(left_tof.get_distance());
             cached_tof_front_mm = static_cast<int16_t>(front_tof.get_distance());
             cached_tof_right_mm = static_cast<int16_t>(right_tof.get_distance());
+            robot.set_wall_distances(cached_tof_left_mm, cached_tof_front_mm, cached_tof_right_mm);
         }
 
         SensorData sensor_data{};

@@ -6,7 +6,6 @@
 
 class Drivetrain;
 class IMU;
-class ToF;
 
 /**
  * @brief High-level motion controller (mazerunner-core Motion style)
@@ -20,11 +19,12 @@ class ToF;
 class Robot
 {
   public:
-    Robot(Drivetrain* drivetrain, IMU* imu, ToF* left_tof, ToF* front_tof, ToF* right_tof);
+    Robot(Drivetrain* drivetrain, IMU* imu);
 
     void reset();
 
     // === Wall sensing (ToF) ===
+    void  set_wall_distances(float left_mm, float front_mm, float right_mm);
     bool  wallLeft();
     bool  wallRight();
     float frontDistance();
@@ -62,14 +62,12 @@ class Robot
     void update();
 
   private:
-    void runPositionControl();
+    void  runPositionControl();
+    float wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps);
 
     // Hardware
     Drivetrain* drivetrain_;
     IMU*        imu_;
-    ToF*        left_tof_;
-    ToF*        front_tof_;
-    ToF*        right_tof_;
 
     // Motion profiles. Names intentionally match UKMARS Motion::forward/rotation.
     Profile forward_;
@@ -88,6 +86,17 @@ class Robot
     // `(v - prev_v) * LOOP_FREQUENCY_HZ`.
     float prev_left_cmd_vel_mmps_  = 0.0f;
     float prev_right_cmd_vel_mmps_ = 0.0f;
+
+    // ToFs are physically read at 50 Hz by Core 1, then cached here for the
+    // 500 Hz controller. This mirrors UKMARS' "sensors update once per tick,
+    // motors consume cached steering feedback" shape without doing I2C inside
+    // runPositionControl().
+    float left_wall_mm_  = 0.0f;
+    float front_wall_mm_ = 0.0f;
+    float right_wall_mm_ = 0.0f;
+
+    float side_error_prev_mm_    = 0.0f;
+    bool  side_error_prev_valid_ = false;
 };
 
 #endif
