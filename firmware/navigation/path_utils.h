@@ -28,6 +28,9 @@ namespace PathUtils
 bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
                   bool diagonals, bool all_explored, bool avoid_goals);
 
+// Execute one cardinal speed path using only cells already explored.
+bool traverseExploredPath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals);
+
 // Execute one diagonalized speed path using only cells already explored.
 bool traverseExploredDiagonalPath(API* api, Mouse* mouse,
                                   const std::vector<std::array<int, 2>>& goals);

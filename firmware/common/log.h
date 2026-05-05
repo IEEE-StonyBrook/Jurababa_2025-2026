@@ -1,6 +1,7 @@
 #ifndef COMMON_LOG_H
 #define COMMON_LOG_H
 
+#include <cstdint>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -19,11 +20,21 @@ enum class LogPriority
 class Log
 {
   public:
-    static void message(LogPriority priority, std::string msg);
-    static void setBluetoothInterface(Bluetooth* bt);
-    static void setBluetoothEnabled(bool enabled);
-    static void setBluetoothPriority(LogPriority priority);
-    static bool isBluetoothEnabled();
+    struct BluetoothDiagnostics
+    {
+        uint16_t queued_messages;
+        uint16_t max_queued_messages;
+        uint32_t dropped_messages;
+        uint32_t truncated_messages;
+    };
+
+    static void                 message(LogPriority priority, std::string msg);
+    static void                 setBluetoothInterface(Bluetooth* bt);
+    static void                 setBluetoothEnabled(bool enabled);
+    static void                 setBluetoothPriority(LogPriority priority);
+    static void                 drainBluetooth();
+    static bool                 isBluetoothEnabled();
+    static BluetoothDiagnostics bluetoothDiagnostics();
 
   private:
     static LogPriority print_priority_level_;

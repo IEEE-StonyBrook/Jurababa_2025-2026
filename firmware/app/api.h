@@ -103,8 +103,9 @@ class API
     char phaseColor() const;
 
     // Setup
-    void setUp(std::array<int, 2> start, std::vector<std::array<int, 2>> goals);
-    void printMaze();
+    void        setUp(std::array<int, 2> start, std::vector<std::array<int, 2>> goals);
+    void        printMaze();
+    std::string mazeString();
 
     // Inject a motion-complete waiter (set by Cli on hardware; null in sim).
     // When set, every physical command waits until Core 1 completes the exact

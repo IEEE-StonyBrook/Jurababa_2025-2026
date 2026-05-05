@@ -185,6 +185,32 @@ std::vector<Cell*> exploredPathTo(Mouse* mouse, Cell* end)
     LOG_ERROR("No explored-only speed path found.");
     return {};
 }
+
+std::vector<Cell*> bestExploredPath(Mouse* mouse, const std::vector<std::array<int, 2>>& goals)
+{
+    std::vector<Cell*> best_path;
+    float              best_cost = std::numeric_limits<float>::infinity();
+
+    for (const auto& goal : goals)
+    {
+        Cell* goal_cell = mouse->cellAt(goal[0], goal[1]);
+        if (goal_cell == nullptr || !goal_cell->explored())
+            continue;
+
+        std::vector<Cell*> path = exploredPathTo(mouse, goal_cell);
+        if (path.empty())
+            continue;
+
+        float cost = static_cast<float>(path.size());
+        if (cost < best_cost)
+        {
+            best_path = path;
+            best_cost = cost;
+        }
+    }
+
+    return best_path;
+}
 } // namespace
 
 void setAllExplored(Mouse* mouse)
@@ -288,33 +314,34 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
     return true;
 }
 
+bool traverseExploredPath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals)
+{
+    if (api == nullptr || mouse == nullptr)
+        return false;
+
+    std::vector<Cell*> best_path = bestExploredPath(mouse, goals);
+    if (best_path.empty())
+    {
+        LOG_ERROR("No explored-only cardinal speed run path available.");
+        return false;
+    }
+
+    colorPath(api, best_path);
+
+    std::string lfr =
+        PathConverter::buildLFR(mouse->currentCell(), mouse->currentDirectionArray(), best_path);
+    LOG_INFO("Explored Cardinal A* LFR Path: " + lfr);
+    api->executeSequence(lfr);
+    return true;
+}
+
 bool traverseExploredDiagonalPath(API* api, Mouse* mouse,
                                   const std::vector<std::array<int, 2>>& goals)
 {
     if (api == nullptr || mouse == nullptr)
         return false;
 
-    std::vector<Cell*> best_path;
-    float              best_cost = std::numeric_limits<float>::infinity();
-
-    for (const auto& goal : goals)
-    {
-        Cell* goal_cell = mouse->cellAt(goal[0], goal[1]);
-        if (goal_cell == nullptr || !goal_cell->explored())
-            continue;
-
-        std::vector<Cell*> path = exploredPathTo(mouse, goal_cell);
-        if (path.empty())
-            continue;
-
-        float cost = static_cast<float>(path.size());
-        if (cost < best_cost)
-        {
-            best_path = path;
-            best_cost = cost;
-        }
-    }
-
+    std::vector<Cell*> best_path = bestExploredPath(mouse, goals);
     if (best_path.empty())
     {
         LOG_ERROR("No explored-only diagonal speed run path available.");

@@ -572,6 +572,11 @@ void API::setUp(std::array<int, 2> start, std::vector<std::array<int, 2>> goals)
 
 void API::printMaze()
 {
+    std::cout << mazeString() << std::endl;
+}
+
+std::string API::mazeString()
+{
     std::string maze = "Maze:\n";
     for (int i = 0; i < mazeWidth(); i++)
         maze += "+---";
@@ -581,7 +586,7 @@ void API::printMaze()
     {
         maze += printMazeRow(i) + "\n";
     }
-    std::cout << maze << std::endl;
+    return maze;
 }
 
 std::string API::printMazeRow(int row)

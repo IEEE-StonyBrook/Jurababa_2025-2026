@@ -1,9 +1,11 @@
 #include "app/cli.h"
 
 #include <cctype>
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "pico/stdlib.h"
 
@@ -42,27 +44,82 @@ const char* tofReadingName(int16_t mm)
 }
 } // namespace
 
-void Args::print() const
-{
-    for (int i = 0; i < argc; ++i)
-        printf("%s ", argv[i]);
-    printf("\n");
-}
-
 CommandLineInterface::CommandLineInterface(const Deps& deps) : deps_(deps)
 {
     if (deps_.api != nullptr)
         deps_.api->setMotionWaiter(this);
 }
 
+void CommandLineInterface::print(const char* text)
+{
+    if (text == nullptr)
+        return;
+
+    std::fputs(text, stdout);
+    if (deps_.bluetooth != nullptr)
+    {
+        deps_.bluetooth->write(text);
+        drainConsole();
+    }
+}
+
+void CommandLineInterface::print(const std::string& text)
+{
+    print(text.c_str());
+}
+
+void CommandLineInterface::printFormat(const char* format, ...)
+{
+    if (format == nullptr)
+        return;
+
+    char    buffer[384];
+    va_list args;
+    va_start(args, format);
+    int length = std::vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+
+    if (length <= 0)
+        return;
+
+    if (static_cast<size_t>(length) < sizeof(buffer))
+    {
+        print(buffer);
+        return;
+    }
+
+    std::string dynamic_buffer(static_cast<size_t>(length) + 1, '\0');
+    va_start(args, format);
+    std::vsnprintf(&dynamic_buffer[0], dynamic_buffer.size(), format, args);
+    va_end(args);
+    dynamic_buffer.resize(static_cast<size_t>(length));
+    print(dynamic_buffer);
+}
+
+void CommandLineInterface::printArgs(const Args& args)
+{
+    for (int i = 0; i < args.argc; ++i)
+        printFormat("%s ", args.argv[i]);
+    print("\n");
+}
+
+void CommandLineInterface::drainConsole()
+{
+    if (deps_.bluetooth == nullptr)
+        return;
+
+    Log::drainBluetooth();
+    deps_.bluetooth->drain();
+}
+
 void CommandLineInterface::greet()
 {
-    printf("\n");
-    printf("==========================================\n");
-    printf("  Jurababa Micromouse -- UKMARS CLI\n");
-    printf("==========================================\n");
-    printf("Sensor mode: %s\n", deps_.sensor_mode == SensorMode::TOF ? "ToF" : "LineSensor");
-    printf("DriverLab is a separate boot mode; Normal CLI does not run OL/STEP/MOVE/TURN.\n");
+    print("\n");
+    print("==========================================\n");
+    print("  Jurababa Micromouse -- UKMARS CLI\n");
+    print("==========================================\n");
+    printFormat("Sensor mode: %s\n", deps_.sensor_mode == SensorMode::TOF ? "ToF" : "LineSensor");
+    print("DriverLab is a separate boot mode; Normal CLI does not run OL/STEP/MOVE/TURN.\n");
     help();
     prompt();
 }
@@ -79,13 +136,23 @@ void CommandLineInterface::loop()
 bool CommandLineInterface::process_serial_data()
 {
     handleBluetoothCommand();
-    if (deps_.bluetooth != nullptr)
-        deps_.bluetooth->drain();
+    drainConsole();
 
     if (deps_.battery != nullptr && deps_.sensor_mode != SensorMode::TOF)
         deps_.battery->update();
 
     bool processed = false;
+    if (deps_.bluetooth != nullptr)
+    {
+        char bluetooth_line[LINE_BUFFER_SIZE] = {};
+        while (deps_.bluetooth->readLine(bluetooth_line, sizeof(bluetooth_line)))
+        {
+            process_line(bluetooth_line);
+            prompt();
+            processed = true;
+        }
+    }
+
     while (true)
     {
         int c = getchar_timeout_us(0);
@@ -95,7 +162,7 @@ bool CommandLineInterface::process_serial_data()
         char ch = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
         if (ch == '\r' || ch == '\n')
         {
-            printf("\n");
+            print("\n");
             process_input_line();
             processed = true;
             continue;
@@ -147,12 +214,16 @@ int CommandLineInterface::tokenise(Args& args, char* line)
 
 void CommandLineInterface::process_input_line()
 {
-    Args args;
-    if (tokenise(args, line_buffer_) > 0)
-        execute_command(args);
-
+    process_line(line_buffer_);
     clear_input_buffer();
     prompt();
+}
+
+void CommandLineInterface::process_line(char* line)
+{
+    Args args;
+    if (tokenise(args, line) > 0)
+        execute_command(args);
 }
 
 void CommandLineInterface::execute_command(Args& args)
@@ -202,13 +273,13 @@ void CommandLineInterface::run_short_cmd(const Args& args)
             }
             else
             {
-                printf("F expects a function number.\n");
+                printFormat("F expects a function number.\n");
             }
             break;
         }
         default:
-            printf("UNKNOWN COMMAND: ");
-            args.print();
+            printFormat("UNKNOWN COMMAND: ");
+            printArgs(args);
             break;
     }
 }
@@ -225,6 +296,16 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         handle_search_command(args);
         return;
     }
+    if (std::strcmp(args.argv[0], "STAGE") == 0)
+    {
+        handle_stage_command(args);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "COMP") == 0)
+    {
+        run_competition_flow();
+        return;
+    }
     if (std::strcmp(args.argv[0], "STYLE") == 0)
     {
         handle_style_command(args);
@@ -236,8 +317,8 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         return;
     }
 
-    printf("UNKNOWN COMMAND: ");
-    args.print();
+    printFormat("UNKNOWN COMMAND: ");
+    printArgs(args);
 }
 
 void CommandLineInterface::handle_search_command(const Args& args)
@@ -246,7 +327,7 @@ void CommandLineInterface::handle_search_command(const Args& args)
         return;
     if (deps_.api == nullptr || deps_.mouse == nullptr)
     {
-        printf("Maze API not initialized.\n");
+        printFormat("Maze API not initialized.\n");
         return;
     }
 
@@ -260,41 +341,137 @@ void CommandLineInterface::handle_search_command(const Args& args)
     if (!startWithGesture(true))
         return;
 
-    printf("Search to %d,%d\n", x, y);
+    printFormat("Search to %d,%d\n", x, y);
     std::vector<std::array<int, 2>> goals = {{x, y}};
     PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
                             /*all_explored=*/false, /*avoid_goals=*/false);
+}
+
+void CommandLineInterface::handle_stage_command(const Args& args)
+{
+    int stage = 0;
+    if (args.argc < 2 || read_integer(args.argv[1], stage) == 0)
+    {
+        printFormat("STAGE expects 1..5.\n");
+        return;
+    }
+
+    run_competition_stage(stage, /*wait_for_start=*/true);
 }
 
 void CommandLineInterface::handle_style_command(const Args& args)
 {
     if (deps_.api == nullptr)
     {
-        printf("API not initialized.\n");
+        printFormat("API not initialized.\n");
         return;
     }
 
     if (args.argc < 2)
     {
-        printf("STYLE: %s\n", movementStyleName(deps_.api->movementStyle()));
+        printFormat("STYLE: %s\n", movementStyleName(deps_.api->movementStyle()));
         return;
     }
 
     if (std::strcmp(args.argv[1], "SMOOTH") == 0)
     {
         deps_.api->setMovementStyle(API::MovementStyle::Smooth);
-        printf("STYLE: SMOOTH\n");
+        printFormat("STYLE: SMOOTH\n");
         return;
     }
 
     if (std::strcmp(args.argv[1], "STATIONARY") == 0 || std::strcmp(args.argv[1], "STILL") == 0)
     {
         deps_.api->setMovementStyle(API::MovementStyle::Stationary);
-        printf("STYLE: STATIONARY\n");
+        printFormat("STYLE: STATIONARY\n");
         return;
     }
 
-    printf("STYLE expects STATIONARY or SMOOTH.\n");
+    printFormat("STYLE expects STATIONARY or SMOOTH.\n");
+}
+
+bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
+{
+    if (!needsTof("STAGE"))
+        return false;
+    if (deps_.api == nullptr || deps_.mouse == nullptr)
+    {
+        printFormat("Maze API not initialized.\n");
+        return false;
+    }
+
+    if (stage < 1 || stage > 5)
+    {
+        printFormat("STAGE expects 1..5.\n");
+        return false;
+    }
+
+    if (wait_for_start && !startWithGesture(true))
+        return false;
+
+    switch (stage)
+    {
+        case 1:
+            printFormat("Stage 1: iterative A* search to goal.\n");
+            deps_.api->setPhaseColor('y');
+            return PathUtils::traversePath(deps_.api, deps_.mouse, deps_.goal_cells,
+                                           /*diagonals=*/false, /*all_explored=*/false,
+                                           /*avoid_goals=*/false);
+
+        case 2:
+        {
+            printFormat("Stage 2: iterative A* return to start.\n");
+            deps_.api->setPhaseColor('c');
+            std::vector<std::array<int, 2>> goals = {deps_.start_cell};
+            return PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
+                                           /*all_explored=*/false, /*avoid_goals=*/false);
+        }
+
+        case 3:
+            printFormat("Stage 3: explored-only cardinal fast run to goal.\n");
+            deps_.api->setPhaseColor('g');
+            return PathUtils::traverseExploredPath(deps_.api, deps_.mouse, deps_.goal_cells);
+
+        case 4:
+        {
+            printFormat("Stage 4: explored-only cardinal fast return to start.\n");
+            deps_.api->setPhaseColor('c');
+            std::vector<std::array<int, 2>> goals = {deps_.start_cell};
+            return PathUtils::traverseExploredPath(deps_.api, deps_.mouse, goals);
+        }
+
+        case 5:
+            printFormat("Stage 5: explored-only diagonal fast run to goal.\n");
+            deps_.api->setPhaseColor('G');
+            return PathUtils::traverseExploredDiagonalPath(deps_.api, deps_.mouse,
+                                                           deps_.goal_cells);
+    }
+
+    return false;
+}
+
+void CommandLineInterface::run_competition_flow()
+{
+    if (!needsTof("COMP"))
+        return;
+    if (deps_.api == nullptr || deps_.mouse == nullptr)
+    {
+        printFormat("Maze API not initialized.\n");
+        return;
+    }
+    if (!startWithGesture(true))
+        return;
+
+    printFormat("Running competition stages 1..5.\n");
+    for (int stage = 1; stage <= 5; ++stage)
+    {
+        if (!run_competition_stage(stage, /*wait_for_start=*/false))
+        {
+            printFormat("Competition stopped at stage %d.\n", stage);
+            return;
+        }
+    }
+    printFormat("Competition flow complete.\n");
 }
 
 void CommandLineInterface::handleBluetoothCommand()
@@ -314,7 +491,7 @@ void CommandLineInterface::handleBluetoothCommand()
             }
             else
             {
-                bt->write("BT START: no last function. Use F n first.\r\n");
+                print("BT START: no last function. Use F n first.\n");
             }
             break;
         case Bluetooth::Command::HALT:
@@ -348,7 +525,9 @@ void CommandLineInterface::pollHaltOnly()
 
     Bluetooth* bt = deps_.bluetooth;
     if (bt != nullptr)
-        bt->drain();
+    {
+        drainConsole();
+    }
     if (bt != nullptr && bt->hasCommand())
     {
         Bluetooth::Command cmd = bt->command();
@@ -395,9 +574,9 @@ void CommandLineInterface::run_function(int cmd)
                 break;
             if (deps_.api != nullptr)
                 deps_.api->setPhaseColor('y');
-            printf("Searching maze...\n");
+            printFormat("Searching maze...\n");
             FloodFill::explore(*deps_.mouse, *deps_.api, /*diagonals=*/false);
-            printf("Search done.\n");
+            printFormat("Search done.\n");
             break;
 
         case 3:
@@ -407,12 +586,11 @@ void CommandLineInterface::run_function(int cmd)
                 break;
             if (!startWithGesture(true))
                 break;
-            printf("Follow to start...\n");
-            PathUtils::setAllExplored(deps_.mouse);
+            printFormat("Follow to start...\n");
             {
                 std::vector<std::array<int, 2>> goals = {deps_.start_cell};
                 PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
-                                        /*all_explored=*/true,
+                                        /*all_explored=*/false,
                                         /*avoid_goals=*/false);
             }
             break;
@@ -425,11 +603,11 @@ void CommandLineInterface::run_function(int cmd)
             if (!startWithGesture(true))
                 break;
             deps_.api->turn_right();
-            printf("SS90E right done.\n");
+            printFormat("SS90E right done.\n");
             break;
 
         case 5:
-            printf("Wander is not implemented on Jurababa.\n");
+            printFormat("Wander is not implemented on Jurababa.\n");
             break;
 
         case 6:
@@ -454,16 +632,16 @@ void CommandLineInterface::run_function(int cmd)
             if (!startWithGesture(true))
                 break;
             deps_.api->moveForward(4);
-            printf("Forward 4 cells done.\n");
+            printFormat("Forward 4 cells done.\n");
             break;
 
         case 10:
             if (deps_.battery == nullptr)
             {
-                printf("Battery monitor not initialized.\n");
+                printFormat("Battery monitor not initialized.\n");
                 break;
             }
-            printf("Battery: %.2f V\n", deps_.battery->voltage());
+            printFormat("Battery: %.2f V\n", deps_.battery->voltage());
             break;
 
         default:
@@ -476,17 +654,29 @@ void CommandLineInterface::dumpSensorsOneShot()
 {
     SensorData snap;
     SensorHub::snapshot(snap);
-    printf("ToF L=%d mm F=%d mm R=%d mm  yaw=%.1f deg  encL=%ld encR=%ld\n", snap.tof_left_mm,
-           snap.tof_front_mm, snap.tof_right_mm, static_cast<double>(snap.imu_yaw),
-           static_cast<long>(snap.left_encoder), static_cast<long>(snap.right_encoder));
+    printFormat("ToF L=%d mm F=%d mm R=%d mm  yaw=%.1f deg  encL=%ld encR=%ld\n", snap.tof_left_mm,
+                snap.tof_front_mm, snap.tof_right_mm, static_cast<double>(snap.imu_yaw),
+                static_cast<long>(snap.left_encoder), static_cast<long>(snap.right_encoder));
     if (deps_.battery != nullptr)
-        printf("Battery: %.2f V\n", deps_.battery->voltage());
+        printFormat("Battery: %.2f V\n", deps_.battery->voltage());
     if (deps_.bluetooth != nullptr)
     {
-        Bluetooth::Diagnostics bt = deps_.bluetooth->diagnostics();
-        printf("BT tx depth=%u max=%u dropped=%lu\n", static_cast<unsigned>(bt.ring_depth),
-               static_cast<unsigned>(bt.max_ring_depth),
-               static_cast<unsigned long>(bt.dropped_bytes));
+        Log::BluetoothDiagnostics log = Log::bluetoothDiagnostics();
+        Bluetooth::Diagnostics    bt  = deps_.bluetooth->diagnostics();
+        printFormat("BT log queued=%u max=%u dropped=%lu truncated=%lu\n",
+                    static_cast<unsigned>(log.queued_messages),
+                    static_cast<unsigned>(log.max_queued_messages),
+                    static_cast<unsigned long>(log.dropped_messages),
+                    static_cast<unsigned long>(log.truncated_messages));
+        printFormat("BT tx depth=%u max=%u dropped=%lu\n", static_cast<unsigned>(bt.ring_depth),
+                    static_cast<unsigned>(bt.max_ring_depth),
+                    static_cast<unsigned long>(bt.dropped_bytes));
+        printFormat("BT rx lines=%u max=%u dropped_lines=%lu dropped_chars=%lu pending=%u\n",
+                    static_cast<unsigned>(bt.rx_line_depth),
+                    static_cast<unsigned>(bt.max_rx_line_depth),
+                    static_cast<unsigned long>(bt.dropped_rx_lines),
+                    static_cast<unsigned long>(bt.dropped_rx_chars),
+                    static_cast<unsigned>(bt.pending_shortcut));
     }
 }
 
@@ -494,23 +684,23 @@ void CommandLineInterface::printMazeView(char mode)
 {
     if (deps_.api == nullptr)
     {
-        printf("Maze API not initialized.\n");
+        printFormat("Maze API not initialized.\n");
         return;
     }
 
     if (mode == 'C')
-        printf("Cost view is not implemented yet; printing maze walls instead.\n");
+        printFormat("Cost view is not implemented yet; printing maze walls instead.\n");
     if (mode == 'D')
-        printf("Direction view is not implemented yet; printing maze walls instead.\n");
-    deps_.api->printMaze();
+        printFormat("Direction view is not implemented yet; printing maze walls instead.\n");
+    print(deps_.api->mazeString());
 }
 
 void CommandLineInterface::printEncoderSnapshot()
 {
     SensorData snap;
     SensorHub::snapshot(snap);
-    printf("encL=%ld encR=%ld yaw=%.2f deg\n", static_cast<long>(snap.left_encoder),
-           static_cast<long>(snap.right_encoder), static_cast<double>(snap.imu_yaw));
+    printFormat("encL=%ld encR=%ld yaw=%.2f deg\n", static_cast<long>(snap.left_encoder),
+                static_cast<long>(snap.right_encoder), static_cast<double>(snap.imu_yaw));
 }
 
 void CommandLineInterface::printTofSnapshot()
@@ -525,41 +715,42 @@ void CommandLineInterface::printTofSnapshot()
     bool front_wall = wallFromTofMm(snap.tof_front_mm, TOF_FRONT_WALL_THRESHOLD_MM);
     bool right_wall = wallFromTofMm(snap.tof_right_mm, TOF_RIGHT_WALL_THRESHOLD_MM);
 
-    printf("ToF L=%d mm (%s) F=%d mm (%s) R=%d mm (%s)\n", snap.tof_left_mm,
-           tofReadingName(snap.tof_left_mm), snap.tof_front_mm, tofReadingName(snap.tof_front_mm),
-           snap.tof_right_mm, tofReadingName(snap.tof_right_mm));
-    printf("Walls L=%d F=%d R=%d  thresholds L=%d F=%d R=%d  open=%d\n", left_wall, front_wall,
-           right_wall, TOF_LEFT_WALL_THRESHOLD_MM, TOF_FRONT_WALL_THRESHOLD_MM,
-           TOF_RIGHT_WALL_THRESHOLD_MM, static_cast<int>(TOF_OUT_OF_RANGE_MM));
+    printFormat("ToF L=%d mm (%s) F=%d mm (%s) R=%d mm (%s)\n", snap.tof_left_mm,
+                tofReadingName(snap.tof_left_mm), snap.tof_front_mm,
+                tofReadingName(snap.tof_front_mm), snap.tof_right_mm,
+                tofReadingName(snap.tof_right_mm));
+    printFormat("Walls L=%d F=%d R=%d  thresholds L=%d F=%d R=%d  open=%d\n", left_wall, front_wall,
+                right_wall, TOF_LEFT_WALL_THRESHOLD_MM, TOF_FRONT_WALL_THRESHOLD_MM,
+                TOF_RIGHT_WALL_THRESHOLD_MM, static_cast<int>(TOF_OUT_OF_RANGE_MM));
 
     if (deps_.mouse != nullptr)
     {
         Cell* cell = deps_.mouse->currentCell();
         if (cell != nullptr)
         {
-            printf("Mouse cell=(%d,%d) heading=%s cell_walls N=%d E=%d S=%d W=%d\n", cell->x(),
-                   cell->y(), deps_.mouse->currentDirection().c_str(), cell->hasWall('N'),
-                   cell->hasWall('E'), cell->hasWall('S'), cell->hasWall('W'));
+            printFormat("Mouse cell=(%d,%d) heading=%s cell_walls N=%d E=%d S=%d W=%d\n", cell->x(),
+                        cell->y(), deps_.mouse->currentDirection().c_str(), cell->hasWall('N'),
+                        cell->hasWall('E'), cell->hasWall('S'), cell->hasWall('W'));
         }
     }
 }
 
-bool CommandLineInterface::needsTof(const char* what) const
+bool CommandLineInterface::needsTof(const char* what)
 {
     if (deps_.sensor_mode == SensorMode::TOF)
         return true;
 
-    printf("%s requires ToF sensor mode. Reboot Normal CLI and select 'T'.\n", what);
+    printFormat("%s requires ToF sensor mode. Reboot Normal CLI and select 'T'.\n", what);
     return false;
 }
 
 bool CommandLineInterface::startWithGesture(bool tof_available)
 {
-    printf("Waiting for start gesture (wave hand / send G / BT START)...\n");
+    printFormat("Waiting for start gesture (wave hand / send G / BT START)...\n");
     StartTrigger trigger = waitForStartGesture(deps_.bluetooth, tof_available);
     if (trigger == StartTrigger::CANCELLED)
     {
-        printf("Cancelled.\n");
+        printFormat("Cancelled.\n");
         halted_ = true;
         return false;
     }
@@ -567,13 +758,13 @@ bool CommandLineInterface::startWithGesture(bool tof_available)
     switch (trigger)
     {
         case StartTrigger::SERIAL_G:
-            printf("Start trigger: USB G\n");
+            printFormat("Start trigger: USB G\n");
             break;
         case StartTrigger::BT_START:
-            printf("Start trigger: Bluetooth START\n");
+            printFormat("Start trigger: Bluetooth START\n");
             break;
         case StartTrigger::TOF_WAVE:
-            printf("Start trigger: front ToF wave\n");
+            printFormat("Start trigger: front ToF wave\n");
             break;
         default:
             break;
@@ -586,7 +777,7 @@ void CommandLineInterface::stop()
     if (deps_.sensor_mode == SensorMode::TOF)
         CommandHub::requestStop();
     halted_ = true;
-    printf("STOP\n");
+    printFormat("STOP\n");
 }
 
 uint8_t CommandLineInterface::read_integer(const char* line, int& value)
@@ -625,32 +816,34 @@ void CommandLineInterface::clear_input_buffer()
 
 void CommandLineInterface::prompt()
 {
-    printf("\n> ");
+    printFormat("\n> ");
 }
 
 void CommandLineInterface::help()
 {
-    printf("? : this text\n");
-    printf("X : stop motion\n");
-    printf("W : display maze walls\n");
-    printf("C : cost view placeholder; prints maze walls\n");
-    printf("D : direction view placeholder; prints maze walls\n");
-    printf("B : show battery voltage\n");
-    printf("S : show combined sensor readings\n");
-    printf("E : show encoder/IMU readings\n");
-    printf("Q : show ToF readings and wall decisions\n");
-    printf("F n : Run user function n\n");
-    printf(" 0 = ---\n");
-    printf(" 1 = Sensor Static Calibration\n");
-    printf(" 2 = Search to the goal and back\n");
-    printf(" 3 = Follow to start\n");
-    printf(" 4 = Test SS90E Turn\n");
-    printf(" 5 = Wander\n");
-    printf(" 6 = Test Edge Detect Position\n");
-    printf(" 7 = Sensor Spin Calibration\n");
-    printf(" 8 = Get Front Sensor table\n");
-    printf(" 9 = move forward 4 cells\n");
-    printf("SEARCH x y : search to location (x,y)\n");
-    printf("STYLE [STATIONARY|SMOOTH] : select path execution style\n");
-    printf("HELP : this text\n");
+    printFormat("? : this text\n");
+    printFormat("X : stop motion\n");
+    printFormat("W : display maze walls\n");
+    printFormat("C : cost view placeholder; prints maze walls\n");
+    printFormat("D : direction view placeholder; prints maze walls\n");
+    printFormat("B : show battery voltage\n");
+    printFormat("S : show combined sensor readings\n");
+    printFormat("E : show encoder/IMU readings\n");
+    printFormat("Q : show ToF readings and wall decisions\n");
+    printFormat("F n : Run user function n\n");
+    printFormat(" 0 = ---\n");
+    printFormat(" 1 = Sensor Static Calibration\n");
+    printFormat(" 2 = Search to the goal and back\n");
+    printFormat(" 3 = Follow to start\n");
+    printFormat(" 4 = Test SS90E Turn\n");
+    printFormat(" 5 = Wander\n");
+    printFormat(" 6 = Test Edge Detect Position\n");
+    printFormat(" 7 = Sensor Spin Calibration\n");
+    printFormat(" 8 = Get Front Sensor table\n");
+    printFormat(" 9 = move forward 4 cells\n");
+    printFormat("SEARCH x y : search to location (x,y)\n");
+    printFormat("STAGE n : run competition stage 1..5\n");
+    printFormat("COMP : run stages 1..5\n");
+    printFormat("STYLE [STATIONARY|SMOOTH] : select path execution style\n");
+    printFormat("HELP : this text\n");
 }

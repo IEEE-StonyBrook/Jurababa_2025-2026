@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "app/api.h" // for MotionWaiter
@@ -35,8 +36,6 @@ struct Args
 {
     char* argv[CLI_MAX_ARGC] = {};
     int   argc               = 0;
-
-    void print() const;
 };
 
 /**
@@ -95,21 +94,30 @@ class CommandLineInterface : public MotionWaiter
     void handle_backspace();
     void add_to_buffer(char c);
     int  tokenise(Args& args, char* line);
+    void process_line(char* line);
     void execute_command(Args& args);
     void run_short_cmd(const Args& args);
     void run_long_cmd(const Args& args);
     void handle_search_command(const Args& args);
+    void handle_stage_command(const Args& args);
     void handle_style_command(const Args& args);
     void clear_input_buffer();
     void handleBluetoothCommand();
+    bool run_competition_stage(int stage, bool wait_for_start);
+    void run_competition_flow();
 
     void dumpSensorsOneShot();
     void printMazeView(char mode);
     void printEncoderSnapshot();
     void printTofSnapshot();
-    bool needsTof(const char* what) const;
+    bool needsTof(const char* what);
     bool startWithGesture(bool tof_available);
     void stop();
+    void print(const char* text);
+    void print(const std::string& text);
+    void printFormat(const char* format, ...);
+    void printArgs(const Args& args);
+    void drainConsole();
 
     Deps deps_;
 

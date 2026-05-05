@@ -6,6 +6,7 @@
 
 #include "app/bluetooth.h"
 #include "app/multicore.h"
+#include "common/log.h"
 #include "config/sensors.h"
 
 namespace
@@ -26,6 +27,20 @@ const char* stateName(WaveState state)
 {
     return state == WaveState::ARMED_HIGH ? "ARMED_HIGH" : "WAVE_LOW";
 }
+
+void writeDiagnostic(Bluetooth* bt, const char* text)
+{
+    if (text == nullptr)
+        return;
+
+    std::fputs(text, stdout);
+    if (bt != nullptr)
+    {
+        bt->write(text);
+        Log::drainBluetooth();
+        bt->drain();
+    }
+}
 } // namespace
 
 StartTrigger waitForStartGesture(Bluetooth* bt, bool front_tof_available, uint32_t low_mm,
@@ -37,7 +52,10 @@ StartTrigger waitForStartGesture(Bluetooth* bt, bool front_tof_available, uint32
     while (true)
     {
         if (bt != nullptr)
+        {
+            Log::drainBluetooth();
             bt->drain();
+        }
 
         if (peekSerialG())
             return StartTrigger::SERIAL_G;
@@ -68,9 +86,13 @@ StartTrigger waitForStartGesture(Bluetooth* bt, bool front_tof_available, uint32
             uint32_t now_ms = to_ms_since_boot(get_absolute_time());
             if (now_ms - last_report_ms >= 250)
             {
-                printf("Start ToF front=%d mm interpreted=%lu state=%s low=%lu high=%lu\n", mm,
-                       static_cast<unsigned long>(distance), stateName(state),
-                       static_cast<unsigned long>(low_mm), static_cast<unsigned long>(high_mm));
+                char report[160];
+                std::snprintf(report, sizeof(report),
+                              "Start ToF front=%d mm interpreted=%lu state=%s low=%lu high=%lu\n",
+                              mm, static_cast<unsigned long>(distance), stateName(state),
+                              static_cast<unsigned long>(low_mm),
+                              static_cast<unsigned long>(high_mm));
+                writeDiagnostic(bt, report);
                 last_report_ms = now_ms;
             }
 
