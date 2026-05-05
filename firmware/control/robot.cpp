@@ -56,9 +56,19 @@ bool Robot::wallRight()
     return tof_wall::wallRight(right_wall_mm_);
 }
 
+float Robot::leftDistance()
+{
+    return left_wall_mm_;
+}
+
 float Robot::frontDistance()
 {
     return front_wall_mm_;
+}
+
+float Robot::rightDistance()
+{
+    return right_wall_mm_;
 }
 
 float Robot::position() const
@@ -94,6 +104,16 @@ float Robot::alpha() const
 void Robot::set_target_velocity(float velocity_mmps)
 {
     forward_.setTargetSpeed(velocity_mmps);
+}
+
+void Robot::set_final_velocity(float velocity_mmps)
+{
+    forward_.setFinalSpeed(velocity_mmps);
+}
+
+void Robot::extend_move(float distance_mm)
+{
+    forward_.extendTarget(distance_mm);
 }
 
 void Robot::start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,

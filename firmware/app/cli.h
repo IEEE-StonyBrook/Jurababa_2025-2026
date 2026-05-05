@@ -75,6 +75,7 @@ class CommandLineInterface : public MotionWaiter
     // MotionWaiter implementation: waits for Core1 to complete the matching
     // command ID and interleaves `pollHaltOnly()` so HALT cuts through motion.
     void waitForMotionComplete(uint16_t command_id) override;
+    void waitForWallCheck(uint16_t command_id) override;
 
     void runFunction(int n) { run_function(n); }
     void run_function(int cmd);

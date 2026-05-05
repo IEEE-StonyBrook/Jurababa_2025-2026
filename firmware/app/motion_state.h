@@ -29,6 +29,19 @@ struct MotionState
     static inline volatile uint16_t     current_command_id   = 0;
     static inline volatile MotionResult last_result          = MotionResult::None;
     static inline volatile uint8_t      queue_depth          = 0;
+
+    // Latched by Core1 when a continuous exploration move crosses the
+    // configured wall-check position. Core0 waits for the command id, copies
+    // this sample into FirmwareApi, and can queue the next action while Core1
+    // continues toward the cell center.
+    static inline volatile bool     wall_check_ready        = false;
+    static inline volatile uint16_t wall_check_command_id   = 0;
+    static inline volatile uint16_t wall_check_sequence     = 0;
+    static inline volatile int16_t  wall_check_left_mm      = 0;
+    static inline volatile int16_t  wall_check_front_mm     = 0;
+    static inline volatile int16_t  wall_check_right_mm     = 0;
+    static inline volatile float    wall_check_yaw_deg      = 0.0f;
+    static inline volatile uint32_t wall_check_timestamp_ms = 0;
 };
 
 #endif

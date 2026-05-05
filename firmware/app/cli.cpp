@@ -21,7 +21,6 @@
 #include "drivers/battery.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
-#include "navigation/flood_fill.h"
 #include "navigation/path_utils.h"
 
 namespace
@@ -338,13 +337,11 @@ void CommandLineInterface::handle_search_command(const Args& args)
     if (!startWithGesture(true))
         return;
 
-    if (!startCenter())
-        return;
-
     printFormat("Search to %d,%d\n", x, y);
     std::vector<std::array<int, 2>> goals = {{x, y}};
     PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
-                            /*all_explored=*/false, /*avoid_goals=*/false);
+                            /*all_explored=*/false, /*avoid_goals=*/false,
+                            /*start_at_wall_check=*/true);
 }
 
 void CommandLineInterface::handle_stage_command(const Args& args)
@@ -409,9 +406,6 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
     if (wait_for_start && !startWithGesture(true))
         return false;
 
-    if (stage == 1 && wait_for_start && !startCenter())
-        return false;
-
     switch (stage)
     {
         case 1:
@@ -419,7 +413,8 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
             deps_.api->setPhaseColor('y');
             return PathUtils::traversePath(deps_.api, deps_.mouse, deps_.goal_cells,
                                            /*diagonals=*/false, /*all_explored=*/false,
-                                           /*avoid_goals=*/false);
+                                           /*avoid_goals=*/false,
+                                           /*start_at_wall_check=*/true);
 
         case 2:
         {
@@ -463,9 +458,6 @@ void CommandLineInterface::run_competition_flow()
         return;
     }
     if (!startWithGesture(true))
-        return;
-
-    if (!startCenter())
         return;
 
     printFormat("Running competition stages 1..5.\n");
@@ -558,6 +550,26 @@ void CommandLineInterface::waitForMotionComplete(uint16_t command_id)
     }
 }
 
+void CommandLineInterface::waitForWallCheck(uint16_t command_id)
+{
+    if (command_id == 0)
+        return;
+
+    while (!MotionState::wall_check_ready || MotionState::wall_check_command_id != command_id)
+    {
+        pollHaltOnly();
+        if (halted_)
+            return;
+
+        if (MotionState::completed_command_id == command_id &&
+            (!MotionState::wall_check_ready || MotionState::wall_check_command_id != command_id))
+        {
+            return;
+        }
+        sleep_ms(2);
+    }
+}
+
 void CommandLineInterface::run_function(int cmd)
 {
     halted_ = false;
@@ -578,12 +590,12 @@ void CommandLineInterface::run_function(int cmd)
                 break;
             if (!startWithGesture(true))
                 break;
-            if (!startCenter())
-                break;
             if (deps_.api != nullptr)
                 deps_.api->setPhaseColor('y');
             printFormat("Searching maze...\n");
-            FloodFill::explore(*deps_.mouse, *deps_.api, /*diagonals=*/false);
+            PathUtils::traversePath(deps_.api, deps_.mouse, deps_.goal_cells,
+                                    /*diagonals=*/false, /*all_explored=*/false,
+                                    /*avoid_goals=*/false, /*start_at_wall_check=*/true);
             printFormat("Search done.\n");
             break;
 

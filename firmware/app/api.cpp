@@ -80,6 +80,29 @@ bool API::wallRight()
     return run_on_simulator ? simulatorBool("wallRight") : false;
 }
 
+void API::captureWallSample()
+{
+}
+
+void API::setWallSample(int16_t left_mm, int16_t front_mm, int16_t right_mm)
+{
+    (void)left_mm;
+    (void)front_mm;
+    (void)right_mm;
+}
+
+void API::clearWallSample()
+{
+}
+
+bool API::wallSample(int16_t& left_mm, int16_t& front_mm, int16_t& right_mm)
+{
+    (void)left_mm;
+    (void)front_mm;
+    (void)right_mm;
+    return false;
+}
+
 void API::moveForwardHalf()
 {
     if (run_on_simulator)
@@ -106,6 +129,74 @@ void API::move_mm(float distance_mm)
 void API::start_center()
 {
     move_mm(START_CENTER_DISTANCE_MM);
+}
+
+void API::center_from_wall_check()
+{
+    move_mm(WALL_CHECK_TO_CENTER_MM);
+    clear_search_move();
+}
+
+void API::search_start_from_wall_check()
+{
+    if (run_on_simulator)
+    {
+        simulatorResponse("moveForward");
+        mouse_->moveForward(1);
+        return;
+    }
+#ifndef SIMULATOR_BUILD
+    active_search_command_id_ = CommandHub::send(CommandType::SEARCH_START_FROM_WALL_CHECK);
+    waitForWallCheck(active_search_command_id_);
+    if (!MotionState::wall_check_ready ||
+        MotionState::wall_check_command_id != active_search_command_id_)
+    {
+        active_search_command_id_ = 0;
+        return;
+    }
+
+    setWallSample(MotionState::wall_check_left_mm, MotionState::wall_check_front_mm,
+                  MotionState::wall_check_right_mm);
+#endif
+    mouse_->moveForward(1);
+}
+
+void API::search_advance()
+{
+    if (run_on_simulator)
+    {
+        simulatorResponse("moveForward");
+        mouse_->moveForward(1);
+        return;
+    }
+#ifndef SIMULATOR_BUILD
+    active_search_command_id_ = CommandHub::send(CommandType::SEARCH_ADVANCE);
+    waitForWallCheck(active_search_command_id_);
+    if (!MotionState::wall_check_ready ||
+        MotionState::wall_check_command_id != active_search_command_id_)
+    {
+        active_search_command_id_ = 0;
+        return;
+    }
+
+    setWallSample(MotionState::wall_check_left_mm, MotionState::wall_check_front_mm,
+                  MotionState::wall_check_right_mm);
+#endif
+    mouse_->moveForward(1);
+}
+
+void API::finish_search_move()
+{
+#ifndef SIMULATOR_BUILD
+    if (active_search_command_id_ != 0)
+        waitForMotion(active_search_command_id_);
+#endif
+    active_search_command_id_ = 0;
+}
+
+void API::clear_search_move()
+{
+    active_search_command_id_ = 0;
 }
 
 void API::moveForward()

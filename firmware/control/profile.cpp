@@ -126,6 +126,18 @@ void Profile::setTargetSpeed(float speed)
     top_speed_ = std::fabs(speed);
 }
 
+void Profile::setFinalSpeed(float speed)
+{
+    final_speed_ = std::fabs(speed);
+}
+
+void Profile::extendTarget(float distance)
+{
+    target_distance_ += std::fabs(distance);
+    if (state_ == State::Finished)
+        state_ = State::Accelerating;
+}
+
 void Profile::setPosition(float position)
 {
     current_position_ = position;

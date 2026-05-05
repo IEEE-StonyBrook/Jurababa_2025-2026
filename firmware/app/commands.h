@@ -24,7 +24,9 @@ enum class CommandType : uint8_t
     TURN_SMOOTH,
     MOVE_AHEAD,
     TURN_BACK,
-    MOVE_MM
+    MOVE_MM,
+    SEARCH_START_FROM_WALL_CHECK,
+    SEARCH_ADVANCE
 };
 
 struct CommandPacket
@@ -78,6 +80,15 @@ class CommandHub
         out   = queue_[tail_];
         tail_ = nextIndex(tail_);
         publishQueueDepth();
+        return true;
+    }
+
+    static inline bool peek(CommandPacket& out)
+    {
+        if (tail_ == head_)
+            return false;
+
+        out = queue_[tail_];
         return true;
     }
 

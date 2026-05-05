@@ -27,7 +27,9 @@ class Robot
     void  set_wall_distances(float left_mm, float front_mm, float right_mm);
     bool  wallLeft();
     bool  wallRight();
+    float leftDistance();
     float frontDistance();
+    float rightDistance();
 
     // === Mazerunner-core compatible motion names ===
     void  reset_drive_system();
@@ -40,6 +42,8 @@ class Robot
     float omega() const;
     float alpha() const;
     void  set_target_velocity(float velocity_mmps);
+    void  set_final_velocity(float velocity_mmps);
+    void  extend_move(float distance_mm);
     void  start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
                      float accel_mmps2);
     bool  move_finished() const;

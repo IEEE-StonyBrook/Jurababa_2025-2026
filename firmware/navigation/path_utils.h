@@ -26,6 +26,9 @@ namespace PathUtils
  * @return True if goal reached successfully
  */
 bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
+                  bool diagonals, bool all_explored, bool avoid_goals, bool start_at_wall_check);
+
+bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
                   bool diagonals, bool all_explored, bool avoid_goals);
 
 // Execute one cardinal speed path using only cells already explored.

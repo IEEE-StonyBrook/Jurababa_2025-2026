@@ -20,6 +20,7 @@ class MotionWaiter
   public:
     virtual ~MotionWaiter()                                 = default;
     virtual void waitForMotionComplete(uint16_t command_id) = 0;
+    virtual void waitForWallCheck(uint16_t command_id)      = 0;
 };
 
 /**
@@ -51,11 +52,20 @@ class API
     virtual bool wallLeft();
     virtual bool wallFront();
     virtual bool wallRight();
+    virtual void captureWallSample();
+    virtual void setWallSample(int16_t left_mm, int16_t front_mm, int16_t right_mm);
+    virtual void clearWallSample();
+    virtual bool wallSample(int16_t& left_mm, int16_t& front_mm, int16_t& right_mm);
 
     // Movement commands
     void moveForwardHalf();
     void move_mm(float distance_mm);
     void start_center();
+    void center_from_wall_check();
+    void search_start_from_wall_check();
+    void search_advance();
+    void finish_search_move();
+    void clear_search_move();
     void moveForward();
     void moveForward(int steps);
     void ghostMoveForward(int steps);
@@ -123,15 +133,22 @@ class API
             motion_waiter_->waitForMotionComplete(command_id);
     }
 
+    void waitForWallCheck(uint16_t command_id)
+    {
+        if (motion_waiter_ != nullptr)
+            motion_waiter_->waitForWallCheck(command_id);
+    }
+
   private:
     std::string simulatorResponse(const std::string& cmd);
     bool        simulatorBool(const std::string& cmd);
     std::string printMazeRow(int row);
 
     Mouse*        mouse_;
-    char          phase_color_    = 'y';
-    MotionWaiter* motion_waiter_  = nullptr;
-    MovementStyle movement_style_ = MovementStyle::Stationary;
+    char          phase_color_              = 'y';
+    MotionWaiter* motion_waiter_            = nullptr;
+    MovementStyle movement_style_           = MovementStyle::Stationary;
+    uint16_t      active_search_command_id_ = 0;
 };
 
 #endif

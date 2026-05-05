@@ -24,6 +24,16 @@ class FirmwareApi : public API
     bool wallLeft() override;
     bool wallFront() override;
     bool wallRight() override;
+    void captureWallSample() override;
+    void setWallSample(int16_t left_mm, int16_t front_mm, int16_t right_mm) override;
+    void clearWallSample() override;
+    bool wallSample(int16_t& left_mm, int16_t& front_mm, int16_t& right_mm) override;
+
+  private:
+    bool    use_wall_sample_      = false;
+    int16_t wall_sample_left_mm_  = 0;
+    int16_t wall_sample_front_mm_ = 0;
+    int16_t wall_sample_right_mm_ = 0;
 };
 
 #endif

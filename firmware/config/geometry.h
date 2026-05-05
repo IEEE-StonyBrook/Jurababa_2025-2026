@@ -25,7 +25,9 @@
 
 // Start with the back/wheel reference aligned to the first cell's rear wall.
 #define START_BACK_REFERENCE_OFFSET_MM 6.0f
-#define START_CENTER_DISTANCE_MM                                                                   \
-    (HALF_CELL_MM - START_BACK_REFERENCE_OFFSET_MM - (WHEEL_DIAMETER_MM / 2.0f))
+#define WALL_CHECK_OFFSET_MM           (START_BACK_REFERENCE_OFFSET_MM + (WHEEL_DIAMETER_MM / 2.0f))
+#define WALL_CHECK_TO_CENTER_MM        (HALF_CELL_MM - WALL_CHECK_OFFSET_MM)
+#define CENTER_TO_NEXT_WALL_CHECK_MM   (HALF_CELL_MM + WALL_CHECK_OFFSET_MM)
+#define START_CENTER_DISTANCE_MM       WALL_CHECK_TO_CENTER_MM
 
 #endif // CONFIG_GEOMETRY_H

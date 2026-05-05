@@ -49,6 +49,8 @@ std::string wallBits(Cell* cell)
            " S=" + std::to_string(cell->hasWall('S')) + " W=" + std::to_string(cell->hasWall('W'));
 }
 
+bool readWallSample(API* api, int16_t& left_mm, int16_t& front_mm, int16_t& right_mm);
+
 void logNoPathDiagnostics(API* api, Mouse* mouse)
 {
     if (mouse == nullptr)
@@ -63,19 +65,19 @@ void logNoPathDiagnostics(API* api, Mouse* mouse)
     }
 
 #ifndef SIMULATOR_BUILD
-    SensorData snap;
-    SensorHub::snapshot(snap);
-    const tof_wall::WallState wall_state =
-        tof_wall::evaluate(snap.tof_left_mm, snap.tof_front_mm, snap.tof_right_mm);
-    const float steering_preview =
+    int16_t left_mm  = 0;
+    int16_t front_mm = 0;
+    int16_t right_mm = 0;
+    readWallSample(api, left_mm, front_mm, right_mm);
+    const tof_wall::WallState wall_state = tof_wall::evaluate(left_mm, front_mm, right_mm);
+    const float               steering_preview =
         wall_state.steering_allowed
             ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
             : 0.0f;
 
-    LOG_ERROR("No-path ToF L=" + std::to_string(snap.tof_left_mm) + " F=" +
-              std::to_string(snap.tof_front_mm) + " R=" + std::to_string(snap.tof_right_mm) +
-              " inferred_walls L=" + std::to_string(wall_state.left_wall) +
-              " F=" + std::to_string(wall_state.front_wall) +
+    LOG_ERROR("No-path ToF L=" + std::to_string(left_mm) + " F=" + std::to_string(front_mm) +
+              " R=" + std::to_string(right_mm) + " inferred_walls L=" +
+              std::to_string(wall_state.left_wall) + " F=" + std::to_string(wall_state.front_wall) +
               " R=" + std::to_string(wall_state.right_wall) +
               " side_error_mm=" + std::to_string(wall_state.side_error_mm) +
               " steering_degps=" + std::to_string(steering_preview));
@@ -89,7 +91,24 @@ void logNoPathDiagnostics(API* api, Mouse* mouse)
     }
 }
 
-void logSearchTrace(Mouse* mouse)
+bool readWallSample(API* api, int16_t& left_mm, int16_t& front_mm, int16_t& right_mm)
+{
+    if (api != nullptr && api->wallSample(left_mm, front_mm, right_mm))
+        return true;
+
+#ifndef SIMULATOR_BUILD
+    SensorData snap;
+    SensorHub::snapshot(snap);
+    left_mm  = snap.tof_left_mm;
+    front_mm = snap.tof_front_mm;
+    right_mm = snap.tof_right_mm;
+    return true;
+#else
+    return false;
+#endif
+}
+
+void logSearchTrace(API* api, Mouse* mouse)
 {
     if (mouse == nullptr)
         return;
@@ -99,19 +118,19 @@ void logSearchTrace(Mouse* mouse)
         return;
 
 #ifndef SIMULATOR_BUILD
-    SensorData snap;
-    SensorHub::snapshot(snap);
-    const tof_wall::WallState wall_state =
-        tof_wall::evaluate(snap.tof_left_mm, snap.tof_front_mm, snap.tof_right_mm);
-    const float steering_preview =
+    int16_t left_mm  = 0;
+    int16_t front_mm = 0;
+    int16_t right_mm = 0;
+    readWallSample(api, left_mm, front_mm, right_mm);
+    const tof_wall::WallState wall_state = tof_wall::evaluate(left_mm, front_mm, right_mm);
+    const float               steering_preview =
         wall_state.steering_allowed
             ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
             : 0.0f;
 
     LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
-             ") heading=" + mouse->currentDirection() +
-             " ToF L/F/R=" + std::to_string(snap.tof_left_mm) + "/" +
-             std::to_string(snap.tof_front_mm) + "/" + std::to_string(snap.tof_right_mm) +
+             ") heading=" + mouse->currentDirection() + " ToF L/F/R=" + std::to_string(left_mm) +
+             "/" + std::to_string(front_mm) + "/" + std::to_string(right_mm) +
              " walls L/F/R=" + std::to_string(wall_state.left_wall) + "/" +
              std::to_string(wall_state.front_wall) + "/" + std::to_string(wall_state.right_wall) +
              " side_error_mm=" + std::to_string(wall_state.side_error_mm) +
@@ -120,6 +139,16 @@ void logSearchTrace(Mouse* mouse)
     LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
              ") heading=" + mouse->currentDirection());
 #endif
+}
+
+void detectWallsFromSample(API* api, Mouse* mouse)
+{
+    if (api == nullptr || mouse == nullptr)
+        return;
+
+    detectWalls(*api, *mouse);
+    logSearchTrace(api, mouse);
+    api->clearWallSample();
 }
 
 std::vector<Cell*> reconstructExploredPath(Mouse*                                 mouse,
@@ -260,10 +289,11 @@ void setAllExplored(Mouse* mouse)
 }
 
 bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
-                  bool diagonals, bool all_explored, bool avoid_goals)
+                  bool diagonals, bool all_explored, bool avoid_goals, bool start_at_wall_check)
 {
     Cell* current = mouse->currentCell();
     AStar a_star(mouse);
+    bool  at_start_wall_check = start_at_wall_check;
 
     if (all_explored)
     {
@@ -271,8 +301,12 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
         setAllExplored(mouse);
     }
 
+    if (at_start_wall_check)
+        api->captureWallSample();
+
     while (true)
     {
+        detectWallsFromSample(api, mouse);
         current->markExplored();
 
         // Check if we've reached a goal
@@ -286,11 +320,15 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
             }
         }
         if (reached_goal)
+        {
+            if (at_start_wall_check)
+            {
+                api->center_from_wall_check();
+                at_start_wall_check = false;
+            }
+            api->finish_search_move();
             break;
-
-        // Detect walls at current position
-        detectWalls(*api, *mouse);
-        logSearchTrace(mouse);
+        }
 
         // Get path from A*
         std::vector<Cell*> cell_path = a_star.cellPath(
@@ -300,6 +338,12 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
         {
             LOG_ERROR("No path found!");
             logNoPathDiagnostics(api, mouse);
+            if (at_start_wall_check)
+            {
+                api->center_from_wall_check();
+                at_start_wall_check = false;
+            }
+            api->finish_search_move();
             return false;
         }
 
@@ -328,7 +372,29 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
             if (move.empty())
                 continue;
 
+            if (move == "F")
+            {
+                if (at_start_wall_check)
+                {
+                    api->search_start_from_wall_check();
+                    at_start_wall_check = false;
+                }
+                else
+                {
+                    api->search_advance();
+                }
+                current = mouse->currentCell();
+                break;
+            }
+
+            if (at_start_wall_check)
+            {
+                api->center_from_wall_check();
+                at_start_wall_check = false;
+            }
+
             api->executeSequence(move);
+            api->clear_search_move();
             current = mouse->currentCell();
 
             if (!current->explored())
@@ -345,6 +411,13 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
     }
 
     return true;
+}
+
+bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
+                  bool diagonals, bool all_explored, bool avoid_goals)
+{
+    return traversePath(api, mouse, goals, diagonals, all_explored, avoid_goals,
+                        /*start_at_wall_check=*/false);
 }
 
 bool traverseExploredPath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals)

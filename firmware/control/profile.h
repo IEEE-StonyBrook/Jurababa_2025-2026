@@ -51,6 +51,8 @@ class Profile
 
     void reset();
     void setTargetSpeed(float speed);
+    void setFinalSpeed(float speed);
+    void extendTarget(float distance);
     void setPosition(float position);
     void adjustPosition(float delta);
 
