@@ -7,9 +7,8 @@ namespace
 {
 inline bool wallFromReading(int16_t mm, int threshold_mm)
 {
-    // VL53L0X returns 0 for invalid/out-of-range. Treat zero as "no wall"
-    // (open) so a momentary sensor dropout never injects bogus walls into
-    // the maze model.
+    // Treat invalid/open-space sentinel readings as "no wall" so a momentary
+    // sensor dropout never injects bogus walls into the maze model.
     return mm > 0 && mm < threshold_mm;
 }
 } // namespace

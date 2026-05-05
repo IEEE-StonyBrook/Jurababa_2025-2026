@@ -1,19 +1,77 @@
 #include "navigation/path_utils.h"
 
+#include <cstdint>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "app/api.h"
 #include "common/log.h"
+#include "config/sensors.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
 #include "navigation/a_star.h"
 #include "navigation/diagonalizer.h"
 #include "navigation/path_converter.h"
 
+#ifndef SIMULATOR_BUILD
+#include "app/multicore.h"
+#endif
+
 namespace PathUtils
 {
+namespace
+{
+std::string wallBits(Cell* cell)
+{
+    if (cell == nullptr)
+        return "N=? E=? S=? W=?";
+
+    return "N=" + std::to_string(cell->hasWall('N')) + " E=" + std::to_string(cell->hasWall('E')) +
+           " S=" + std::to_string(cell->hasWall('S')) + " W=" + std::to_string(cell->hasWall('W'));
+}
+
+#ifndef SIMULATOR_BUILD
+bool wallFromTofMm(int16_t mm, int threshold_mm)
+{
+    return mm > 0 && mm < threshold_mm;
+}
+#endif
+
+void logNoPathDiagnostics(API* api, Mouse* mouse)
+{
+    if (mouse == nullptr)
+        return;
+
+    Cell* cell = mouse->currentCell();
+    if (cell != nullptr)
+    {
+        LOG_ERROR("No-path current cell=(" + std::to_string(cell->x()) + "," +
+                  std::to_string(cell->y()) + ") heading=" + mouse->currentDirection() +
+                  " cell_walls " + wallBits(cell));
+    }
+
+#ifndef SIMULATOR_BUILD
+    SensorData snap;
+    SensorHub::snapshot(snap);
+    bool left_wall  = wallFromTofMm(snap.tof_left_mm, TOF_LEFT_WALL_THRESHOLD_MM);
+    bool front_wall = wallFromTofMm(snap.tof_front_mm, TOF_FRONT_WALL_THRESHOLD_MM);
+    bool right_wall = wallFromTofMm(snap.tof_right_mm, TOF_RIGHT_WALL_THRESHOLD_MM);
+
+    LOG_ERROR("No-path ToF L=" + std::to_string(snap.tof_left_mm) + " F=" +
+              std::to_string(snap.tof_front_mm) + " R=" + std::to_string(snap.tof_right_mm) +
+              " inferred_walls L=" + std::to_string(left_wall) +
+              " F=" + std::to_string(front_wall) + " R=" + std::to_string(right_wall));
+#endif
+
+    if (api != nullptr)
+    {
+        LOG_ERROR("No-path API wallLeft=" + std::to_string(api->wallLeft()) +
+                  " wallFront=" + std::to_string(api->wallFront()) +
+                  " wallRight=" + std::to_string(api->wallRight()));
+    }
+}
+} // namespace
 
 void setAllExplored(Mouse* mouse)
 {
@@ -68,6 +126,7 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
         if (cell_path.empty())
         {
             LOG_ERROR("No path found!");
+            logNoPathDiagnostics(api, mouse);
             return false;
         }
 

@@ -13,6 +13,7 @@
 #include "app/multicore.h"
 #include "app/start_gesture.h"
 #include "common/log.h"
+#include "config/sensors.h"
 #include "drivers/battery.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
@@ -26,6 +27,18 @@ constexpr char kBackspace = 0x08;
 const char* movementStyleName(API::MovementStyle style)
 {
     return style == API::MovementStyle::Smooth ? "SMOOTH" : "STATIONARY";
+}
+
+bool wallFromTofMm(int16_t mm, int threshold_mm)
+{
+    return mm > 0 && mm < threshold_mm;
+}
+
+const char* tofReadingName(int16_t mm)
+{
+    if (mm <= 0)
+        return "invalid";
+    return mm >= static_cast<int16_t>(TOF_OUT_OF_RANGE_MM) ? "open" : "valid";
 }
 } // namespace
 
@@ -66,6 +79,8 @@ void CommandLineInterface::loop()
 bool CommandLineInterface::process_serial_data()
 {
     handleBluetoothCommand();
+    if (deps_.bluetooth != nullptr)
+        deps_.bluetooth->drain();
 
     if (deps_.battery != nullptr && deps_.sensor_mode != SensorMode::TOF)
         deps_.battery->update();
@@ -171,8 +186,10 @@ void CommandLineInterface::run_short_cmd(const Args& args)
             dumpSensorsOneShot();
             break;
         case 'E':
-        case 'Q':
             printEncoderSnapshot();
+            break;
+        case 'Q':
+            printTofSnapshot();
             break;
         case 'F':
         {
@@ -330,6 +347,8 @@ void CommandLineInterface::pollHaltOnly()
     }
 
     Bluetooth* bt = deps_.bluetooth;
+    if (bt != nullptr)
+        bt->drain();
     if (bt != nullptr && bt->hasCommand())
     {
         Bluetooth::Command cmd = bt->command();
@@ -424,12 +443,8 @@ void CommandLineInterface::run_function(int cmd)
             break;
 
         case 8:
-        {
-            SensorData snap;
-            SensorHub::snapshot(snap);
-            printf("Front ToF: %d mm\n", snap.tof_front_mm);
+            printTofSnapshot();
             break;
-        }
 
         case 9:
             if (!needsTof("Move forward 4 cells"))
@@ -461,11 +476,18 @@ void CommandLineInterface::dumpSensorsOneShot()
 {
     SensorData snap;
     SensorHub::snapshot(snap);
-    printf("L=%d mm  F=%d mm  R=%d mm  yaw=%.1f deg  encL=%ld encR=%ld\n", snap.tof_left_mm,
+    printf("ToF L=%d mm F=%d mm R=%d mm  yaw=%.1f deg  encL=%ld encR=%ld\n", snap.tof_left_mm,
            snap.tof_front_mm, snap.tof_right_mm, static_cast<double>(snap.imu_yaw),
            static_cast<long>(snap.left_encoder), static_cast<long>(snap.right_encoder));
     if (deps_.battery != nullptr)
         printf("Battery: %.2f V\n", deps_.battery->voltage());
+    if (deps_.bluetooth != nullptr)
+    {
+        Bluetooth::Diagnostics bt = deps_.bluetooth->diagnostics();
+        printf("BT tx depth=%u max=%u dropped=%lu\n", static_cast<unsigned>(bt.ring_depth),
+               static_cast<unsigned>(bt.max_ring_depth),
+               static_cast<unsigned long>(bt.dropped_bytes));
+    }
 }
 
 void CommandLineInterface::printMazeView(char mode)
@@ -477,9 +499,9 @@ void CommandLineInterface::printMazeView(char mode)
     }
 
     if (mode == 'C')
-        printf("Cost view is not stored separately; printing walls.\n");
+        printf("Cost view is not implemented yet; printing maze walls instead.\n");
     if (mode == 'D')
-        printf("Direction view is not stored separately; printing walls.\n");
+        printf("Direction view is not implemented yet; printing maze walls instead.\n");
     deps_.api->printMaze();
 }
 
@@ -487,8 +509,39 @@ void CommandLineInterface::printEncoderSnapshot()
 {
     SensorData snap;
     SensorHub::snapshot(snap);
-    printf("L:%ld R:%ld P:encoder-mm-unavailable A:%.2f\n", static_cast<long>(snap.left_encoder),
+    printf("encL=%ld encR=%ld yaw=%.2f deg\n", static_cast<long>(snap.left_encoder),
            static_cast<long>(snap.right_encoder), static_cast<double>(snap.imu_yaw));
+}
+
+void CommandLineInterface::printTofSnapshot()
+{
+    if (!needsTof("Q"))
+        return;
+
+    SensorData snap;
+    SensorHub::snapshot(snap);
+
+    bool left_wall  = wallFromTofMm(snap.tof_left_mm, TOF_LEFT_WALL_THRESHOLD_MM);
+    bool front_wall = wallFromTofMm(snap.tof_front_mm, TOF_FRONT_WALL_THRESHOLD_MM);
+    bool right_wall = wallFromTofMm(snap.tof_right_mm, TOF_RIGHT_WALL_THRESHOLD_MM);
+
+    printf("ToF L=%d mm (%s) F=%d mm (%s) R=%d mm (%s)\n", snap.tof_left_mm,
+           tofReadingName(snap.tof_left_mm), snap.tof_front_mm, tofReadingName(snap.tof_front_mm),
+           snap.tof_right_mm, tofReadingName(snap.tof_right_mm));
+    printf("Walls L=%d F=%d R=%d  thresholds L=%d F=%d R=%d  open=%d\n", left_wall, front_wall,
+           right_wall, TOF_LEFT_WALL_THRESHOLD_MM, TOF_FRONT_WALL_THRESHOLD_MM,
+           TOF_RIGHT_WALL_THRESHOLD_MM, static_cast<int>(TOF_OUT_OF_RANGE_MM));
+
+    if (deps_.mouse != nullptr)
+    {
+        Cell* cell = deps_.mouse->currentCell();
+        if (cell != nullptr)
+        {
+            printf("Mouse cell=(%d,%d) heading=%s cell_walls N=%d E=%d S=%d W=%d\n", cell->x(),
+                   cell->y(), deps_.mouse->currentDirection().c_str(), cell->hasWall('N'),
+                   cell->hasWall('E'), cell->hasWall('S'), cell->hasWall('W'));
+        }
+    }
 }
 
 bool CommandLineInterface::needsTof(const char* what) const
@@ -509,6 +562,21 @@ bool CommandLineInterface::startWithGesture(bool tof_available)
         printf("Cancelled.\n");
         halted_ = true;
         return false;
+    }
+
+    switch (trigger)
+    {
+        case StartTrigger::SERIAL_G:
+            printf("Start trigger: USB G\n");
+            break;
+        case StartTrigger::BT_START:
+            printf("Start trigger: Bluetooth START\n");
+            break;
+        case StartTrigger::TOF_WAVE:
+            printf("Start trigger: front ToF wave\n");
+            break;
+        default:
+            break;
     }
     return true;
 }
@@ -565,11 +633,12 @@ void CommandLineInterface::help()
     printf("? : this text\n");
     printf("X : stop motion\n");
     printf("W : display maze walls\n");
-    printf("C : display maze costs\n");
-    printf("D : display maze with directions\n");
+    printf("C : cost view placeholder; prints maze walls\n");
+    printf("D : direction view placeholder; prints maze walls\n");
     printf("B : show battery voltage\n");
-    printf("S : show sensor readings\n");
-    printf("E/Q : show encoder/IMU readings\n");
+    printf("S : show combined sensor readings\n");
+    printf("E : show encoder/IMU readings\n");
+    printf("Q : show ToF readings and wall decisions\n");
     printf("F n : Run user function n\n");
     printf(" 0 = ---\n");
     printf(" 1 = Sensor Static Calibration\n");

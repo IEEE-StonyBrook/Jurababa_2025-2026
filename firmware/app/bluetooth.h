@@ -44,6 +44,16 @@ class Bluetooth
     void write(const std::string& data);
     void write(const char* data);
     void writeBytes(const uint8_t* data, size_t length);
+    void drain();
+
+    struct Diagnostics
+    {
+        uint16_t ring_depth;
+        uint16_t max_ring_depth;
+        uint32_t dropped_bytes;
+    };
+
+    Diagnostics diagnostics() const;
 
     bool    hasCommand() const;
     Command command();
@@ -53,6 +63,8 @@ class Bluetooth
   private:
     static void rxInterruptHandler();
     void        processChar(char c);
+    void        enqueueByte(uint8_t byte);
+    uint16_t    ringDepth() const;
 
     uart_inst_t* uart_;
     uint32_t     baud_rate_;
@@ -61,6 +73,14 @@ class Bluetooth
 
     volatile Command pending_command_;
     volatile bool    command_ready_;
+
+    static constexpr uint16_t TX_RING_SIZE = 2048;
+
+    static uint8_t    tx_ring_[TX_RING_SIZE];
+    volatile uint16_t tx_head_          = 0;
+    volatile uint16_t tx_tail_          = 0;
+    volatile uint16_t max_tx_depth_     = 0;
+    volatile uint32_t dropped_tx_bytes_ = 0;
 };
 
 #endif

@@ -55,6 +55,8 @@ struct AStarNode
 
 std::vector<Cell*> AStar::findPathTo(Cell* end, bool diagonals, bool pass_goals)
 {
+    mouse_->resetPathfinding();
+
     Cell* start = mouse_->currentCell();
     int   w     = mouse_->mazeWidth();
     int   h     = mouse_->mazeHeight();
@@ -105,6 +107,7 @@ std::vector<Cell*> AStar::findPathTo(Cell* end, bool diagonals, bool pass_goals)
     }
 
     LOG_ERROR("AStar: No path found!");
+    mouse_->resetPathfinding();
     return {};
 }
 

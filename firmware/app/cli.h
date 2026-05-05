@@ -106,6 +106,7 @@ class CommandLineInterface : public MotionWaiter
     void dumpSensorsOneShot();
     void printMazeView(char mode);
     void printEncoderSnapshot();
+    void printTofSnapshot();
     bool needsTof(const char* what) const;
     bool startWithGesture(bool tof_available);
     void stop();

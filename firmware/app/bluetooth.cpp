@@ -7,7 +7,8 @@
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 
-Bluetooth* Bluetooth::instance_ = nullptr;
+Bluetooth* Bluetooth::instance_                         = nullptr;
+uint8_t    Bluetooth::tx_ring_[Bluetooth::TX_RING_SIZE] = {};
 
 Bluetooth::Bluetooth(uart_inst_t* uart, uint32_t baud_rate, uint8_t tx_pin, uint8_t rx_pin)
     : uart_(uart), baud_rate_(baud_rate), tx_pin_(tx_pin), rx_pin_(rx_pin),
@@ -36,23 +37,47 @@ void Bluetooth::init()
     irq_set_enabled(uart_irq, true);
     uart_set_irq_enables(uart_, true, false);
 
-    uart_puts(uart_, "BT_INIT_OK\r\n");
+    write("BT_INIT_OK\r\n");
+    drain();
     printf("[BT] Bluetooth init complete!\n");
 }
 
 void Bluetooth::write(const std::string& data)
 {
-    uart_puts(uart_, data.c_str());
+    writeBytes(reinterpret_cast<const uint8_t*>(data.data()), data.size());
 }
 
 void Bluetooth::write(const char* data)
 {
-    uart_puts(uart_, data);
+    if (data == nullptr)
+        return;
+
+    writeBytes(reinterpret_cast<const uint8_t*>(data), std::strlen(data));
 }
 
 void Bluetooth::writeBytes(const uint8_t* data, size_t length)
 {
-    uart_write_blocking(uart_, data, length);
+    if (data == nullptr)
+        return;
+
+    for (size_t i = 0; i < length; ++i)
+        enqueueByte(data[i]);
+
+    drain();
+}
+
+void Bluetooth::drain()
+{
+    while (tx_tail_ != tx_head_ && uart_is_writable(uart_))
+    {
+        uart_putc_raw(uart_, tx_ring_[tx_tail_]);
+        tx_tail_ = static_cast<uint16_t>((tx_tail_ + 1) % TX_RING_SIZE);
+    }
+}
+
+Bluetooth::Diagnostics Bluetooth::diagnostics() const
+{
+    return {ringDepth(), max_tx_depth_, dropped_tx_bytes_};
 }
 
 bool Bluetooth::hasCommand() const
@@ -85,8 +110,6 @@ void Bluetooth::rxInterruptHandler()
 
 void Bluetooth::processChar(char c)
 {
-    uart_putc(uart_, c); // Echo
-
     if (c == '\n' || c == '\r')
         return;
 
@@ -110,4 +133,28 @@ void Bluetooth::processChar(char c)
             break;
     }
     command_ready_ = true;
+}
+
+void Bluetooth::enqueueByte(uint8_t byte)
+{
+    uint16_t next = static_cast<uint16_t>((tx_head_ + 1) % TX_RING_SIZE);
+    if (next == tx_tail_)
+    {
+        ++dropped_tx_bytes_;
+        return;
+    }
+
+    tx_ring_[tx_head_] = byte;
+    tx_head_           = next;
+
+    uint16_t depth = ringDepth();
+    if (depth > max_tx_depth_)
+        max_tx_depth_ = depth;
+}
+
+uint16_t Bluetooth::ringDepth() const
+{
+    if (tx_head_ >= tx_tail_)
+        return static_cast<uint16_t>(tx_head_ - tx_tail_);
+    return static_cast<uint16_t>(TX_RING_SIZE - tx_tail_ + tx_head_);
 }
