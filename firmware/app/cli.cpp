@@ -15,6 +15,7 @@
 #include "app/multicore.h"
 #include "app/start_gesture.h"
 #include "common/log.h"
+#include "config/geometry.h"
 #include "config/sensors.h"
 #include "drivers/battery.h"
 #include "maze/maze.h"
@@ -341,6 +342,9 @@ void CommandLineInterface::handle_search_command(const Args& args)
     if (!startWithGesture(true))
         return;
 
+    if (!startCenter())
+        return;
+
     printFormat("Search to %d,%d\n", x, y);
     std::vector<std::array<int, 2>> goals = {{x, y}};
     PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
@@ -409,6 +413,9 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
     if (wait_for_start && !startWithGesture(true))
         return false;
 
+    if (stage == 1 && wait_for_start && !startCenter())
+        return false;
+
     switch (stage)
     {
         case 1:
@@ -460,6 +467,9 @@ void CommandLineInterface::run_competition_flow()
         return;
     }
     if (!startWithGesture(true))
+        return;
+
+    if (!startCenter())
         return;
 
     printFormat("Running competition stages 1..5.\n");
@@ -571,6 +581,8 @@ void CommandLineInterface::run_function(int cmd)
             if (deps_.api == nullptr || deps_.mouse == nullptr)
                 break;
             if (!startWithGesture(true))
+                break;
+            if (!startCenter())
                 break;
             if (deps_.api != nullptr)
                 deps_.api->setPhaseColor('y');
@@ -746,6 +758,7 @@ bool CommandLineInterface::needsTof(const char* what)
 
 bool CommandLineInterface::startWithGesture(bool tof_available)
 {
+    halted_ = false;
     printFormat("Waiting for start gesture (wave hand / send G / BT START)...\n");
     StartTrigger trigger = waitForStartGesture(deps_.bluetooth, tof_available);
     if (trigger == StartTrigger::CANCELLED)
@@ -770,6 +783,19 @@ bool CommandLineInterface::startWithGesture(bool tof_available)
             break;
     }
     return true;
+}
+
+bool CommandLineInterface::startCenter()
+{
+    if (deps_.api == nullptr)
+    {
+        printFormat("API not initialized.\n");
+        return false;
+    }
+
+    printFormat("Start-center: %.1f mm\n", static_cast<double>(START_CENTER_DISTANCE_MM));
+    deps_.api->start_center();
+    return !halted_;
 }
 
 void CommandLineInterface::stop()

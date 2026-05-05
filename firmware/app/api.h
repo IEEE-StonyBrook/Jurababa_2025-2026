@@ -54,6 +54,8 @@ class API
 
     // Movement commands
     void moveForwardHalf();
+    void move_mm(float distance_mm);
+    void start_center();
     void moveForward();
     void moveForward(int steps);
     void ghostMoveForward(int steps);

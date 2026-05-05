@@ -400,6 +400,13 @@ void acceptCommand(const CommandPacket& cmd, Robot* robot)
             startTurnBackSequence(robot);
             break;
 
+        case CommandType::MOVE_MM:
+        {
+            const float distance_mm = static_cast<float>(cmd.param) / 10.0f;
+            robot->move(distance_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+            break;
+        }
+
         case CommandType::STOP:
             CommandHub::requestStop();
             completeActiveCommand(MotionResult::Stopped);

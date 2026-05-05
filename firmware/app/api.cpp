@@ -10,6 +10,7 @@
 #include "app/commands.h"
 #endif
 #include "common/log.h"
+#include "config/geometry.h"
 #include "config/smooth_turn.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
@@ -41,6 +42,12 @@ bool parsePositiveInt(const std::string& text, int& value)
 
     value = parsed;
     return true;
+}
+
+int32_t mmToTenths(float distance_mm)
+{
+    const float scaled = distance_mm * 10.0f;
+    return static_cast<int32_t>(scaled >= 0.0f ? scaled + 0.5f : scaled - 0.5f);
 }
 } // namespace
 
@@ -85,6 +92,20 @@ void API::moveForwardHalf()
 #endif
     // Half-cell physical moves do not advance the logical maze cell. Diagonal
     // sequences use GMF/GFM when the virtual mouse should move to the next cell.
+}
+
+void API::move_mm(float distance_mm)
+{
+    if (run_on_simulator)
+        return;
+#ifndef SIMULATOR_BUILD
+    waitForMotion(CommandHub::send(CommandType::MOVE_MM, mmToTenths(distance_mm)));
+#endif
+}
+
+void API::start_center()
+{
+    move_mm(START_CENTER_DISTANCE_MM);
 }
 
 void API::moveForward()

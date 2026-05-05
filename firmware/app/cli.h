@@ -112,6 +112,7 @@ class CommandLineInterface : public MotionWaiter
     void printTofSnapshot();
     bool needsTof(const char* what);
     bool startWithGesture(bool tof_available);
+    bool startCenter();
     void stop();
     void print(const char* text);
     void print(const std::string& text);

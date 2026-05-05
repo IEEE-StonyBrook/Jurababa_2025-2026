@@ -23,7 +23,8 @@ enum class CommandType : uint8_t
     ARC_TURN_RIGHT_45,
     TURN_SMOOTH,
     MOVE_AHEAD,
-    TURN_BACK
+    TURN_BACK,
+    MOVE_MM
 };
 
 struct CommandPacket

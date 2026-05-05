@@ -23,7 +23,9 @@
 #define CELL_SIZE_MM 180.0f // Standard micromouse cell
 #define HALF_CELL_MM (CELL_SIZE_MM / 2.0f)
 
-// Start against the wall and drive to the center of the first cell.
-#define START_CENTER_DISTANCE_MM (HALF_CELL_MM - (WHEEL_DIAMETER_MM / 2.0f))
+// Start with the back/wheel reference aligned to the first cell's rear wall.
+#define START_BACK_REFERENCE_OFFSET_MM 6.0f
+#define START_CENTER_DISTANCE_MM                                                                   \
+    (HALF_CELL_MM - START_BACK_REFERENCE_OFFSET_MM - (WHEEL_DIAMETER_MM / 2.0f))
 
 #endif // CONFIG_GEOMETRY_H

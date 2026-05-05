@@ -90,6 +90,33 @@ void logNoPathDiagnostics(API* api, Mouse* mouse)
     }
 }
 
+void logSearchTrace(Mouse* mouse)
+{
+    if (mouse == nullptr)
+        return;
+
+    Cell* cell = mouse->currentCell();
+    if (cell == nullptr)
+        return;
+
+#ifndef SIMULATOR_BUILD
+    SensorData snap;
+    SensorHub::snapshot(snap);
+    bool left_wall  = wallFromTofMm(snap.tof_left_mm, TOF_LEFT_WALL_THRESHOLD_MM);
+    bool front_wall = wallFromTofMm(snap.tof_front_mm, TOF_FRONT_WALL_THRESHOLD_MM);
+    bool right_wall = wallFromTofMm(snap.tof_right_mm, TOF_RIGHT_WALL_THRESHOLD_MM);
+
+    LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
+             ") heading=" + mouse->currentDirection() + " ToF L/F/R=" +
+             std::to_string(snap.tof_left_mm) + "/" + std::to_string(snap.tof_front_mm) + "/" +
+             std::to_string(snap.tof_right_mm) + " walls L/F/R=" + std::to_string(left_wall) + "/" +
+             std::to_string(front_wall) + "/" + std::to_string(right_wall));
+#else
+    LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
+             ") heading=" + mouse->currentDirection());
+#endif
+}
+
 std::vector<Cell*> reconstructExploredPath(Mouse*                                 mouse,
                                            const std::vector<std::vector<Cell*>>& parents,
                                            Cell* start, Cell* end)
@@ -258,6 +285,7 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
 
         // Detect walls at current position
         detectWalls(*api, *mouse);
+        logSearchTrace(mouse);
 
         // Get path from A*
         std::vector<Cell*> cell_path = a_star.cellPath(
