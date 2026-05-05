@@ -298,13 +298,14 @@ class DriverLab
     enum class PathSegmentType
     {
         Forward,
-        Turn
+        Turn,
+        SmoothTurn
     };
 
     struct PathSegment
     {
         PathSegmentType type;
-        float           value; // Forward: mm. Turn: deg.
+        float           value; // Forward: mm. Turns: deg.
     };
 
     struct PathTrial
@@ -315,6 +316,7 @@ class DriverLab
         float                    accel_mmps2;
         float                    omega_degps;
         float                    alpha_degps2;
+        bool                     smooth_turns;
         float                    expected_yaw_deg;
         float                    total_forward_mm;
         float                    max_volts;
@@ -428,13 +430,15 @@ class DriverLab
     bool parsePathChunk(const char* chunk);
     void appendPathForwardCells(int cells);
     void appendPathTurn(float degrees);
-    void startPathTrial(float speed_mmps, float accel_mmps2, float omega_degps, float alpha_degps2);
+    void startPathTrial(float speed_mmps, float accel_mmps2, float omega_degps, float alpha_degps2,
+                        bool smooth_turns);
     void armPath();
     void tickPath();
     void finishPath();
     void startNextPathSegment();
     void tickPathForward(const PathSegment& segment);
     void tickPathTurn(const PathSegment& segment);
+    void tickPathSmoothTurn(const PathSegment& segment);
     void printBluetoothDiagnostics();
 
     // Cooperative countdown: announces the trial, then trial_ = Countdown
