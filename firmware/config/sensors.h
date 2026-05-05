@@ -12,24 +12,54 @@
 #define TOF_MAX_RANGE_MM          500     // Maximum reliable range (mm)
 #define TOF_OUT_OF_RANGE_MM       8191.0f // VL53L0X invalid/open-space sentinel
 
-// Wall detection and centering calibration (mm)
+// UKMARS mazerunner-core SIDE_NOMINAL pattern. Each side's raw mm reading
+// at the centered-between-walls pose is captured here as a constant. The
+// per-side scale factors normalize both sides to TOF_SIDE_NOMINAL so that
+// downstream CTE math operates on a single symmetric unit, regardless of
+// per-unit chip bias, mounting angle, or cover thickness.
 //
-// Side references are the readings measured when the robot is centered in a
-// cell with the side walls present. The left and right ToFs do not have to
-// agree mechanically; UKMARS normalizes each side independently before wall
-// detection and steering, so Jurababa does the same in distance units.
-#define TOF_LEFT_CENTER_REFERENCE_MM  132.0f
-#define TOF_RIGHT_CENTER_REFERENCE_MM 100.0f
-#define TOF_SIDE_WALL_MARGIN_MM       40.0f
+// To recalibrate (after sensor swap or remount):
+//   1. Boot DriverLab (press 'M' within 3 s of boot).
+//   2. Center robot between two walls (1 mm symmetry is the goal; use
+//      spacers if needed).
+//   3. Run LTOF and RTOF — note the printed mm values.
+//   4. Update TOF_LEFT_CALIBRATION_MM and TOF_RIGHT_CALIBRATION_MM here.
+//   5. Rebuild, flash. Same centered pose should now produce ~0
+//      side_error_norm (verify via S snapshot or steering CSV).
+//
+// The chip-level offset bias (±10–30 mm typical per ST UM2039) is fully
+// absorbed by the scale: any value the chip outputs at the centered pose
+// becomes "100" after multiplication. We don't need accurate mm; we need
+// symmetric normalized units, which compile-time scaling delivers for free.
+#define TOF_SIDE_NOMINAL         100.0f
+#define TOF_LEFT_CALIBRATION_MM  132.0f // raw left ToF reading at center (re-measure!)
+#define TOF_RIGHT_CALIBRATION_MM 100.0f // raw right ToF reading at center (re-measure!)
+#define TOF_LEFT_SCALE           (TOF_SIDE_NOMINAL / TOF_LEFT_CALIBRATION_MM)
+#define TOF_RIGHT_SCALE          (TOF_SIDE_NOMINAL / TOF_RIGHT_CALIBRATION_MM)
 
-#define TOF_LEFT_WALL_THRESHOLD_MM  (TOF_LEFT_CENTER_REFERENCE_MM + TOF_SIDE_WALL_MARGIN_MM)
-#define TOF_RIGHT_WALL_THRESHOLD_MM (TOF_RIGHT_CENTER_REFERENCE_MM + TOF_SIDE_WALL_MARGIN_MM)
+// Wall-detection thresholds stay in raw chip-mm. They're binary classifiers
+// (wall present / absent) so per-unit bias doesn't change the decision; all
+// it does is shift the mm threshold by 10–30 mm, which is well inside the
+// margin between "centered between walls" (~100 mm) and "no wall there"
+// (>>200 mm). Re-measure if the per-unit bias is unusually large.
+#define TOF_SIDE_WALL_MARGIN_MM     40.0f
+#define TOF_LEFT_WALL_THRESHOLD_MM  (TOF_LEFT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
+#define TOF_RIGHT_WALL_THRESHOLD_MM (TOF_RIGHT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
 #define TOF_FRONT_WALL_THRESHOLD_MM 120.0f
 
-// UKMARS-style wall steering. Jurababa yaw/omega is positive left, negative
-// right, so positive side error commands a left angular-rate correction.
-#define TOF_STEERING_KP_DEGPS_PER_MM        0.25f
-#define TOF_STEERING_KD_DEG_PER_MM          0.0f
+// UKMARS-style wall steering. Operates on TOF_SIDE_NOMINAL units (100 =
+// centered), not mm. KP/KD units changed: deg/s per nominal-unit, not per
+// mm. Starting point comes from the old 0.25 deg/s/mm × (132/100) ≈ 0.33
+// for the left side; right side maps 1:1 from the old constant. Pick a
+// single value that works across the picker; retune in a calibration
+// corridor.
+//
+// Jurababa yaw/omega convention: positive yaw = CCW (left), so a positive
+// side_error_norm (drifted right of center) commands a positive omega
+// (steer left). Sign matches the IMU's IMU_YAW_SIGN inversion done once
+// in the driver layer.
+#define TOF_STEERING_KP_DEGPS_PER_NOMINAL   0.33f
+#define TOF_STEERING_KD_DEG_PER_NOMINAL     0.0f
 #define TOF_STEERING_ADJUST_LIMIT_DEGPS     10.0f
 #define TOF_FRONT_WALL_RELIABILITY_LIMIT_MM 160.0f
 

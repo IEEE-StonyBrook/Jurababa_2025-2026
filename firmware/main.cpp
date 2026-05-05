@@ -26,20 +26,20 @@
 #include <string>
 #include <vector>
 
-#include "pico/multicore.h"
+#include "hardware/sync.h"
+#include "hardware/timer.h"
 #include "pico/stdio/driver.h"
 #include "pico/stdlib.h"
 
 #include "app/bluetooth.h"
 #include "app/cli.h"
-#include "app/core1.h"
 #include "app/firmware_api.h"
-#include "app/multicore.h"
 #include "common/bluetooth_stdio.h"
 #include "common/log.h"
 #include "config/config.h"
 #include "control/drivetrain.h"
 #include "control/line_follower.h"
+#include "control/robot.h"
 #include "driver_lab/driver_lab.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
@@ -418,9 +418,14 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
     static FirmwareApi              api(&mouse);
     api.setUp(start_cell, goal_cells);
 
-    // LineFollower stack — only built in LineSensor mode (Core 1 stays
-    // dormant so this side owns the H-bridge).
+    // LineFollower stack — only built in LineSensor mode (Robot stays
+    // out of the picture so LineFollower owns the H-bridge).
     LineFollower* line_follower_ptr = nullptr;
+    Robot*        robot_ptr         = nullptr;
+    ToF*          left_tof_ptr      = nullptr;
+    ToF*          front_tof_ptr     = nullptr;
+    ToF*          right_tof_ptr     = nullptr;
+
     if (sensor_mode == SensorMode::LINE_SENSOR)
     {
         static LineSensor line_sensor(i2c0, PIN_LINE_SDA, PIN_LINE_SCL);
@@ -437,24 +442,67 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
         static LineFollower line_follower(&drivetrain, &line_sensor, &imu, battery);
         line_follower_ptr = &line_follower;
 
-        printf("LineFollower stack ready (Core 0 owns motors).\n");
+        printf("LineFollower stack ready.\n");
     }
     else
     {
-        // ToF mode: hand the battery pointer to Core 1 *before* launch so
-        // its Drivetrain can voltage-compensate from the first tick.
-        SensorHub::init();
-        core1Configure(battery);
-        multicore_launch_core1(core1Entry);
+        // ToF mode: single-core UKMARS shape. All hardware lives on Core 0;
+        // Robot is advanced by a 500 Hz hardware-timer alarm registered
+        // below. The CLI's main loop (cli.loop()) handles serial I/O and
+        // polls ToFs at 50 Hz, exactly like mazerunner-core's Arduino
+        // loop() / Timer2 split.
+        static Encoder    left_encoder(pio0, PIN_ENCODER_L_A, false);
+        static Encoder    right_encoder(pio0, PIN_ENCODER_R_A, true);
+        static Motor      left_motor(PIN_MOTOR_L_DIR, PIN_MOTOR_L_PWM, true);
+        static Motor      right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, true);
+        static IMU        imu(PIN_IMU_RX);
+        static ToF        left_tof(PIN_TOF_LEFT_XSHUT, 'L');
+        static ToF        front_tof(PIN_TOF_FRONT_XSHUT, 'F');
+        static ToF        right_tof(PIN_TOF_RIGHT_XSHUT, 'R');
+        static Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder,
+                                     battery);
+        static Robot      robot(&drivetrain, &imu);
 
-        // Core 1 pushes 1 to the FIFO once Robot::reset() returns.
-        multicore_fifo_pop_blocking();
-        printf("Core 1 ready (Robot @ 500 Hz).\n");
+        api.setRobot(&robot);
+        robot_ptr     = &robot;
+        left_tof_ptr  = &left_tof;
+        front_tof_ptr = &front_tof;
+        right_tof_ptr = &right_tof;
+
+        // Hand robot + ToFs to a 500 Hz timer alarm. Mirrors UKMARS
+        // systick.h: encoders.update → motion.update → motors.update_controllers
+        // (we do all of that inside Robot::update). 50 Hz ToF poll runs
+        // outside the alarm to keep its budget sub-millisecond.
+        struct CoreLoopCtx
+        {
+            Robot* robot;
+            ToF*   left_tof;
+            ToF*   front_tof;
+            ToF*   right_tof;
+        };
+        static CoreLoopCtx ctx{&robot, &left_tof, &front_tof, &right_tof};
+
+        static repeating_timer_t systick_timer;
+        add_repeating_timer_us(
+            -2000 /* 500 Hz, negative => fire on absolute schedule */,
+            +[](repeating_timer_t* t) -> bool
+            {
+                auto* c = static_cast<CoreLoopCtx*>(t->user_data);
+                c->robot->update();
+                return true;
+            },
+            &ctx, &systick_timer);
+
+        printf("Robot @ 500 Hz on Core 0 (single-core UKMARS shape).\n");
     }
 
     Cli::Deps deps;
     deps.bluetooth     = &bluetooth;
     deps.battery       = battery;
+    deps.robot         = robot_ptr;
+    deps.left_tof      = left_tof_ptr;
+    deps.front_tof     = front_tof_ptr;
+    deps.right_tof     = right_tof_ptr;
     deps.line_follower = line_follower_ptr;
     deps.driver_lab    = nullptr; // DriverLab requires direct motor access; not in Cli mode.
     deps.maze          = &maze;

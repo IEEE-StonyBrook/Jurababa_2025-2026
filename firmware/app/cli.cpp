@@ -9,16 +9,16 @@
 
 #include "pico/stdlib.h"
 
+#include "app/api.h"
 #include "app/bluetooth.h"
-#include "app/commands.h"
-#include "app/motion_state.h"
-#include "app/multicore.h"
 #include "app/start_gesture.h"
 #include "common/log.h"
 #include "common/tof_wall_utils.h"
 #include "config/geometry.h"
 #include "config/sensors.h"
+#include "control/robot.h"
 #include "drivers/battery.h"
+#include "drivers/tof.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
 #include "navigation/path_utils.h"
@@ -39,17 +39,23 @@ const char* tofReadingName(int16_t mm)
     return mm >= static_cast<int16_t>(TOF_OUT_OF_RANGE_MM) ? "open" : "valid";
 }
 
-const char* liveSteeringSourceName()
-{
-    return tof_wall::sourceName(
-        static_cast<tof_wall::SteeringSource>(MotionState::steering_source));
-}
 } // namespace
+
+CommandLineInterface* CommandLineInterface::s_instance_ = nullptr;
+
+bool CommandLineInterface::haltCheckThunk()
+{
+    if (s_instance_ == nullptr)
+        return false;
+    s_instance_->pollHaltOnly();
+    return s_instance_->halted_;
+}
 
 CommandLineInterface::CommandLineInterface(const Deps& deps) : deps_(deps)
 {
+    s_instance_ = this;
     if (deps_.api != nullptr)
-        deps_.api->setMotionWaiter(this);
+        deps_.api->setHaltCheck(&CommandLineInterface::haltCheckThunk);
 }
 
 void CommandLineInterface::print(const char* text)
@@ -128,9 +134,36 @@ void CommandLineInterface::greet()
 
 void CommandLineInterface::loop()
 {
+    // UKMARS-style main loop. Three concurrent activities, all on Core 0:
+    //   1. Serial input + command dispatch (process_serial_data → ~500 Hz)
+    //   2. ToF I2C polling at 50 Hz (gated by to_ms_since_boot)
+    //   3. Battery filter update at 500 Hz (cheap; ADC is non-blocking)
+    //
+    // Robot::update() runs concurrently via the 500 Hz hardware timer
+    // alarm registered in main.cpp.
+    constexpr uint32_t kTofPollIntervalMs = 20; // 50 Hz
+    uint32_t           next_tof_poll_ms   = 0;
+
     while (true)
     {
         process_serial_data();
+        if (deps_.battery != nullptr)
+            deps_.battery->update();
+
+        if (deps_.robot != nullptr && deps_.left_tof != nullptr && deps_.front_tof != nullptr &&
+            deps_.right_tof != nullptr)
+        {
+            const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
+            if (now_ms >= next_tof_poll_ms)
+            {
+                next_tof_poll_ms = now_ms + kTofPollIntervalMs;
+                const float l    = deps_.left_tof->get_distance();
+                const float f    = deps_.front_tof->get_distance();
+                const float r    = deps_.right_tof->get_distance();
+                deps_.robot->set_wall_distances(l, f, r);
+            }
+        }
+
         sleep_ms(2);
     }
 }
@@ -350,9 +383,10 @@ void CommandLineInterface::handle_search_command(const Args& args)
 
     printFormat("Search to %d,%d\n", x, y);
     std::vector<std::array<int, 2>> goals = {{x, y}};
-    PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
-                            /*all_explored=*/false, /*avoid_goals=*/false,
-                            /*start_at_wall_check=*/true);
+    const bool ok = PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
+                                            /*all_explored=*/false, /*avoid_goals=*/false,
+                                            /*start_at_wall_check=*/true);
+    printFormat(ok ? "Search done.\n" : "Search failed.\n");
 }
 
 void CommandLineInterface::handle_stage_command(const Args& args)
@@ -545,60 +579,6 @@ void CommandLineInterface::pollHaltOnly()
     }
 }
 
-void CommandLineInterface::waitForMotionComplete(uint16_t command_id)
-{
-    if (command_id == 0)
-        return;
-
-    while (MotionState::completed_command_id != command_id)
-    {
-        pollHaltOnly();
-        if (halted_)
-        {
-            return;
-        }
-        sleep_ms(2);
-    }
-}
-
-void CommandLineInterface::waitForWallCheck(uint16_t command_id)
-{
-    if (command_id == 0)
-        return;
-
-    uint32_t wait_started_ms = to_ms_since_boot(get_absolute_time());
-    while (!MotionState::wall_check_ready || MotionState::wall_check_command_id != command_id)
-    {
-        pollHaltOnly();
-        if (halted_)
-            return;
-
-        if (MotionState::completed_command_id == command_id &&
-            (!MotionState::wall_check_ready || MotionState::wall_check_command_id != command_id))
-        {
-            return;
-        }
-
-        const uint16_t accepted_id      = MotionState::accepted_command_id;
-        const uint16_t current_id       = MotionState::current_command_id;
-        const bool     active           = MotionState::active;
-        const bool     pending          = CommandHub::hasPending();
-        const bool     command_not_live = accepted_id != command_id && current_id != command_id;
-        const bool     no_motion_owner  = !active && current_id == 0;
-        const uint32_t now_ms           = to_ms_since_boot(get_absolute_time());
-        if (command_not_live && no_motion_owner && now_ms - wait_started_ms > 250)
-        {
-            printFormat("Motion command %u was not accepted; clearing stale STOP/queue state "
-                        "(pending=%d depth=%u accepted=%u current=%u).\n",
-                        command_id, pending, MotionState::queue_depth, accepted_id, current_id);
-            CommandHub::clearStopRequested();
-            CommandHub::clear();
-            return;
-        }
-        sleep_ms(2);
-    }
-}
-
 void CommandLineInterface::run_function(int cmd)
 {
     halted_ = false;
@@ -622,10 +602,12 @@ void CommandLineInterface::run_function(int cmd)
             if (deps_.api != nullptr)
                 deps_.api->setPhaseColor('y');
             printFormat("Searching maze...\n");
-            PathUtils::traversePath(deps_.api, deps_.mouse, deps_.goal_cells,
-                                    /*diagonals=*/false, /*all_explored=*/false,
-                                    /*avoid_goals=*/false, /*start_at_wall_check=*/true);
-            printFormat("Search done.\n");
+            printFormat(PathUtils::traversePath(deps_.api, deps_.mouse, deps_.goal_cells,
+                                                /*diagonals=*/false, /*all_explored=*/false,
+                                                /*avoid_goals=*/false,
+                                                /*start_at_wall_check=*/true)
+                            ? "Search done.\n"
+                            : "Search failed.\n");
             break;
 
         case 3:
@@ -638,9 +620,11 @@ void CommandLineInterface::run_function(int cmd)
             printFormat("Follow to start...\n");
             {
                 std::vector<std::array<int, 2>> goals = {deps_.start_cell};
-                PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
-                                        /*all_explored=*/false,
-                                        /*avoid_goals=*/false);
+                printFormat(PathUtils::traversePath(deps_.api, deps_.mouse, goals,
+                                                    /*diagonals=*/false, /*all_explored=*/false,
+                                                    /*avoid_goals=*/false)
+                                ? "Follow done.\n"
+                                : "Follow failed.\n");
             }
             break;
 
@@ -701,11 +685,17 @@ void CommandLineInterface::run_function(int cmd)
 
 void CommandLineInterface::dumpSensorsOneShot()
 {
-    SensorData snap;
-    SensorHub::snapshot(snap);
-    printFormat("ToF L=%d mm F=%d mm R=%d mm  yaw=%.1f deg  encL=%ld encR=%ld\n", snap.tof_left_mm,
-                snap.tof_front_mm, snap.tof_right_mm, static_cast<double>(snap.imu_yaw),
-                static_cast<long>(snap.left_encoder), static_cast<long>(snap.right_encoder));
+    Robot* r = deps_.robot;
+    if (r != nullptr)
+    {
+        printFormat("ToF L=%d mm F=%d mm R=%d mm  yaw=%.1f deg\n",
+                    static_cast<int>(r->leftDistance()), static_cast<int>(r->frontDistance()),
+                    static_cast<int>(r->rightDistance()), static_cast<double>(r->angle()));
+    }
+    else
+    {
+        printFormat("ToF: robot not initialized\n");
+    }
     if (deps_.battery != nullptr)
         printFormat("Battery: %.2f V\n", deps_.battery->voltage());
     if (deps_.bluetooth != nullptr)
@@ -746,10 +736,15 @@ void CommandLineInterface::printMazeView(char mode)
 
 void CommandLineInterface::printEncoderSnapshot()
 {
-    SensorData snap;
-    SensorHub::snapshot(snap);
-    printFormat("encL=%ld encR=%ld yaw=%.2f deg\n", static_cast<long>(snap.left_encoder),
-                static_cast<long>(snap.right_encoder), static_cast<double>(snap.imu_yaw));
+    Robot* r = deps_.robot;
+    if (r == nullptr)
+    {
+        printFormat("Robot not initialized.\n");
+        return;
+    }
+    printFormat("position=%.1f mm velocity=%.1f mm/s yaw=%.2f deg omega=%.2f deg/s\n",
+                static_cast<double>(r->position()), static_cast<double>(r->velocity()),
+                static_cast<double>(r->angle()), static_cast<double>(r->omega()));
 }
 
 void CommandLineInterface::printTofSnapshot()
@@ -757,16 +752,21 @@ void CommandLineInterface::printTofSnapshot()
     if (!needsTof("Q"))
         return;
 
-    SensorData snap;
-    SensorHub::snapshot(snap);
+    Robot* r = deps_.robot;
+    if (r == nullptr)
+    {
+        printFormat("Robot not initialized.\n");
+        return;
+    }
 
-    const tof_wall::WallState wall_state =
-        tof_wall::evaluate(snap.tof_left_mm, snap.tof_front_mm, snap.tof_right_mm);
+    const int16_t l_mm = static_cast<int16_t>(r->leftDistance());
+    const int16_t f_mm = static_cast<int16_t>(r->frontDistance());
+    const int16_t r_mm = static_cast<int16_t>(r->rightDistance());
 
-    printFormat("ToF L=%d mm (%s) F=%d mm (%s) R=%d mm (%s)\n", snap.tof_left_mm,
-                tofReadingName(snap.tof_left_mm), snap.tof_front_mm,
-                tofReadingName(snap.tof_front_mm), snap.tof_right_mm,
-                tofReadingName(snap.tof_right_mm));
+    const tof_wall::WallState wall_state = tof_wall::evaluate(l_mm, f_mm, r_mm);
+
+    printFormat("ToF L=%d mm (%s) F=%d mm (%s) R=%d mm (%s)\n", l_mm, tofReadingName(l_mm), f_mm,
+                tofReadingName(f_mm), r_mm, tofReadingName(r_mm));
     printFormat("Walls L=%d F=%d R=%d  thresholds L=%.1f F=%.1f R=%.1f  open=%d\n",
                 wall_state.left_wall, wall_state.front_wall, wall_state.right_wall,
                 static_cast<double>(TOF_LEFT_WALL_THRESHOLD_MM),
@@ -777,32 +777,31 @@ void CommandLineInterface::printTofSnapshot()
     {
         const float steering_preview =
             wall_state.steering_allowed
-                ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
+                ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_norm, 0.0f)
                 : 0.0f;
-        printFormat(
-            "Side src=%s err=%.1f mm Lerr=%.1f Rerr=%.1f preview=%.1f deg/s allowed=%d "
-            "front_blocked=%d\n",
-            tof_wall::sourceName(wall_state.source), static_cast<double>(wall_state.side_error_mm),
-            static_cast<double>(wall_state.left_error_mm),
-            static_cast<double>(wall_state.right_error_mm), static_cast<double>(steering_preview),
-            wall_state.steering_allowed, wall_state.front_blocked);
+        printFormat("Side src=%s err=%.1f norm Lerr=%.1f Rerr=%.1f preview=%.1f deg/s allowed=%d "
+                    "front_blocked=%d\n",
+                    tof_wall::sourceName(wall_state.source),
+                    static_cast<double>(wall_state.side_error_norm),
+                    static_cast<double>(wall_state.left_error_norm),
+                    static_cast<double>(wall_state.right_error_norm),
+                    static_cast<double>(steering_preview), wall_state.steering_allowed,
+                    wall_state.front_blocked);
     }
     else
     {
         printFormat("Side src=NONE err=unavailable preview=0.0 deg/s front_blocked=%d\n",
                     wall_state.front_blocked);
     }
-    printFormat("Refs L=%.1f R=%.1f  live src=%s err=%.1f mm adjust=%.1f deg/s allowed=%d\n",
-                static_cast<double>(TOF_LEFT_CENTER_REFERENCE_MM),
-                static_cast<double>(TOF_RIGHT_CENTER_REFERENCE_MM), liveSteeringSourceName(),
-                static_cast<double>(MotionState::steering_side_error_mm),
-                static_cast<double>(MotionState::steering_adjustment_degps),
-                MotionState::steering_allowed);
-    const std::string wall_check_yaw =
-        MotionState::wall_check_ready ? std::to_string(MotionState::wall_check_yaw_deg) : "NA";
-    printFormat("Yaw current=%.2f deg steering_yaw=%.2f deg wall_check_yaw=%s\n",
-                static_cast<double>(snap.imu_yaw),
-                static_cast<double>(MotionState::steering_yaw_deg), wall_check_yaw.c_str());
+    const tof_wall::WallState live_state = r->wallSteeringState();
+    printFormat("Cal Lmm=%.1f Rmm=%.1f nominal=%.1f  live src=%s err=%.1f norm adjust=%.1f deg/s "
+                "allowed=%d\n",
+                static_cast<double>(TOF_LEFT_CALIBRATION_MM),
+                static_cast<double>(TOF_RIGHT_CALIBRATION_MM),
+                static_cast<double>(TOF_SIDE_NOMINAL), tof_wall::sourceName(live_state.source),
+                static_cast<double>(live_state.side_error_norm),
+                static_cast<double>(r->wallSteeringAdjustmentDegps()), live_state.steering_allowed);
+    printFormat("Yaw current=%.2f deg\n", static_cast<double>(r->angle()));
 
     if (deps_.mouse != nullptr)
     {
@@ -829,7 +828,8 @@ bool CommandLineInterface::startWithGesture(bool tof_available)
 {
     halted_ = false;
     printFormat("Waiting for start gesture (wave hand / send G / BT START)...\n");
-    StartTrigger trigger = waitForStartGesture(deps_.bluetooth, tof_available);
+    ToF*         front_tof = tof_available ? deps_.front_tof : nullptr;
+    StartTrigger trigger   = waitForStartGesture(deps_.bluetooth, front_tof);
     if (trigger == StartTrigger::CANCELLED)
     {
         printFormat("Cancelled.\n");
@@ -852,11 +852,10 @@ bool CommandLineInterface::startWithGesture(bool tof_available)
             break;
     }
 
-    if (deps_.sensor_mode == SensorMode::TOF)
+    if (deps_.sensor_mode == SensorMode::TOF && deps_.robot != nullptr)
     {
-        CommandHub::clearStopRequested();
-        CommandHub::clear();
-        MotionState::wall_check_ready = false;
+        // UKMARS pattern: clear any prior motion before starting a new run.
+        deps_.robot->emergency_stop();
     }
     return true;
 }
@@ -870,32 +869,24 @@ bool CommandLineInterface::startCenter()
     }
 
     printFormat("Start-center: %.1f mm\n", static_cast<double>(START_CENTER_DISTANCE_MM));
-    deps_.api->start_center();
-    return !halted_;
+    return deps_.api->start_center() && !halted_;
 }
 
 void CommandLineInterface::stop()
 {
-    if (deps_.sensor_mode == SensorMode::TOF)
-        CommandHub::requestStop();
+    // UKMARS pattern: emergency_stop() resets the drive system in place.
+    // Any blocking motion call will see halt_check_ return true on its next
+    // 2 ms iteration and exit the busy-wait.
+    if (deps_.robot != nullptr)
+        deps_.robot->emergency_stop();
     halted_ = true;
     printFormat("STOP\n");
 }
 
 void CommandLineInterface::reset()
 {
-    if (deps_.sensor_mode == SensorMode::TOF)
-    {
-        CommandHub::requestStop();
-        for (int i = 0; i < 50 && CommandHub::stopRequested(); ++i)
-        {
-            drainConsole();
-            sleep_ms(2);
-        }
-        CommandHub::clearStopRequested();
-        CommandHub::clear();
-        MotionState::wall_check_ready = false;
-    }
+    if (deps_.sensor_mode == SensorMode::TOF && deps_.robot != nullptr)
+        deps_.robot->emergency_stop();
 
     if (deps_.maze != nullptr)
         deps_.maze->reset();

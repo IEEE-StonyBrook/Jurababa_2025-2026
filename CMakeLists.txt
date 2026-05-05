@@ -65,7 +65,6 @@ set(APP_SOURCES
     firmware/app/api.cpp
     firmware/app/firmware_api.cpp
     firmware/app/start_gesture.cpp
-    firmware/app/core1.cpp
     firmware/app/cli.cpp
 )
 
@@ -124,7 +123,6 @@ target_link_libraries(Jurababa
     hardware_adc
     hardware_spi
     vl53l0x_api_rp2040
-    pico_multicore
 )
 
 # Include directories

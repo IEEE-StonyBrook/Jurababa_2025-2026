@@ -7,30 +7,22 @@
 #include <vector>
 
 class Mouse;
-
-/**
- * @brief Strategy interface for blocking until Core 1 finishes a motion.
- *
- * Implemented by `Cli` on hardware (waits for the exact command ID Core1
- * completes while watching for HALT). Sim build leaves the pointer null —
- * simulator commands are synchronous already.
- */
-class MotionWaiter
-{
-  public:
-    virtual ~MotionWaiter()                                 = default;
-    virtual void waitForMotionComplete(uint16_t command_id) = 0;
-    virtual void waitForWallCheck(uint16_t command_id)      = 0;
-};
+class Robot;
 
 /**
  * @brief High-level maze navigation API
  *
- * Provides movement commands, wall sensing, and maze visualization.
- * Bridges between navigation algorithms and hardware control.
+ * Provides movement commands, wall sensing, and maze visualization. Bridges
+ * between navigation algorithms and hardware control.
  *
- * `wallLeft/Front/Right` are virtual so `FirmwareApi` can read real ToF
- * snapshots on hardware while the sim build keeps using bare `API`.
+ * Single-core UKMARS pattern: motion methods on hardware call directly into
+ * `robot_->start_move()` / `robot_->start_turn()` and then busy-wait on
+ * `robot_->move_finished()`/`turn_finished()` while a 500 Hz hardware timer
+ * advances the controller in the background. Same shape as
+ * mazerunner-core's `motion.move`.
+ *
+ * `wallLeft/Front/Right` are virtual so `FirmwareApi` can read live ToF
+ * distances on hardware while the simulator build keeps using bare `API`.
  */
 class API
 {
@@ -43,6 +35,11 @@ class API
 
     explicit API(Mouse* mouse);
     virtual ~API() = default;
+
+    // Set the runtime motion target. Null on simulator builds; FirmwareApi
+    // requires a non-null Robot pointer for any motion to actually happen.
+    void   setRobot(Robot* robot) { robot_ = robot; }
+    Robot* robot() const { return robot_; }
 
     // Maze dimensions
     int mazeWidth();
@@ -59,11 +56,11 @@ class API
 
     // Movement commands
     void moveForwardHalf();
-    void move_mm(float distance_mm);
-    void start_center();
-    void center_from_wall_check();
-    void search_start_from_wall_check();
-    void search_advance();
+    bool move_mm(float distance_mm);
+    bool start_center();
+    bool center_from_wall_check();
+    bool search_start_from_wall_check();
+    bool search_advance();
     void finish_search_move();
     void clear_search_move();
     void moveForward();
@@ -119,36 +116,31 @@ class API
     void        printMaze();
     std::string mazeString();
 
-    // Inject a motion-complete waiter (set by Cli on hardware; null in sim).
-    // When set, every physical command waits until Core 1 completes the exact
-    // command ID returned by CommandHub::send.
-    void setMotionWaiter(MotionWaiter* waiter) { motion_waiter_ = waiter; }
+    // Halt hook used by long-running search loops to break early when the
+    // operator hits HALT/X over Bluetooth. CLI installs a function pointer
+    // that returns true when stop is requested. Null in simulator.
+    using HaltCheckFn = bool (*)();
+    void setHaltCheck(HaltCheckFn fn) { halt_check_ = fn; }
+    bool haltRequested() const { return halt_check_ != nullptr && halt_check_(); }
 
     bool run_on_simulator = false;
 
   protected:
-    void waitForMotion(uint16_t command_id)
-    {
-        if (motion_waiter_ != nullptr)
-            motion_waiter_->waitForMotionComplete(command_id);
-    }
+    // UKMARS busy-wait pattern: spin on robot_->{move,turn}_finished() while
+    // the 500 Hz timer ISR keeps Robot::update() advancing the controller.
+    // 2 ms sleep matches mazerunner-core's `delay(2)` cadence.
+    void waitForMotion();
 
-    void waitForWallCheck(uint16_t command_id)
-    {
-        if (motion_waiter_ != nullptr)
-            motion_waiter_->waitForWallCheck(command_id);
-    }
+    Mouse*        mouse_          = nullptr;
+    Robot*        robot_          = nullptr;
+    HaltCheckFn   halt_check_     = nullptr;
+    char          phase_color_    = 'y';
+    MovementStyle movement_style_ = MovementStyle::Stationary;
 
   private:
     std::string simulatorResponse(const std::string& cmd);
     bool        simulatorBool(const std::string& cmd);
     std::string printMazeRow(int row);
-
-    Mouse*        mouse_;
-    char          phase_color_              = 'y';
-    MotionWaiter* motion_waiter_            = nullptr;
-    MovementStyle movement_style_           = MovementStyle::Stationary;
-    uint16_t      active_search_command_id_ = 0;
 };
 
 #endif

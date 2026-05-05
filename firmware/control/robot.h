@@ -104,7 +104,7 @@ class Robot
 
     tof_wall::WallState latest_wall_state_{};
     float               latest_steering_adjustment_degps_ = 0.0f;
-    float               side_error_prev_mm_               = 0.0f;
+    float               side_error_prev_norm_             = 0.0f;
     bool                side_error_prev_valid_            = false;
 };
 

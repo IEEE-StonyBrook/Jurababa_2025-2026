@@ -4,6 +4,7 @@
 #include <cstdint>
 
 class Bluetooth;
+class ToF;
 
 /**
  * @brief Outcome of `waitForStartGesture`.
@@ -39,7 +40,7 @@ enum class StartTrigger
  * @param low_mm              Hand-close threshold (default 80 mm).
  * @param high_mm             Hand-clear threshold (default 110 mm); must exceed `low_mm`.
  */
-StartTrigger waitForStartGesture(Bluetooth* bt, bool front_tof_available, uint32_t low_mm = 80,
+StartTrigger waitForStartGesture(Bluetooth* bt, ToF* front_tof, uint32_t low_mm = 80,
                                  uint32_t high_mm = 110);
 
 #endif

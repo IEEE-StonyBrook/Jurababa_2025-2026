@@ -5,9 +5,9 @@
 #include "pico/stdlib.h"
 
 #include "app/bluetooth.h"
-#include "app/multicore.h"
 #include "common/log.h"
 #include "config/sensors.h"
+#include "drivers/tof.h"
 
 namespace
 {
@@ -43,8 +43,7 @@ void writeDiagnostic(Bluetooth* bt, const char* text)
 }
 } // namespace
 
-StartTrigger waitForStartGesture(Bluetooth* bt, bool front_tof_available, uint32_t low_mm,
-                                 uint32_t high_mm)
+StartTrigger waitForStartGesture(Bluetooth* bt, ToF* front_tof, uint32_t low_mm, uint32_t high_mm)
 {
     WaveState state          = WaveState::ARMED_HIGH;
     uint32_t  last_report_ms = 0;
@@ -71,11 +70,12 @@ StartTrigger waitForStartGesture(Bluetooth* bt, bool front_tof_available, uint32
             // the Cli command loop, not the start-gesture handshake.
         }
 
-        if (front_tof_available)
+        if (front_tof != nullptr)
         {
-            SensorData snap;
-            SensorHub::snapshot(snap);
-            int16_t mm = snap.tof_front_mm;
+            const float   front_mm_f = front_tof->get_distance();
+            const int16_t mm         = (front_mm_f > 0.0f && front_mm_f < TOF_OUT_OF_RANGE_MM)
+                                           ? static_cast<int16_t>(front_mm_f)
+                                           : 0;
 
             // Treat invalid/open-space readings as "far" so a sensor dropout
             // never looks like a hand-close transition.

@@ -19,8 +19,7 @@
 #include "navigation/path_converter.h"
 
 #ifndef SIMULATOR_BUILD
-#include "app/motion_state.h"
-#include "app/multicore.h"
+#include "control/robot.h"
 #endif
 
 namespace PathUtils
@@ -52,14 +51,6 @@ std::string wallBits(Cell* cell)
 
 bool readWallSample(API* api, int16_t& left_mm, int16_t& front_mm, int16_t& right_mm);
 
-#ifndef SIMULATOR_BUILD
-const char* liveSteeringSourceName()
-{
-    return tof_wall::sourceName(
-        static_cast<tof_wall::SteeringSource>(MotionState::steering_source));
-}
-#endif
-
 void logNoPathDiagnostics(API* api, Mouse* mouse)
 {
     if (mouse == nullptr)
@@ -81,7 +72,7 @@ void logNoPathDiagnostics(API* api, Mouse* mouse)
     const tof_wall::WallState wall_state = tof_wall::evaluate(left_mm, front_mm, right_mm);
     const float               steering_preview =
         wall_state.steering_allowed
-            ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
+            ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_norm, 0.0f)
             : 0.0f;
 
     LOG_ERROR("No-path ToF L=" + std::to_string(left_mm) + " F=" + std::to_string(front_mm) +
@@ -89,12 +80,11 @@ void logNoPathDiagnostics(API* api, Mouse* mouse)
               std::to_string(wall_state.left_wall) + " F=" + std::to_string(wall_state.front_wall) +
               " R=" + std::to_string(wall_state.right_wall) +
               " src=" + tof_wall::sourceName(wall_state.source) +
-              " left_err_mm=" + std::to_string(wall_state.left_error_mm) +
-              " right_err_mm=" + std::to_string(wall_state.right_error_mm) +
-              " side_error_mm=" + std::to_string(wall_state.side_error_mm) +
-              " steering_degps=" + std::to_string(steering_preview) + " front_blocked=" +
-              std::to_string(wall_state.front_blocked) + " live_src=" + liveSteeringSourceName() +
-              " live_steering_degps=" + std::to_string(MotionState::steering_adjustment_degps));
+              " left_err_norm=" + std::to_string(wall_state.left_error_norm) +
+              " right_err_norm=" + std::to_string(wall_state.right_error_norm) +
+              " side_error_norm=" + std::to_string(wall_state.side_error_norm) +
+              " steering_degps=" + std::to_string(steering_preview) +
+              " front_blocked=" + std::to_string(wall_state.front_blocked));
 #endif
 
     if (api != nullptr)
@@ -107,19 +97,11 @@ void logNoPathDiagnostics(API* api, Mouse* mouse)
 
 bool readWallSample(API* api, int16_t& left_mm, int16_t& front_mm, int16_t& right_mm)
 {
+    // api->wallSample falls through to live Robot getters on hardware
+    // (FirmwareApi::wallSample uses robot()->{left,front,right}Distance()).
     if (api != nullptr && api->wallSample(left_mm, front_mm, right_mm))
         return true;
-
-#ifndef SIMULATOR_BUILD
-    SensorData snap;
-    SensorHub::snapshot(snap);
-    left_mm  = snap.tof_left_mm;
-    front_mm = snap.tof_front_mm;
-    right_mm = snap.tof_right_mm;
-    return true;
-#else
     return false;
-#endif
 }
 
 void logSearchTrace(API* api, Mouse* mouse)
@@ -136,15 +118,13 @@ void logSearchTrace(API* api, Mouse* mouse)
     int16_t front_mm = 0;
     int16_t right_mm = 0;
     readWallSample(api, left_mm, front_mm, right_mm);
-    SensorData snap;
-    SensorHub::snapshot(snap);
     const tof_wall::WallState wall_state = tof_wall::evaluate(left_mm, front_mm, right_mm);
     const float               steering_preview =
         wall_state.steering_allowed
-            ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_mm, 0.0f)
+            ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_norm, 0.0f)
             : 0.0f;
-    const std::string wall_check_yaw =
-        MotionState::wall_check_ready ? std::to_string(MotionState::wall_check_yaw_deg) : "NA";
+    Robot*      robot = api != nullptr ? api->robot() : nullptr;
+    const float yaw   = robot != nullptr ? robot->angle() : 0.0f;
 
     LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
              ") heading=" + mouse->currentDirection() + " ToF L/F/R=" + std::to_string(left_mm) +
@@ -152,14 +132,12 @@ void logSearchTrace(API* api, Mouse* mouse)
              " walls L/F/R=" + std::to_string(wall_state.left_wall) + "/" +
              std::to_string(wall_state.front_wall) + "/" + std::to_string(wall_state.right_wall) +
              " src=" + tof_wall::sourceName(wall_state.source) +
-             " Lerr/Rerr=" + std::to_string(wall_state.left_error_mm) + "/" +
-             std::to_string(wall_state.right_error_mm) +
-             " side_error_mm=" + std::to_string(wall_state.side_error_mm) +
+             " Lerr/Rerr=" + std::to_string(wall_state.left_error_norm) + "/" +
+             std::to_string(wall_state.right_error_norm) +
+             " side_error_norm=" + std::to_string(wall_state.side_error_norm) +
              " steering_degps=" + std::to_string(steering_preview) +
              " allowed=" + std::to_string(wall_state.steering_allowed) + " front_blocked=" +
-             std::to_string(wall_state.front_blocked) + " live_src=" + liveSteeringSourceName() +
-             " live_steering_degps=" + std::to_string(MotionState::steering_adjustment_degps) +
-             " wall_yaw=" + wall_check_yaw + " current_yaw=" + std::to_string(snap.imu_yaw));
+             std::to_string(wall_state.front_blocked) + " yaw=" + std::to_string(yaw));
 #else
     LOG_INFO("SEARCH cell=(" + std::to_string(cell->x()) + "," + std::to_string(cell->y()) +
              ") heading=" + mouse->currentDirection());
@@ -348,7 +326,11 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
         {
             if (at_start_wall_check)
             {
-                api->center_from_wall_check();
+                if (!api->center_from_wall_check())
+                {
+                    LOG_ERROR("SEARCH failed moving from wall-check pose to cell center.");
+                    return false;
+                }
                 at_start_wall_check = false;
             }
             api->finish_search_move();
@@ -365,7 +347,11 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
             logNoPathDiagnostics(api, mouse);
             if (at_start_wall_check)
             {
-                api->center_from_wall_check();
+                if (!api->center_from_wall_check())
+                {
+                    LOG_ERROR("SEARCH failed moving from wall-check pose to cell center.");
+                    return false;
+                }
                 at_start_wall_check = false;
             }
             api->finish_search_move();
@@ -399,14 +385,22 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
 
             if (move == "F")
             {
+                bool motion_started = false;
                 if (at_start_wall_check)
                 {
-                    api->search_start_from_wall_check();
+                    motion_started      = api->search_start_from_wall_check();
                     at_start_wall_check = false;
                 }
                 else
                 {
-                    api->search_advance();
+                    motion_started = api->search_advance();
+                }
+
+                if (!motion_started)
+                {
+                    LOG_ERROR("SEARCH motion command failed before wall-check sample.");
+                    api->clear_search_move();
+                    return false;
                 }
                 current = mouse->currentCell();
                 break;
@@ -414,7 +408,11 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
 
             if (at_start_wall_check)
             {
-                api->center_from_wall_check();
+                if (!api->center_from_wall_check())
+                {
+                    LOG_ERROR("SEARCH failed moving from wall-check pose to cell center.");
+                    return false;
+                }
                 at_start_wall_check = false;
             }
 

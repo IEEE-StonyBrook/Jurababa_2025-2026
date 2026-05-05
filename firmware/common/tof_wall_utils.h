@@ -15,6 +15,16 @@ enum class SteeringSource : uint8_t
     Right
 };
 
+// Mirrors UKMARS mazerunner-core's wall-detection + cross-track error
+// shape (sensors.h:196-258 in /tmp/mazerunner-core), translated from
+// IR-normalized counts to ToF mm via compile-time scale factors. The
+// per-side scale absorbs per-unit chip bias, mounting, and cover variance:
+// each side reads ~TOF_SIDE_NOMINAL when the robot is centered between
+// two walls.
+//
+// Sign convention: positive side_error_norm means the robot has drifted
+// toward the right wall, which commands a positive omega (CCW = left)
+// correction via the rotation PD.
 struct WallState
 {
     bool           left_wall        = false;
@@ -24,9 +34,13 @@ struct WallState
     bool           steering_allowed = false;
     bool           front_blocked    = false;
     SteeringSource source           = SteeringSource::None;
-    float          left_error_mm    = 0.0f;
-    float          right_error_mm   = 0.0f;
-    float          side_error_mm    = 0.0f;
+
+    // All errors are in TOF_SIDE_NOMINAL units (100 = centered). Diagnostic
+    // fields kept for both sides so logs can show which way the robot
+    // actually drifted, even when the picker chose only one side.
+    float left_error_norm  = 0.0f;
+    float right_error_norm = 0.0f;
+    float side_error_norm  = 0.0f;
 };
 
 inline const char* sourceName(SteeringSource source)
@@ -76,38 +90,47 @@ inline WallState evaluate(float left_mm, float front_mm, float right_mm)
     state.right_wall    = wallRight(right_mm);
     state.front_blocked = frontWallTooCloseForSteering(front_mm);
 
-    // Jurababa's yaw/omega convention is positive left and negative right.
-    // Therefore negative side error steers right, and positive steers left.
-    if (state.left_wall)
-        state.left_error_mm = left_mm - TOF_LEFT_CENTER_REFERENCE_MM;
-    if (state.right_wall)
-        state.right_error_mm = TOF_RIGHT_CENTER_REFERENCE_MM - right_mm;
+    // Normalize each side's mm reading to TOF_SIDE_NOMINAL units so both
+    // sides operate on the same scale (mazerunner config-robot-orion.h
+    // LEFT_SCALE / RIGHT_SCALE pattern). After this multiply, both sides
+    // produce ~TOF_SIDE_NOMINAL when the robot is centered, regardless of
+    // their raw mm bias.
+    const float lss_norm = TOF_LEFT_SCALE * left_mm;
+    const float rss_norm = TOF_RIGHT_SCALE * right_mm;
 
+    if (state.left_wall)
+        state.left_error_norm = lss_norm - TOF_SIDE_NOMINAL;
+    if (state.right_wall)
+        state.right_error_norm = TOF_SIDE_NOMINAL - rss_norm;
+
+    // Picker form lifted directly from mazerunner sensors.h:236-247. Closer
+    // wall wins, with the same 2× factor applied in single-wall and
+    // both-wall cases so the effective steering gain doesn't halve when
+    // one wall ends — see audit item #5.
     if (state.left_wall && state.right_wall)
     {
-        const float left_closeness_mm  = TOF_LEFT_CENTER_REFERENCE_MM - left_mm;
-        const float right_closeness_mm = TOF_RIGHT_CENTER_REFERENCE_MM - right_mm;
-        if (left_closeness_mm > right_closeness_mm)
+        // Closer wall = smaller normalized reading (smaller mm × scale).
+        if (lss_norm < rss_norm)
         {
-            state.side_error_mm = state.left_error_mm;
-            state.source        = SteeringSource::Left;
+            state.side_error_norm = 2.0f * state.left_error_norm;
+            state.source          = SteeringSource::Left;
         }
         else
         {
-            state.side_error_mm = state.right_error_mm;
-            state.source        = SteeringSource::Right;
+            state.side_error_norm = 2.0f * state.right_error_norm;
+            state.source          = SteeringSource::Right;
         }
         state.side_error_valid = true;
     }
     else if (state.left_wall)
     {
-        state.side_error_mm    = state.left_error_mm;
+        state.side_error_norm  = 2.0f * state.left_error_norm;
         state.side_error_valid = true;
         state.source           = SteeringSource::Left;
     }
     else if (state.right_wall)
     {
-        state.side_error_mm    = state.right_error_mm;
+        state.side_error_norm  = 2.0f * state.right_error_norm;
         state.side_error_valid = true;
         state.source           = SteeringSource::Right;
     }
@@ -116,10 +139,10 @@ inline WallState evaluate(float left_mm, float front_mm, float right_mm)
     return state;
 }
 
-inline float steeringAdjustmentDegps(float side_error_mm, float side_error_delta_mmps)
+inline float steeringAdjustmentDegps(float side_error_norm, float side_error_delta_norm_per_s)
 {
-    const float adjustment_degps = TOF_STEERING_KP_DEGPS_PER_MM * side_error_mm +
-                                   TOF_STEERING_KD_DEG_PER_MM * side_error_delta_mmps;
+    const float adjustment_degps = TOF_STEERING_KP_DEGPS_PER_NOMINAL * side_error_norm +
+                                   TOF_STEERING_KD_DEG_PER_NOMINAL * side_error_delta_norm_per_s;
     return utils::clampAbs(adjustment_degps, TOF_STEERING_ADJUST_LIMIT_DEGPS);
 }
 } // namespace tof_wall

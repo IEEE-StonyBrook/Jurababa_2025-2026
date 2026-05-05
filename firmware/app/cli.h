@@ -6,8 +6,6 @@
 #include <string>
 #include <vector>
 
-#include "app/api.h" // for MotionWaiter
-
 class API;
 class Battery;
 class Bluetooth;
@@ -15,14 +13,16 @@ class DriverLab;
 class LineFollower;
 class Maze;
 class Mouse;
+class Robot;
+class ToF;
 
 /**
  * @brief Sensor mode chosen at boot.
  *
  * I2C0 is shared between the front/left/right ToFs and the YahBoom line
- * sensor, so they're mutually exclusive. The boot prompt picks one and
- * Core 1 only launches in TOF mode (line-sensor mode keeps motors on
- * Core 0 for direct LineFollower control).
+ * sensor, so they're mutually exclusive. The boot prompt picks one. ToF
+ * mode wires Robot directly into the API; LineSensor mode hands motors
+ * to LineFollower instead.
  */
 enum class SensorMode
 {
@@ -41,18 +41,21 @@ struct Args
 /**
  * @brief UKMARS mazerunner-core-style command line interface.
  *
- * Normal CLI intentionally mirrors mazerunner-core's command surface:
- * one-character commands, `F n` function dispatch, and long commands such as
- * HELP and SEARCH. Jurababa keeps motor-safe STOP semantics for X and adds
- * STYLE for stationary/smooth motion execution.
+ * Single-core: motion commands call directly into Robot via the API and
+ * busy-wait while a 500 Hz hardware timer advances the controller. Same
+ * shape as mazerunner-core's `loop()` + Timer2 ISR split.
  */
-class CommandLineInterface : public MotionWaiter
+class CommandLineInterface
 {
   public:
     struct Deps
     {
         Bluetooth*                      bluetooth     = nullptr;
         Battery*                        battery       = nullptr;
+        Robot*                          robot         = nullptr; // null in LineSensor mode
+        ToF*                            left_tof      = nullptr; // null in LineSensor mode
+        ToF*                            front_tof     = nullptr;
+        ToF*                            right_tof     = nullptr;
         LineFollower*                   line_follower = nullptr; // null in ToF mode
         DriverLab*                      driver_lab    = nullptr;
         Maze*                           maze          = nullptr;
@@ -72,11 +75,6 @@ class CommandLineInterface : public MotionWaiter
     bool process_serial_data();
     void process_input_line();
 
-    // MotionWaiter implementation: waits for Core1 to complete the matching
-    // command ID and interleaves `pollHaltOnly()` so HALT cuts through motion.
-    void waitForMotionComplete(uint16_t command_id) override;
-    void waitForWallCheck(uint16_t command_id) override;
-
     void runFunction(int n) { run_function(n); }
     void run_function(int cmd);
     void help();
@@ -84,13 +82,13 @@ class CommandLineInterface : public MotionWaiter
 
     bool halted() const { return halted_; }
 
+    // Halt thunk for API: returns true when 'X' / HALT was received over
+    // serial during a long-running motion. API installs this via
+    // `setHaltCheck` so blocking commands can break early.
+    static bool haltCheckThunk();
+
   private:
     static uint8_t read_integer(const char* line, int& value);
-
-    // Watch only for HALT signals (Bluetooth HALT, USB 'X'/'x'). Cheap
-    // enough to interleave inside `waitForMotionComplete` and inside
-    // long-running maze functions.
-    void pollHaltOnly();
 
     void handle_backspace();
     void add_to_buffer(char c);
@@ -122,6 +120,10 @@ class CommandLineInterface : public MotionWaiter
     void printArgs(const Args& args);
     void drainConsole();
 
+    // Process bluetooth/USB input non-blockingly during motion. Sets
+    // halted_ if HALT/X received. Used by the API halt thunk.
+    void pollHaltOnly();
+
     Deps deps_;
 
     static constexpr int LINE_BUFFER_SIZE               = 96;
@@ -130,6 +132,8 @@ class CommandLineInterface : public MotionWaiter
 
     int  last_function_ = -1;
     bool halted_        = false;
+
+    static CommandLineInterface* s_instance_;
 };
 
 using Cli = CommandLineInterface;

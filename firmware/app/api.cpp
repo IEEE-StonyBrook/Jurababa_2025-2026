@@ -1,13 +1,17 @@
 #include "app/api.h"
 
 #include <cctype>
+#include <cmath>
 #include <iostream>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #ifndef SIMULATOR_BUILD
-#include "app/commands.h"
+#include "pico/stdlib.h"
+
+#include "config/motion.h"
+#include "control/robot.h"
 #endif
 #include "common/log.h"
 #include "config/geometry.h"
@@ -43,16 +47,31 @@ bool parsePositiveInt(const std::string& text, int& value)
     value = parsed;
     return true;
 }
-
-int32_t mmToTenths(float distance_mm)
-{
-    const float scaled = distance_mm * 10.0f;
-    return static_cast<int32_t>(scaled >= 0.0f ? scaled + 0.5f : scaled - 0.5f);
-}
 } // namespace
 
 API::API(Mouse* mouse) : mouse_(mouse), run_on_simulator(false)
 {
+}
+
+void API::waitForMotion()
+{
+#ifndef SIMULATOR_BUILD
+    // UKMARS busy-wait: spin while the controller (running in the 500 Hz
+    // hardware timer ISR) advances the trapezoidal profile to completion.
+    // 2 ms cadence matches mazerunner-core's `delay(2)` inside
+    // Profile::wait_until_finished.
+    if (robot_ == nullptr)
+        return;
+    while (!robot_->move_finished() || !robot_->turn_finished())
+    {
+        if (haltRequested())
+        {
+            robot_->emergency_stop();
+            return;
+        }
+        sleep_ms(2);
+    }
+#endif
 }
 
 int API::mazeWidth()
@@ -108,113 +127,124 @@ void API::moveForwardHalf()
     if (run_on_simulator)
         simulatorResponse("moveForwardHalf");
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::MOVE_FWD_HALF));
+        robot_->move(HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+        waitForMotion();
     }
 #endif
     // Half-cell physical moves do not advance the logical maze cell. Diagonal
     // sequences use GMF/GFM when the virtual mouse should move to the next cell.
 }
 
-void API::move_mm(float distance_mm)
+bool API::move_mm(float distance_mm)
 {
     if (run_on_simulator)
-        return;
+        return true;
 #ifndef SIMULATOR_BUILD
-    waitForMotion(CommandHub::send(CommandType::MOVE_MM, mmToTenths(distance_mm)));
+    if (robot_ == nullptr)
+        return false;
+    robot_->move(distance_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+    waitForMotion();
+    return !haltRequested();
+#else
+    return true;
 #endif
 }
 
-void API::start_center()
+bool API::start_center()
 {
-    move_mm(START_CENTER_DISTANCE_MM);
+    return move_mm(START_CENTER_DISTANCE_MM);
 }
 
-void API::center_from_wall_check()
+bool API::center_from_wall_check()
 {
-    move_mm(WALL_CHECK_TO_CENTER_MM);
+    if (!move_mm(WALL_CHECK_TO_CENTER_MM))
+        return false;
     clear_search_move();
+    return true;
 }
 
-void API::search_start_from_wall_check()
+bool API::search_start_from_wall_check()
 {
     if (run_on_simulator)
     {
         simulatorResponse("moveForward");
         mouse_->moveForward(1);
-        return;
+        return true;
     }
 #ifndef SIMULATOR_BUILD
-    active_search_command_id_ = CommandHub::send(CommandType::SEARCH_START_FROM_WALL_CHECK);
-    waitForWallCheck(active_search_command_id_);
-    if (!MotionState::wall_check_ready ||
-        MotionState::wall_check_command_id != active_search_command_id_)
+    // Single-cell forward: capture wall snapshot at the wall-check position,
+    // then keep moving toward the cell center. Mirrors mazerunner-core's
+    // sensor-triggered approach: act on the live ToF reading mid-cell rather
+    // than waiting for the profile to finish.
+    if (robot_ == nullptr)
+        return false;
+
+    constexpr float kStartWallCheckPositionMm = CELL_SIZE_MM;
+    const float     total_mm                  = CELL_SIZE_MM + WALL_CHECK_TO_CENTER_MM;
+    robot_->move(total_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+
+    while (!robot_->move_finished() && robot_->position() < kStartWallCheckPositionMm)
     {
-        if (!CommandHub::stopRequested())
+        if (haltRequested())
         {
-            active_search_command_id_ = CommandHub::send(CommandType::SEARCH_START_FROM_WALL_CHECK);
-            waitForWallCheck(active_search_command_id_);
+            robot_->emergency_stop();
+            return false;
         }
-        if (!MotionState::wall_check_ready ||
-            MotionState::wall_check_command_id != active_search_command_id_)
-        {
-            active_search_command_id_ = 0;
-            return;
-        }
+        sleep_ms(2);
     }
 
-    setWallSample(MotionState::wall_check_left_mm, MotionState::wall_check_front_mm,
-                  MotionState::wall_check_right_mm);
+    setWallSample(static_cast<int16_t>(robot_->leftDistance()),
+                  static_cast<int16_t>(robot_->frontDistance()),
+                  static_cast<int16_t>(robot_->rightDistance()));
 #endif
     mouse_->moveForward(1);
+    return true;
 }
 
-void API::search_advance()
+bool API::search_advance()
 {
     if (run_on_simulator)
     {
         simulatorResponse("moveForward");
         mouse_->moveForward(1);
-        return;
+        return true;
     }
 #ifndef SIMULATOR_BUILD
-    active_search_command_id_ = CommandHub::send(CommandType::SEARCH_ADVANCE);
-    waitForWallCheck(active_search_command_id_);
-    if (!MotionState::wall_check_ready ||
-        MotionState::wall_check_command_id != active_search_command_id_)
+    if (robot_ == nullptr)
+        return false;
+
+    const float wall_check_position_mm = robot_->position() + CENTER_TO_NEXT_WALL_CHECK_MM;
+    robot_->move(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+
+    while (!robot_->move_finished() && robot_->position() < wall_check_position_mm)
     {
-        if (!CommandHub::stopRequested())
+        if (haltRequested())
         {
-            active_search_command_id_ = CommandHub::send(CommandType::SEARCH_ADVANCE);
-            waitForWallCheck(active_search_command_id_);
+            robot_->emergency_stop();
+            return false;
         }
-        if (!MotionState::wall_check_ready ||
-            MotionState::wall_check_command_id != active_search_command_id_)
-        {
-            active_search_command_id_ = 0;
-            return;
-        }
+        sleep_ms(2);
     }
 
-    setWallSample(MotionState::wall_check_left_mm, MotionState::wall_check_front_mm,
-                  MotionState::wall_check_right_mm);
+    setWallSample(static_cast<int16_t>(robot_->leftDistance()),
+                  static_cast<int16_t>(robot_->frontDistance()),
+                  static_cast<int16_t>(robot_->rightDistance()));
 #endif
     mouse_->moveForward(1);
+    return true;
 }
 
 void API::finish_search_move()
 {
 #ifndef SIMULATOR_BUILD
-    if (active_search_command_id_ != 0)
-        waitForMotion(active_search_command_id_);
+    waitForMotion();
 #endif
-    active_search_command_id_ = 0;
 }
 
 void API::clear_search_move()
 {
-    active_search_command_id_ = 0;
 }
 
 void API::moveForward()
@@ -222,9 +252,10 @@ void API::moveForward()
     if (run_on_simulator)
         simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::MOVE_FWD, 1));
+        robot_->move(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+        waitForMotion();
     }
 #endif
     mouse_->moveForward(1);
@@ -243,7 +274,12 @@ void API::moveForward(int steps)
         return;
     }
 #ifndef SIMULATOR_BUILD
-    waitForMotion(CommandHub::send(CommandType::MOVE_FWD, steps));
+    if (robot_ != nullptr)
+    {
+        robot_->move(steps * CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f,
+                     ROBOT_BASE_ACCEL_MMPS2);
+        waitForMotion();
+    }
 #endif
     mouse_->moveForward(steps);
 }
@@ -259,9 +295,10 @@ void API::turnLeft45()
     if (run_on_simulator)
         simulatorResponse("turnLeft45");
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::TURN_LEFT, 1));
+        robot_->spin_turn(-45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        waitForMotion();
     }
 #endif
     mouse_->turn45Steps(-1);
@@ -272,9 +309,10 @@ void API::turnLeft90()
     if (run_on_simulator)
         simulatorResponse("turnLeft");
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::TURN_LEFT, 2));
+        robot_->spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        waitForMotion();
     }
 #endif
     mouse_->turn45Steps(-2);
@@ -285,9 +323,10 @@ void API::turnRight45()
     if (run_on_simulator)
         simulatorResponse("turnRight45");
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::TURN_RIGHT, 1));
+        robot_->spin_turn(45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        waitForMotion();
     }
 #endif
     mouse_->turn45Steps(1);
@@ -298,9 +337,10 @@ void API::turnRight90()
     if (run_on_simulator)
         simulatorResponse("turnRight");
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::TURN_RIGHT, 2));
+        robot_->spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        waitForMotion();
     }
 #endif
     mouse_->turn45Steps(2);
@@ -311,9 +351,11 @@ void API::turn(int degrees)
     if (run_on_simulator)
         simulatorResponse("turn" + std::to_string(degrees));
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::TURN_ARBITRARY, degrees));
+        robot_->spin_turn(static_cast<float>(degrees), ROBOT_MAX_TURN_SPEED_DEGPS,
+                          ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        waitForMotion();
     }
 #endif
     mouse_->turn45Steps(degrees / 45);
@@ -324,9 +366,10 @@ void API::move_ahead()
     if (run_on_simulator)
         simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::MOVE_AHEAD));
+        robot_->move(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+        waitForMotion();
     }
 #endif
     mouse_->moveForward(1);
@@ -346,14 +389,6 @@ void API::turn_right()
 
 void API::turn_back()
 {
-#ifndef SIMULATOR_BUILD
-    if (!run_on_simulator)
-    {
-        waitForMotion(CommandHub::send(CommandType::TURN_BACK));
-        mouse_->turn45Steps(4);
-        return;
-    }
-#endif
     turn_IP180();
     mouse_->turn45Steps(4);
 }
@@ -366,7 +401,12 @@ void API::turn_smooth(int turn_id)
         return;
     }
 #ifndef SIMULATOR_BUILD
-    waitForMotion(CommandHub::send(CommandType::TURN_SMOOTH, turn_id));
+    if (robot_ == nullptr)
+        return;
+    // Robot::turn_smooth starts simultaneous fwd + rot profiles using the
+    // SMOOTH_TURN_PARAMS table — same emergent-arc shape as mazerunner.
+    robot_->turn_smooth(turn_id);
+    waitForMotion();
 #endif
 }
 
@@ -379,7 +419,10 @@ void API::turn_IP180()
         return;
     }
 #ifndef SIMULATOR_BUILD
-    waitForMotion(CommandHub::send(CommandType::TURN_ARBITRARY, 180));
+    if (robot_ == nullptr)
+        return;
+    robot_->turn_IP180();
+    waitForMotion();
 #endif
 }
 
@@ -391,7 +434,10 @@ void API::turn_IP90R()
         return;
     }
 #ifndef SIMULATOR_BUILD
-    waitForMotion(CommandHub::send(CommandType::TURN_RIGHT, 2));
+    if (robot_ == nullptr)
+        return;
+    robot_->turn_IP90R();
+    waitForMotion();
 #endif
 }
 
@@ -403,7 +449,10 @@ void API::turn_IP90L()
         return;
     }
 #ifndef SIMULATOR_BUILD
-    waitForMotion(CommandHub::send(CommandType::TURN_LEFT, 2));
+    if (robot_ == nullptr)
+        return;
+    robot_->turn_IP90L();
+    waitForMotion();
 #endif
 }
 
@@ -413,9 +462,7 @@ void API::arcTurnLeft90()
         simulatorResponse("arcTurnLeft90");
 #ifndef SIMULATOR_BUILD
     else
-    {
-        waitForMotion(CommandHub::send(CommandType::ARC_TURN_LEFT_90));
-    }
+        turn_smooth(SS90EL);
 #endif
     mouse_->turn45Steps(-2);
 }
@@ -426,9 +473,7 @@ void API::arcTurnRight90()
         simulatorResponse("arcTurnRight90");
 #ifndef SIMULATOR_BUILD
     else
-    {
-        waitForMotion(CommandHub::send(CommandType::ARC_TURN_RIGHT_90));
-    }
+        turn_smooth(SS90ER);
 #endif
     mouse_->turn45Steps(2);
 }
@@ -438,9 +483,16 @@ void API::arcTurnLeft45()
     if (run_on_simulator)
         simulatorResponse("arcTurnLeft45");
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::ARC_TURN_LEFT_45));
+        // 45-deg arc with a 45 mm radius — same shape startArcTurn produced.
+        const float radius_mm = 45.0f;
+        const float arc_mm    = 45.0f * (M_PI / 180.0f) * radius_mm;
+        robot_->start_move(arc_mm, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS,
+                           ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+        robot_->start_turn(-45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, 0.0f,
+                           ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        waitForMotion();
     }
 #endif
     mouse_->turn45Steps(-1);
@@ -451,9 +503,15 @@ void API::arcTurnRight45()
     if (run_on_simulator)
         simulatorResponse("arcTurnRight45");
 #ifndef SIMULATOR_BUILD
-    else
+    else if (robot_ != nullptr)
     {
-        waitForMotion(CommandHub::send(CommandType::ARC_TURN_RIGHT_45));
+        const float radius_mm = 45.0f;
+        const float arc_mm    = 45.0f * (M_PI / 180.0f) * radius_mm;
+        robot_->start_move(arc_mm, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS,
+                           ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+        robot_->start_turn(45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, 0.0f,
+                           ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        waitForMotion();
     }
 #endif
     mouse_->turn45Steps(1);
@@ -693,40 +751,41 @@ void API::setUp(std::array<int, 2> start, std::vector<std::array<int, 2>> goals)
     setText(start[0], start[1], "Start");
 
     // Mark goals
-    for (auto& g : goals)
+    for (auto& goal : goals)
     {
-        setColor(g[0], g[1], 'G');
-        setText(g[0], g[1], "End");
+        setColor(goal[0], goal[1], 'G');
+        setText(goal[0], goal[1], "Goal");
     }
 }
 
 void API::printMaze()
 {
-    std::cout << mazeString() << std::endl;
+    std::cout << mazeString();
 }
 
 std::string API::mazeString()
 {
-    std::string maze = "Maze:\n";
-    for (int i = 0; i < mazeWidth(); i++)
-        maze += "+---";
-    maze += "+\n";
-
-    for (int i = mazeHeight() - 1; i >= 0; --i)
+    std::stringstream ss;
+    for (int row = mazeHeight() - 1; row >= 0; row--)
     {
-        maze += printMazeRow(i) + "\n";
+        ss << printMazeRow(row) << '\n';
     }
-    return maze;
+    return ss.str();
 }
 
 std::string API::printMazeRow(int row)
 {
-    std::string rowStr = "|", eastStr, southStr;
-    for (int i = 0; i < mazeWidth(); ++i)
+    std::stringstream ss;
+    for (int col = 0; col < mazeWidth(); col++)
     {
-        Cell* curr = mouse_->cellAt(i, row);
-        eastStr += curr->hasWall('E') ? "   |" : "    ";
-        southStr += curr->hasWall('S') ? "+---" : "+   ";
+        Cell* cell = mouse_->cellAt(col, row);
+        if (cell == nullptr)
+        {
+            ss << "?";
+            continue;
+        }
+
+        ss << (cell->explored() ? 'X' : '.');
     }
-    return rowStr + eastStr + "\n" + southStr + "+\n";
+    return ss.str();
 }

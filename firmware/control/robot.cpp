@@ -34,7 +34,7 @@ void Robot::reset_drive_system()
 
     prev_left_cmd_vel_mmps_           = 0.0f;
     prev_right_cmd_vel_mmps_          = 0.0f;
-    side_error_prev_mm_               = 0.0f;
+    side_error_prev_norm_             = 0.0f;
     side_error_prev_valid_            = false;
     latest_wall_state_                = {};
     latest_steering_adjustment_degps_ = 0.0f;
@@ -303,14 +303,14 @@ float Robot::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_
         return 0.0f;
     }
 
-    const float side_error_delta_mmps =
+    const float side_error_delta_norm_per_s =
         side_error_prev_valid_
-            ? (latest_wall_state_.side_error_mm - side_error_prev_mm_) * LOOP_FREQUENCY_HZ
+            ? (latest_wall_state_.side_error_norm - side_error_prev_norm_) * LOOP_FREQUENCY_HZ
             : 0.0f;
-    side_error_prev_mm_    = latest_wall_state_.side_error_mm;
-    side_error_prev_valid_ = true;
-    latest_steering_adjustment_degps_ =
-        tof_wall::steeringAdjustmentDegps(latest_wall_state_.side_error_mm, side_error_delta_mmps);
+    side_error_prev_norm_             = latest_wall_state_.side_error_norm;
+    side_error_prev_valid_            = true;
+    latest_steering_adjustment_degps_ = tof_wall::steeringAdjustmentDegps(
+        latest_wall_state_.side_error_norm, side_error_delta_norm_per_s);
     return latest_steering_adjustment_degps_;
 }
 
