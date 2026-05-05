@@ -21,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 // ============================================================================
 // Version and identification
@@ -61,10 +62,11 @@ bool startsNumericArg(const char* text)
     return std::isdigit(static_cast<unsigned char>(*text)) || *text == '.';
 }
 
-constexpr float PATH_DEFAULT_SPEED_MMPS   = DRIVERLAB_PATH_SPEED_MMPS;
-constexpr float PATH_DEFAULT_ACCEL_MMPS2  = DRIVERLAB_PATH_ACCEL_MMPS2;
-constexpr float PATH_DEFAULT_OMEGA_DEGPS  = DRIVERLAB_PATH_OMEGA_DEGPS;
-constexpr float PATH_DEFAULT_ALPHA_DEGPS2 = DRIVERLAB_PATH_ALPHA_DEGPS2;
+constexpr float PATH_DEFAULT_SPEED_MMPS       = DRIVERLAB_PATH_SPEED_MMPS;
+constexpr float PATH_DEFAULT_ACCEL_MMPS2      = DRIVERLAB_PATH_ACCEL_MMPS2;
+constexpr float PATH_DEFAULT_OMEGA_DEGPS      = DRIVERLAB_PATH_OMEGA_DEGPS;
+constexpr float PATH_DEFAULT_ALPHA_DEGPS2     = DRIVERLAB_PATH_ALPHA_DEGPS2;
+constexpr float DRIVERLAB_NO_SPEED_LIMIT_MMPS = std::numeric_limits<float>::max();
 } // namespace
 
 // ============================================================================
@@ -1214,9 +1216,9 @@ bool DriverLab::parsePathChunk(const char* chunk)
                 return false;
             }
             if (token == 'L')
-                appendPathTurn(-90.0f);
-            else if (token == 'R')
                 appendPathTurn(90.0f);
+            else if (token == 'R')
+                appendPathTurn(-90.0f);
             else
                 appendPathTurn(180.0f);
             continue;
@@ -2043,6 +2045,8 @@ void DriverLab::executeCommand(const DriverLabArgs& args)
         cmdTurnStep(args);
     else if (strcmp(cmd, "PATH") == 0)
         cmdPath(args);
+    else if (strcmp(cmd, "CENTER") == 0 || strcmp(cmd, "STARTCENTER") == 0)
+        cmdCenter(args);
     else if (strcmp(cmd, "ROT_ZETA") == 0)
         cmdSetRotZeta(args);
     else if (strcmp(cmd, "ROT_TD") == 0)
@@ -2140,7 +2144,9 @@ void DriverLab::cmdHelp()
     printf("       +deg=CCW(left), -deg=CW(right)\n");
     printf("  PATH seq [spd acc omg alp]      Blind path, defaults use config test speeds\n");
     printf("       examples: PATH FFFFLFFFFLFFF | PATH F4#L#F4#L#F3\n");
-    printf("       tokens: F/Fn forward cells, L=-90, R=+90, B=180\n");
+    printf("       tokens: F/Fn forward cells, L=left 90, R=right 90, B=180\n");
+    printf("  CENTER [spd acc]                Wall/start to cell center (%.1f mm)\n",
+           START_CENTER_DISTANCE_MM);
     printf("  TURNOL  [max step settle_ms]    Rotation OL sweep  (default: 3 0.5 800)\n");
     printf("  TURNSTEP [diff_v duration_ms]   Rotation step      (default: 1.5 1000)\n");
     printf("\n");
@@ -2668,7 +2674,7 @@ void DriverLab::cmdPath(const DriverLabArgs& args)
     int param = first_param_index;
     if (param < args.argc)
     {
-        if (!parseFloat(args, param, 1.0f, 1000.0f, speed))
+        if (!parseFloat(args, param, 1.0f, DRIVERLAB_NO_SPEED_LIMIT_MMPS, speed))
             return;
         ++param;
     }
@@ -2699,6 +2705,33 @@ void DriverLab::cmdPath(const DriverLabArgs& args)
     }
 
     startPathTrial(speed, accel, omega, alpha);
+}
+
+void DriverLab::cmdCenter(const DriverLabArgs& args)
+{
+    if (trial_ != TrialState::Idle)
+    {
+        printf("A trial is already running. Send X first.\n");
+        return;
+    }
+
+    float speed = PATH_DEFAULT_SPEED_MMPS;
+    float accel = PATH_DEFAULT_ACCEL_MMPS2;
+
+    if (args.argc > 1 && !parseFloat(args, 1, 1.0f, DRIVERLAB_NO_SPEED_LIMIT_MMPS, speed))
+        return;
+    if (args.argc > 2 && !parseFloat(args, 2, 1.0f, 5000.0f, accel))
+        return;
+    if (args.argc > 3)
+    {
+        printf("CENTER usage: CENTER [speed_mmps] [accel_mmps2]\n");
+        return;
+    }
+
+    path_.segments.clear();
+    path_.segments.push_back({PathSegmentType::Forward, START_CENTER_DISTANCE_MM});
+    printf("CENTER distance: %.1f mm\n", START_CENTER_DISTANCE_MM);
+    startPathTrial(speed, accel, PATH_DEFAULT_OMEGA_DEGPS, PATH_DEFAULT_ALPHA_DEGPS2);
 }
 
 void DriverLab::cmdSetRotZeta(const DriverLabArgs& args)

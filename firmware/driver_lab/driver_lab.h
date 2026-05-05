@@ -117,6 +117,7 @@ class DriverLab
     void cmdTurnOpenLoop(const DriverLabArgs& args);
     void cmdTurnStep(const DriverLabArgs& args);
     void cmdPath(const DriverLabArgs& args);
+    void cmdCenter(const DriverLabArgs& args);
     void cmdSetRotZeta(const DriverLabArgs& args);
     void cmdSetRotTd(const DriverLabArgs& args);
     void cmdSetTurnKp(const DriverLabArgs& args);
