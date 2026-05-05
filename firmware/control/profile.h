@@ -46,6 +46,7 @@ class Profile
     float position() const { return current_position_; }
     float remaining() const;
     bool  finished() const { return state_ == State::Finished; }
+    bool  active() const { return state_ != State::Idle && state_ != State::Finished; }
     State state() const { return state_; }
 
     void reset();

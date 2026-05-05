@@ -3,12 +3,12 @@
  *
  * Two top-level operating modes:
  *
- *   1. DriverLab (default)
+ *   1. DriverLab (press 'M' within 3 s of boot)
  *        Single-core motor characterization CLI. Core 0 owns motors,
  *        encoders, IMU, and either ToFs or the line sensor (mutually
  *        exclusive on I2C0).
  *
- *   2. Cli (press 'N' within 3 s of boot)
+ *   2. Cli (default)
  *        UKMARS mazerunner-core-style command loop. Same dispatch table
  *        for both ToF and LineSensor sub-modes:
  *          - TOF        : Core 1 launches and runs `Robot` at 500 Hz;
@@ -17,8 +17,8 @@
  *                         `LineFollower`.
  *
  * At boot:
- *   Press 'N' within 3 s → prompt for sensor mode (T/L), then run Cli.
- *   Else → DriverLab.
+ *   Press 'M' within 3 s → DriverLab.
+ *   Else → prompt for sensor mode (T/L), then run Cli.
  */
 
 #include <array>
@@ -248,8 +248,8 @@ static bool selectDriverLab(uint32_t timeout_ms)
     printf("\n==========================================\n");
     printf("  Jurababa -- boot\n");
     printf("==========================================\n");
-    printf("  Press 'N' within %lu s for Normal CLI Mode.\n", timeout_ms / 1000);
-    printf("  Otherwise DriverLab will start (default).\n");
+    printf("  Press 'M' within %lu s for DriverLab Mode.\n", timeout_ms / 1000);
+    printf("  Otherwise Normal CLI will start (default).\n");
     printf("==========================================\n\n");
 
     uint32_t start_ms        = to_ms_since_boot(get_absolute_time());
@@ -260,18 +260,18 @@ static bool selectDriverLab(uint32_t timeout_ms)
         uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - start_ms;
         if (elapsed >= timeout_ms)
         {
-            printf("\n*** DriverLab selected (default) ***\n\n");
-            return true;
+            printf("\n*** Normal CLI Mode selected (default) ***\n\n");
+            return false;
         }
 
         int c = getchar_timeout_us(100000);
         if (c != PICO_ERROR_TIMEOUT)
         {
             char ch = static_cast<char>(c);
-            if (ch == 'N' || ch == 'n')
+            if (ch == 'M' || ch == 'm')
             {
-                printf("\n*** Normal CLI Mode selected ***\n\n");
-                return false;
+                printf("\n*** DriverLab selected ***\n\n");
+                return true;
             }
         }
 
@@ -414,6 +414,7 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
     static Maze                     maze(MAZE_SIZE, MAZE_SIZE);
     static Mouse                    mouse(start_cell, std::string("n"), goal_cells, &maze);
     static FirmwareApi              api(&mouse);
+    api.setUp(start_cell, goal_cells);
 
     // LineFollower stack — only built in LineSensor mode (Core 1 stays
     // dormant so this side owns the H-bridge).

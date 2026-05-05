@@ -106,7 +106,6 @@ void CommandLineInterface::handle_backspace()
 
     --line_index_;
     line_buffer_[line_index_] = '\0';
-    printf("\b \b");
 }
 
 void CommandLineInterface::add_to_buffer(char c)
@@ -114,7 +113,6 @@ void CommandLineInterface::add_to_buffer(char c)
     if (line_index_ >= LINE_BUFFER_SIZE - 1)
         return;
 
-    putchar(c);
     line_buffer_[line_index_++] = c;
     line_buffer_[line_index_]   = '\0';
 }
@@ -571,8 +569,7 @@ void CommandLineInterface::help()
     printf("D : display maze with directions\n");
     printf("B : show battery voltage\n");
     printf("S : show sensor readings\n");
-    printf("E : show encoder/IMU readings\n");
-    printf("Q : show encoder/IMU readings\n");
+    printf("E/Q : show encoder/IMU readings\n");
     printf("F n : Run user function n\n");
     printf(" 0 = ---\n");
     printf(" 1 = Sensor Static Calibration\n");

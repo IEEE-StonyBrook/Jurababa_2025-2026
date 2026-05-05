@@ -98,7 +98,7 @@ void Robot::start_move(float distance_mm, float top_speed_mmps, float final_spee
 
 bool Robot::move_finished() const
 {
-    return forward_.finished();
+    return !forward_.active();
 }
 
 void Robot::move(float distance_mm, float top_speed_mmps, float final_speed_mmps, float accel_mmps2)
@@ -115,7 +115,7 @@ void Robot::start_turn(float degrees, float top_speed_degps, float final_speed_d
 
 bool Robot::turn_finished() const
 {
-    return rotation_.finished();
+    return !rotation_.active();
 }
 
 void Robot::turn(float degrees, float top_speed_degps, float final_speed_degps, float accel_degps2)
@@ -191,6 +191,16 @@ void Robot::update()
 
 void Robot::runPositionControl()
 {
+    if (!forward_.active() && !rotation_.active())
+    {
+        drivetrain_->stop();
+        forward_controller_.reset();
+        rotation_controller_.reset();
+        prev_left_cmd_vel_mmps_  = 0.0f;
+        prev_right_cmd_vel_mmps_ = 0.0f;
+        return;
+    }
+
     float fwd_change_mm  = drivetrain_->fwdChangeMm();
     float rot_change_deg = imu_->robot_rot_change(); // per-tick delta (omega * dt)
     float fwd_velocity   = forward_.velocity();
