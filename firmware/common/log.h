@@ -22,10 +22,12 @@ class Log
     static void message(LogPriority priority, std::string msg);
     static void setBluetoothInterface(Bluetooth* bt);
     static void setBluetoothEnabled(bool enabled);
+    static void setBluetoothPriority(LogPriority priority);
     static bool isBluetoothEnabled();
 
   private:
     static LogPriority print_priority_level_;
+    static LogPriority bluetooth_priority_level_;
     static Bluetooth*  bluetooth_;
     static bool        bluetooth_enabled_;
 };

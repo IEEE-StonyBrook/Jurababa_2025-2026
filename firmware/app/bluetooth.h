@@ -5,6 +5,7 @@
 #include <string>
 
 #include "hardware/uart.h"
+#include "pico/critical_section.h"
 
 /**
  * @brief Non-blocking Bluetooth serial interface using UART with interrupt-driven RX
@@ -64,7 +65,7 @@ class Bluetooth
     static void rxInterruptHandler();
     void        processChar(char c);
     void        enqueueByte(uint8_t byte);
-    uint16_t    ringDepth() const;
+    uint16_t    ringDepthLocked() const;
 
     uart_inst_t* uart_;
     uint32_t     baud_rate_;
@@ -76,11 +77,12 @@ class Bluetooth
 
     static constexpr uint16_t TX_RING_SIZE = 2048;
 
-    static uint8_t    tx_ring_[TX_RING_SIZE];
-    volatile uint16_t tx_head_          = 0;
-    volatile uint16_t tx_tail_          = 0;
-    volatile uint16_t max_tx_depth_     = 0;
-    volatile uint32_t dropped_tx_bytes_ = 0;
+    static uint8_t             tx_ring_[TX_RING_SIZE];
+    mutable critical_section_t tx_lock_;
+    volatile uint16_t          tx_head_          = 0;
+    volatile uint16_t          tx_tail_          = 0;
+    volatile uint16_t          max_tx_depth_     = 0;
+    volatile uint32_t          dropped_tx_bytes_ = 0;
 };
 
 #endif

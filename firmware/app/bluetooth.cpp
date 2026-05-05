@@ -14,6 +14,7 @@ Bluetooth::Bluetooth(uart_inst_t* uart, uint32_t baud_rate, uint8_t tx_pin, uint
     : uart_(uart), baud_rate_(baud_rate), tx_pin_(tx_pin), rx_pin_(rx_pin),
       pending_command_(Command::NONE), command_ready_(false)
 {
+    critical_section_init(&tx_lock_);
     instance_ = this;
 }
 
@@ -62,22 +63,35 @@ void Bluetooth::writeBytes(const uint8_t* data, size_t length)
 
     for (size_t i = 0; i < length; ++i)
         enqueueByte(data[i]);
-
-    drain();
 }
 
 void Bluetooth::drain()
 {
-    while (tx_tail_ != tx_head_ && uart_is_writable(uart_))
+    while (uart_is_writable(uart_))
     {
-        uart_putc_raw(uart_, tx_ring_[tx_tail_]);
+        uint8_t byte = 0;
+
+        critical_section_enter_blocking(&tx_lock_);
+        if (tx_tail_ == tx_head_)
+        {
+            critical_section_exit(&tx_lock_);
+            break;
+        }
+
+        byte     = tx_ring_[tx_tail_];
         tx_tail_ = static_cast<uint16_t>((tx_tail_ + 1) % TX_RING_SIZE);
+        critical_section_exit(&tx_lock_);
+
+        uart_putc_raw(uart_, byte);
     }
 }
 
 Bluetooth::Diagnostics Bluetooth::diagnostics() const
 {
-    return {ringDepth(), max_tx_depth_, dropped_tx_bytes_};
+    critical_section_enter_blocking(&tx_lock_);
+    Diagnostics diag = {ringDepthLocked(), max_tx_depth_, dropped_tx_bytes_};
+    critical_section_exit(&tx_lock_);
+    return diag;
 }
 
 bool Bluetooth::hasCommand() const
@@ -137,22 +151,27 @@ void Bluetooth::processChar(char c)
 
 void Bluetooth::enqueueByte(uint8_t byte)
 {
+    critical_section_enter_blocking(&tx_lock_);
+
     uint16_t next = static_cast<uint16_t>((tx_head_ + 1) % TX_RING_SIZE);
     if (next == tx_tail_)
     {
         ++dropped_tx_bytes_;
+        critical_section_exit(&tx_lock_);
         return;
     }
 
     tx_ring_[tx_head_] = byte;
     tx_head_           = next;
 
-    uint16_t depth = ringDepth();
+    uint16_t depth = ringDepthLocked();
     if (depth > max_tx_depth_)
         max_tx_depth_ = depth;
+
+    critical_section_exit(&tx_lock_);
 }
 
-uint16_t Bluetooth::ringDepth() const
+uint16_t Bluetooth::ringDepthLocked() const
 {
     if (tx_head_ >= tx_tail_)
         return static_cast<uint16_t>(tx_head_ - tx_tail_);

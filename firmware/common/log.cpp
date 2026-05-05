@@ -4,9 +4,10 @@
 #include "app/bluetooth.h"
 #endif
 
-LogPriority Log::print_priority_level_ = LogPriority::DEBUG;
-Bluetooth*  Log::bluetooth_            = nullptr;
-bool        Log::bluetooth_enabled_    = false;
+LogPriority Log::print_priority_level_     = LogPriority::DEBUG;
+LogPriority Log::bluetooth_priority_level_ = LogPriority::INFO;
+Bluetooth*  Log::bluetooth_                = nullptr;
+bool        Log::bluetooth_enabled_        = false;
 
 void Log::message(LogPriority priority, std::string msg)
 {
@@ -43,7 +44,8 @@ void Log::message(LogPriority priority, std::string msg)
 #endif
 
 #ifdef PICO_BUILD
-    if (bluetooth_enabled_ && bluetooth_ != nullptr)
+    if (bluetooth_enabled_ && bluetooth_ != nullptr &&
+        static_cast<int>(priority) >= static_cast<int>(bluetooth_priority_level_))
     {
         bluetooth_->write(final_msg + "\r\n");
     }
@@ -58,6 +60,11 @@ void Log::setBluetoothInterface(Bluetooth* bt)
 void Log::setBluetoothEnabled(bool enabled)
 {
     bluetooth_enabled_ = enabled;
+}
+
+void Log::setBluetoothPriority(LogPriority priority)
+{
+    bluetooth_priority_level_ = priority;
 }
 
 bool Log::isBluetoothEnabled()

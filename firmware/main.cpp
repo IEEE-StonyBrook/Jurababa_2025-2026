@@ -405,7 +405,9 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
     Bluetooth bluetooth(uart0, 115200, PIN_BT_TX, PIN_BT_RX);
     bluetooth.init();
     bluetooth.write("=== Jurababa CLI ===\r\n");
+    bluetooth.drain();
     Log::setBluetoothInterface(&bluetooth);
+    Log::setBluetoothPriority(LogPriority::INFO);
     Log::setBluetoothEnabled(true);
 
     // Maze + virtual mouse + wall bridge live on Core 0 in both sub-modes.

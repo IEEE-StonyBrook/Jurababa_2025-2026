@@ -28,6 +28,10 @@ namespace PathUtils
 bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
                   bool diagonals, bool all_explored, bool avoid_goals);
 
+// Execute one diagonalized speed path using only cells already explored.
+bool traverseExploredDiagonalPath(API* api, Mouse* mouse,
+                                  const std::vector<std::array<int, 2>>& goals);
+
 /**
  * @brief Mark all cells in maze as explored
  * @param mouse Mouse with maze reference

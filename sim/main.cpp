@@ -3,9 +3,9 @@
  * @brief Micromouse Three-Phase Competition Simulator
  *
  * Simulates a competition run with mms (Micromouse Simulator):
- *   1. Exploration: Flood-fill search to map maze
- *   2. Return: A* without diagonals back to start
- *   3. Speed Run: A* with diagonals for optimal time
+ *   1. Search: iterative A* without diagonals to the goal
+ *   2. Return: iterative A* without diagonals back to start
+ *   3. Speed Run: diagonalized A* for optimal time
  */
 
 #include <array>
@@ -16,7 +16,6 @@
 #include "config/geometry.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
-#include "navigation/flood_fill.h"
 #include "navigation/path_utils.h"
 
 int main()
@@ -33,24 +32,26 @@ int main()
     api.run_on_simulator = true;
     api.setUp(start, goals);
 
-    // Phase 1: EXPLORATION - Map entire maze using flood-fill search
-    LOG_INFO("Phase 1: Exploration (Flood-Fill)");
+    // Phase 1: SEARCH - Iterative A* to the goal, sensing walls and replanning
+    // whenever the path reaches an unexplored cell.
+    LOG_INFO("Phase 1: Search to Goal (Iterative A* without diagonals)");
     api.setPhaseColor('y');
-    FloodFill::explore(mouse, api, false);
-    LOG_INFO("Maze fully explored\n");
+    PathUtils::traversePath(&api, &mouse, goals, /*diagonals=*/false,
+                            /*all_explored=*/false, /*avoid_goals=*/false);
+    LOG_INFO("Reached goal\n");
 
-    // Phase 2: RETURN - Go back to start using discovered layout (no diagonals)
-    LOG_INFO("Phase 2: Return to Start (A* without diagonals)");
+    // Phase 2: RETURN - Go back to start using iterative A* with no diagonals.
+    LOG_INFO("Phase 2: Return to Start (Iterative A* without diagonals)");
     api.clearAllColor();
     api.setPhaseColor('c');
-    PathUtils::setAllExplored(&mouse);
-    PathUtils::traversePath(&api, &mouse, {start}, false, true, false);
+    PathUtils::traversePath(&api, &mouse, {start}, /*diagonals=*/false,
+                            /*all_explored=*/false, /*avoid_goals=*/false);
     LOG_INFO("Returned to start\n");
 
-    // Phase 3: SPEED RUN - Optimal path to goal with diagonals
-    LOG_INFO("Phase 3: Speed Run (A* with diagonals)");
+    // Phase 3: SPEED RUN - Diagonalized A* over the discovered wall map.
+    LOG_INFO("Phase 3: Speed Run (Diagonalized A*)");
     api.setPhaseColor('G');
-    PathUtils::traversePath(&api, &mouse, goals, true, true, false);
+    PathUtils::traverseExploredDiagonalPath(&api, &mouse, goals);
     LOG_INFO("Speed run complete\n");
 
     LOG_INFO("=== SIMULATION COMPLETE ===");
