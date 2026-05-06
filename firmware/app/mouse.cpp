@@ -442,7 +442,6 @@ void Mouse::move_ahead()
     if (run_on_simulator)
     {
         simulatorResponse("moveForward");
-        maze_mouse_->moveForward(1);
         return;
     }
 #ifndef SIMULATOR_BUILD
@@ -455,7 +454,6 @@ void Mouse::move_ahead()
         return;
     motion_->set_position(SENSING_POSITION_MM);
 #endif
-    maze_mouse_->moveForward(1);
 }
 
 void Mouse::turn_left()
@@ -475,6 +473,8 @@ void Mouse::turn_left()
         if (!adjustPosition())
             return;
         turn_IP90L();
+        if (run_on_simulator)
+            simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
         if (!run_on_simulator && motion_ != nullptr)
         {
@@ -506,6 +506,8 @@ void Mouse::turn_right()
         if (!adjustPosition())
             return;
         turn_IP90R();
+        if (run_on_simulator)
+            simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
         if (!run_on_simulator && motion_ != nullptr)
         {
@@ -527,6 +529,8 @@ void Mouse::turn_back()
     if (!adjustPosition())
         return;
     turn_IP180();
+    if (run_on_simulator)
+        simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
     if (!run_on_simulator && motion_ != nullptr)
     {
@@ -696,6 +700,9 @@ void Mouse::update_map()
     cell->updateWallState(front[0], wallFront() ? WALL : EXIT);
     cell->updateWallState(left[0], wallLeft() ? WALL : EXIT);
     cell->updateWallState(right[0], wallRight() ? WALL : EXIT);
+    LOG_INFO("update_map: cell=(" + std::to_string(x) + "," + std::to_string(y) + ") heading=" +
+             headingUpper(maze_mouse_->currentDirection()) + " walls=" + (wallLeft() ? "L" : "-") +
+             (wallFront() ? "F" : "-") + (wallRight() ? "R" : "-"));
 
     if (run_on_simulator)
     {
@@ -718,6 +725,33 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
     MouseMotionSequenceGuard motion_sequence(this);
     state_ = movement_style_ == MovementStyle::Smooth ? State::SMOOTH_RUN : State::SEARCHING;
     maze_mouse_->setMazeMask(MASK_OPEN);
+
+    if (!m_handStart)
+    {
+        Cell* current = maze_mouse_->currentCell();
+        if (current == nullptr)
+            return false;
+
+        for (const auto& goal : goals)
+        {
+            if (current->x() == goal[0] && current->y() == goal[1])
+                return true;
+        }
+
+        AStar              initial_a_star(maze_mouse_);
+        std::vector<Cell*> initial_path = initial_a_star.cellPath(goals, /*diagonals=*/false,
+                                                                  /*pass_goals=*/true);
+        if (initial_path.empty())
+        {
+            LOG_ERROR("search_to: no initial route from (" + std::to_string(current->x()) + "," +
+                      std::to_string(current->y()) + ")");
+            return false;
+        }
+
+        const std::string initial_heading = headingToNeighbor(current, initial_path.front());
+        if (!initial_heading.empty() && !turn_to_face(initial_heading))
+            return false;
+    }
 
 #ifndef SIMULATOR_BUILD
     if (!run_on_simulator)
@@ -743,13 +777,18 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         motion_->set_position(SENSING_POSITION_MM);
     }
 #endif
+    if (run_on_simulator)
+        simulatorResponse("moveForward");
 
     int step = 1;
     while (true)
     {
+        maze_mouse_->moveForward(1);
         Cell* current = maze_mouse_->currentCell();
         if (current == nullptr)
             return false;
+
+        update_map();
 
         bool reached_goal = false;
         for (const auto& goal : goals)
@@ -771,8 +810,6 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
             state_ = State::FINISHED;
             return true;
         }
-
-        update_map();
 
         AStar              a_star(maze_mouse_);
         std::vector<Cell*> cell_path = a_star.cellPath(goals, /*diagonals=*/false,
@@ -796,8 +833,8 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
 #endif
         LOG_INFO("search_to step=" + std::to_string(step) + " cell=(" +
                  std::to_string(current->x()) + "," + std::to_string(current->y()) +
-                 ") heading=" + headingUpper(maze_mouse_->currentDirection()) + " lfr=" + lfr +
-                 " action=" + action + " position_mm=" + position_text);
+                 ") heading=" + headingUpper(maze_mouse_->currentDirection()) +
+                 " entered=1 lfr=" + lfr + " action=" + action + " position_mm=" + position_text);
         log_action_status(action, current, position_text);
 
         if (action == "F")
@@ -1035,13 +1072,20 @@ bool Mouse::follow_to(const std::vector<std::array<int, 2>>& goals)
         motion_->set_steering_mode(tof_wall::SteeringMode::STEER_NORMAL);
     }
 #endif
+    if (run_on_simulator)
+        simulatorResponse("moveForward");
 
     const int max_steps = mazeWidth() * mazeHeight() * 8;
     for (int step = 0; step < max_steps && !atAnyGoal(maze_mouse_, goals); ++step)
     {
+        maze_mouse_->moveForward(1);
         update_map();
         LOG_INFO("follow_to step=" + std::to_string(step + 1) + " action=left-wall");
-        if (!see_left_wall())
+        if (atAnyGoal(maze_mouse_, goals))
+        {
+            // We are entering the target cell; let the final stop centre it.
+        }
+        else if (!see_left_wall())
             turn_left();
         else if (!see_front_wall())
             move_ahead();
@@ -1093,14 +1137,21 @@ bool Mouse::wander_to(const std::vector<std::array<int, 2>>& goals)
         motion_->set_steering_mode(tof_wall::SteeringMode::STEER_NORMAL);
     }
 #endif
+    if (run_on_simulator)
+        simulatorResponse("moveForward");
 
     const int max_steps = mazeWidth() * mazeHeight() * 8;
     for (int step = 0; step < max_steps && !atAnyGoal(maze_mouse_, goals); ++step)
     {
+        maze_mouse_->moveForward(1);
         update_map();
         const std::string action = randomHeading();
         LOG_INFO("wander_to step=" + std::to_string(step + 1) + " action=" + action);
-        if (action == "F")
+        if (atAnyGoal(maze_mouse_, goals))
+        {
+            // We are entering the target cell; let the final stop centre it.
+        }
+        else if (action == "F")
             move_ahead();
         else if (action == "L")
             turn_left();
@@ -1445,9 +1496,14 @@ void Mouse::executeSequence(const std::string& sequence)
         if (token == "F")
         {
             if (movement_style_ == MovementStyle::Smooth)
+            {
                 move_ahead();
+                maze_mouse_->moveForward(1);
+            }
             else
+            {
                 moveForward();
+            }
             continue;
         }
 
@@ -1533,7 +1589,10 @@ void Mouse::executeSequence(const std::string& sequence)
                 if (movement_style_ == MovementStyle::Smooth)
                 {
                     for (int step = 0; step < steps; ++step)
+                    {
                         move_ahead();
+                        maze_mouse_->moveForward(1);
+                    }
                 }
                 else
                 {
@@ -1651,7 +1710,10 @@ void Mouse::setUp(std::array<int, 2> start, std::vector<std::array<int, 2>> goal
     // facing north, with the east wall present and the north side known open.
     setWall(start[0], start[1], "e");
     if (Cell* start_cell = maze_mouse_->cellAt(start[0], start[1]))
+    {
         start_cell->updateWallState('N', EXIT);
+        start_cell->markExplored();
+    }
 
     // Add grid labels
     for (int i = 0; i < mazeWidth(); i++)
