@@ -280,7 +280,10 @@ void Motion::update()
 
 void Motion::runPositionControl()
 {
-    if (!forward_.active() && !rotation_.active())
+    const bool forward_commanded  = forward_.active() || std::fabs(forward_.velocity()) > 1e-3f;
+    const bool rotation_commanded = rotation_.active() || std::fabs(rotation_.velocity()) > 1e-3f;
+
+    if (!forward_commanded && !rotation_commanded)
     {
         drivetrain_->stop();
         if (motion_sequence_active_)
@@ -308,7 +311,7 @@ void Motion::runPositionControl()
     // that the old 100 Hz gate produced in rotation_output_ and stops the
     // step-input-driven oscillation on spin turns.
     const float forward_output =
-        forward_.active() ? forward_controller_.update(fwd_velocity, fwd_change_mm) : 0.0f;
+        forward_commanded ? forward_controller_.update(fwd_velocity, fwd_change_mm) : 0.0f;
     const float steering_adjustment =
         (TOF_STEERING_ENABLE && steering_mode_ != tof_wall::SteeringMode::STEERING_OFF)
             ? wallSteeringAdjustment(fwd_velocity, rot_velocity)

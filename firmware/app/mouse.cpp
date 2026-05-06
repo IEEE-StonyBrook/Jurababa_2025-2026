@@ -614,7 +614,7 @@ bool Mouse::wait_until_position(float position_mm)
 #ifndef SIMULATOR_BUILD
     if (motion_ == nullptr)
         return false;
-    while (motion_->position() < position_mm && !motion_->move_finished())
+    while (motion_->position() < position_mm)
     {
         serviceSensors();
         if (haltRequested())
@@ -761,6 +761,9 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         motion_->set_steering_mode(tof_wall::SteeringMode::STEERING_OFF);
         if (m_handStart)
         {
+            LOG_INFO("search_to: hand_start distance_mm=" + fixed1(START_CENTER_DISTANCE_MM) +
+                     " set_position_mm=" + fixed1(HALF_CELL_MM) +
+                     " sensing_position_mm=" + fixed1(SENSING_POSITION_MM));
             motion_->move(START_CENTER_DISTANCE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
                           ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
             waitForMotion();
@@ -769,10 +772,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
             m_handStart = false;
         }
         motion_->set_position(HALF_CELL_MM);
-        motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                      ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
-        waitForMotion();
-        if (haltRequested())
+        if (!wait_until_position(SENSING_POSITION_MM))
             return false;
         motion_->set_position(SENSING_POSITION_MM);
     }

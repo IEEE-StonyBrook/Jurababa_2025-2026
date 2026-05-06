@@ -56,18 +56,24 @@ float Profile::remaining() const
 
 void Profile::update()
 {
-    if (state_ == State::Idle || state_ == State::Finished)
+    if (state_ == State::Idle)
         return;
 
-    float delta_v        = acceleration_ * LOOP_INTERVAL_S;
-    float remaining_dist = remaining();
+    const float delta_v           = acceleration_ * LOOP_INTERVAL_S;
+    const float remaining_dist    = remaining();
+    const float previous_position = current_position_;
 
-    if (state_ == State::Accelerating && remaining_dist <= brakingDistance())
+    if (state_ != State::Finished && state_ == State::Accelerating &&
+        remaining_dist <= brakingDistance())
     {
         state_ = State::Braking;
     }
 
-    if (state_ == State::Braking)
+    if (state_ == State::Finished)
+    {
+        target_speed_ = direction_ * final_speed_;
+    }
+    else if (state_ == State::Braking)
     {
         const float finish_speed = (final_speed_ == 0.0f) ? 5.0f : final_speed_;
         target_speed_            = direction_ * finish_speed;
@@ -96,11 +102,17 @@ void Profile::update()
     current_acceleration_ = (current_velocity_ - old_velocity) * LOOP_FREQUENCY_HZ;
     current_position_ += current_velocity_ * LOOP_INTERVAL_S;
 
-    if (remaining() < 0.125f)
+    const bool crossed_target = (direction_ > 0 && previous_position <= target_distance_ &&
+                                 current_position_ >= target_distance_) ||
+                                (direction_ < 0 && previous_position >= target_distance_ &&
+                                 current_position_ <= target_distance_);
+
+    if (state_ != State::Finished && (remaining() < 0.125f || crossed_target))
     {
         current_position_     = target_distance_;
         current_velocity_     = direction_ * final_speed_;
         current_acceleration_ = 0.0f;
+        target_speed_         = direction_ * final_speed_;
         state_                = State::Finished;
     }
 }
@@ -139,8 +151,6 @@ void Profile::extendTarget(float distance)
 void Profile::setPosition(float position)
 {
     current_position_ = position;
-    target_distance_  = position;
-    direction_        = (position >= 0.0f) ? 1 : -1;
 }
 
 void Profile::adjustPosition(float delta)
