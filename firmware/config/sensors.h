@@ -41,7 +41,7 @@
 // adjacent cell walls. The front threshold is the SEARCH mapping threshold at
 // SENSING_POSITION_MM, and is intentionally separate from the smooth-turn
 // front trigger and the front-wall centering reference.
-#define TOF_SIDE_WALL_MARGIN_MM     40.0f
+#define TOF_SIDE_WALL_MARGIN_MM     50.0f
 #define TOF_LEFT_WALL_THRESHOLD_MM  (TOF_LEFT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
 #define TOF_RIGHT_WALL_THRESHOLD_MM (TOF_RIGHT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
 #define TOF_FRONT_WALL_THRESHOLD_MM 140.0f
