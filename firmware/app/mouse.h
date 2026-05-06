@@ -188,6 +188,7 @@ class Mouse
     std::vector<std::array<int, 2>> goal_cells_ = {};
 
   private:
+    void        turn_to_cardinal_yaw(const std::string& target_heading);
     std::string simulatorResponse(const std::string& cmd);
     bool        simulatorBool(const std::string& cmd);
     std::string printMazeRow(int row);

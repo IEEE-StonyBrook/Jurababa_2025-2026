@@ -99,6 +99,24 @@ float expectedYawForHeading(const std::string& heading)
     return 0.0f;
 }
 
+std::string cardinalAfterHalfSteps(const std::string& heading, int half_steps_right)
+{
+    static constexpr const char* kCardinalHeadings[] = {"n", "e", "s", "w"};
+    int                          index               = 0;
+    if (heading == "e" || heading == "E")
+        index = 1;
+    else if (heading == "s" || heading == "S")
+        index = 2;
+    else if (heading == "w" || heading == "W")
+        index = 3;
+
+    const int cardinal_steps_right = half_steps_right / 2;
+    index                          = (index + cardinal_steps_right) % 4;
+    if (index < 0)
+        index += 4;
+    return kCardinalHeadings[index];
+}
+
 std::string headingUpper(const std::string& heading)
 {
     std::string out = heading;
@@ -488,6 +506,25 @@ void Mouse::move_ahead()
 #endif
 }
 
+void Mouse::turn_to_cardinal_yaw(const std::string& target_heading)
+{
+    if (run_on_simulator)
+        return;
+#ifndef SIMULATOR_BUILD
+    if (motion_ == nullptr)
+        return;
+
+    const float target_yaw_deg  = expectedYawForHeading(target_heading);
+    const float current_yaw_deg = motion_->angle();
+    const float delta_deg       = normalizeYawDelta(target_yaw_deg - current_yaw_deg);
+    LOG_INFO("SEARCH TURN target=" + headingUpper(target_heading) +
+             " yaw=" + fixed1(current_yaw_deg) + " target_yaw=" + fixed1(target_yaw_deg) +
+             " delta=" + signedFixed1(delta_deg));
+    motion_->spin_turn(delta_deg, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    waitForMotion();
+#endif
+}
+
 void Mouse::turn_left()
 {
     if (movement_style_ == MovementStyle::Smooth)
@@ -504,7 +541,7 @@ void Mouse::turn_left()
             return;
         if (!adjustPosition())
             return;
-        turn_IP90L();
+        turn_to_cardinal_yaw(maze_mouse_->directionLeft());
         if (run_on_simulator)
             simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
@@ -537,7 +574,7 @@ void Mouse::turn_right()
             return;
         if (!adjustPosition())
             return;
-        turn_IP90R();
+        turn_to_cardinal_yaw(maze_mouse_->directionRight());
         if (run_on_simulator)
             simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
@@ -560,7 +597,7 @@ void Mouse::turn_back()
         return;
     if (!adjustPosition())
         return;
-    turn_IP180();
+    turn_to_cardinal_yaw(cardinalAfterHalfSteps(maze_mouse_->currentDirection(), 4));
     if (run_on_simulator)
         simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
