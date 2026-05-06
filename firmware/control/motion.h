@@ -41,6 +41,12 @@ class Motion
     float                  rightDistance();
     tof_wall::WallState    wallSteeringState() const;
     float                  wallSteeringAdjustmentDegps() const;
+    void                   set_heading_hold(float target_yaw_deg);
+    void                   clear_heading_hold();
+    bool                   headingHoldActive() const;
+    float                  headingHoldTargetYawDeg() const;
+    float                  headingHoldErrorDeg() const;
+    float                  headingHoldAdjustmentDegps() const;
 
     // === Mazerunner-core compatible motion names ===
     void    reset_drive_system();
@@ -87,6 +93,7 @@ class Motion
   private:
     void  runPositionControl();
     float wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps);
+    float headingHoldAdjustment(float fwd_velocity_mmps, float rot_velocity_degps);
     void  resetControlHistory();
 
     // Hardware
@@ -125,6 +132,11 @@ class Motion
     float                  latest_steering_adjustment_degps_ = 0.0f;
     float                  side_error_prev_norm_             = 0.0f;
     bool                   side_error_prev_valid_            = false;
+
+    bool  heading_hold_enabled_                 = false;
+    float heading_hold_target_yaw_deg_          = 0.0f;
+    float latest_heading_hold_error_deg_        = 0.0f;
+    float latest_heading_hold_adjustment_degps_ = 0.0f;
 };
 
 #endif

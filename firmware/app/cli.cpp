@@ -80,6 +80,22 @@ bool parsePathSmoothFlag(const char* text, bool& smooth_turns)
     return false;
 }
 
+bool parsePathOption(const char* text, bool& smooth_turns, bool& raw_mode)
+{
+    if (equalsIgnoreCase(text, "RAW"))
+    {
+        raw_mode = true;
+        return true;
+    }
+    if (equalsIgnoreCase(text, "POSE") || equalsIgnoreCase(text, "HOLD") ||
+        equalsIgnoreCase(text, "HEADING"))
+    {
+        raw_mode = false;
+        return true;
+    }
+    return parsePathSmoothFlag(text, smooth_turns);
+}
+
 bool parseFloatArg(const Args& args, int index, float min_value, float max_value, float& value)
 {
     if (index < 0 || index >= args.argc)
@@ -400,6 +416,51 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         handle_stage_command(args);
         return;
     }
+    if (std::strcmp(args.argv[0], "SEARCHGOAL") == 0)
+    {
+        run_competition_stage(1, /*wait_for_start=*/true);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "RETURNSTART") == 0)
+    {
+        run_competition_stage(2, /*wait_for_start=*/true);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "FASTGOAL") == 0)
+    {
+        run_competition_stage(3, /*wait_for_start=*/true);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "FASTSTART") == 0)
+    {
+        run_competition_stage(4, /*wait_for_start=*/true);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "DIAGGOAL") == 0)
+    {
+        run_competition_stage(5, /*wait_for_start=*/true);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "SIMRUN") == 0)
+    {
+        if (!run_competition_stage(1, /*wait_for_start=*/true))
+        {
+            printFormat("SIMRUN failed at SEARCHGOAL.\n");
+            return;
+        }
+        if (!run_competition_stage(2, /*wait_for_start=*/false))
+        {
+            printFormat("SIMRUN failed at RETURNSTART.\n");
+            return;
+        }
+        if (!run_competition_stage(5, /*wait_for_start=*/false))
+        {
+            printFormat("SIMRUN failed at DIAGGOAL.\n");
+            return;
+        }
+        printFormat("SIMRUN done.\n");
+        return;
+    }
     if (std::strcmp(args.argv[0], "STYLE") == 0)
     {
         handle_style_command(args);
@@ -598,7 +659,7 @@ bool CommandLineInterface::parse_path_sequence(const Args& args, int first_param
 
 bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments, float speed_mmps,
                                              float accel_mmps2, float omega_degps,
-                                             float alpha_degps2, bool smooth_turns)
+                                             float alpha_degps2, bool smooth_turns, bool raw_mode)
 {
     if (deps_.mouse == nullptr || deps_.motion == nullptr)
     {
@@ -624,10 +685,11 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
     float expected_yaw_deg = 0.0f;
     float total_forward_mm = 0.0f;
 
-    printFormat("PATH segments=%lu speed=%.1f accel=%.1f omega=%.1f alpha=%.1f smooth=%s\n",
+    printFormat("PATH segments=%lu speed=%.1f accel=%.1f omega=%.1f alpha=%.1f smooth=%s raw=%s\n",
                 static_cast<unsigned long>(segments.size()), static_cast<double>(speed_mmps),
                 static_cast<double>(accel_mmps2), static_cast<double>(omega_degps),
-                static_cast<double>(alpha_degps2), smooth_turns ? "true" : "false");
+                static_cast<double>(alpha_degps2), smooth_turns ? "true" : "false",
+                raw_mode ? "true" : "false");
 
     for (size_t i = 0; i < segments.size(); ++i)
     {
@@ -640,12 +702,16 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
             printFormat("PATH %lu/%lu: F %.1f mm\n", static_cast<unsigned long>(i + 1),
                         static_cast<unsigned long>(segments.size()),
                         static_cast<double>(segment.value));
+            if (!raw_mode)
+                deps_.motion->set_heading_hold(normalizeYawDelta(expected_yaw_deg));
             deps_.motion->start_move(segment.value, speed_mmps, 0.0f, accel_mmps2);
             ok = wait_path_segment_motion();
             total_forward_mm += segment.value;
         }
         else if (segment.type == PathSegmentType::SmoothTurn)
         {
+            if (!raw_mode)
+                deps_.motion->clear_heading_hold();
             const int                   turn_id = segment.value >= 0.0f ? SS90L : SS90R;
             const SmoothTurnParameters& params  = SMOOTH_TURN_PARAMS[turn_id];
             printFormat(
@@ -659,6 +725,8 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
         }
         else
         {
+            if (!raw_mode)
+                deps_.motion->clear_heading_hold();
             printFormat("PATH %lu/%lu: TURN %.1f deg\n", static_cast<unsigned long>(i + 1),
                         static_cast<unsigned long>(segments.size()),
                         static_cast<double>(segment.value));
@@ -671,13 +739,28 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
         const float actual_delta_deg     = normalizeYawDelta(yaw_after_deg - yaw_before_deg);
         const float segment_error_deg    = normalizeYawDelta(expected_yaw_deg - yaw_after_deg);
         const float expected_yaw_wrapped = normalizeYawDelta(expected_yaw_deg);
-        printFormat("PATH %lu/%lu result: yaw_before=%.2f yaw_after=%.2f delta=%+.2f "
-                    "expected_yaw=%.2f yaw_error=%+.2f\n",
-                    static_cast<unsigned long>(i + 1), static_cast<unsigned long>(segments.size()),
-                    static_cast<double>(yaw_before_deg), static_cast<double>(yaw_after_deg),
-                    static_cast<double>(actual_delta_deg),
-                    static_cast<double>(expected_yaw_wrapped),
-                    static_cast<double>(segment_error_deg));
+        if (!raw_mode && segment.type == PathSegmentType::Forward)
+        {
+            printFormat(
+                "PATH %lu/%lu result: yaw_before=%.2f yaw_after=%.2f delta=%+.2f "
+                "expected_yaw=%.2f yaw_error=%+.2f hold_err=%+.2f hold_rate=%+.2f\n",
+                static_cast<unsigned long>(i + 1), static_cast<unsigned long>(segments.size()),
+                static_cast<double>(yaw_before_deg), static_cast<double>(yaw_after_deg),
+                static_cast<double>(actual_delta_deg), static_cast<double>(expected_yaw_wrapped),
+                static_cast<double>(segment_error_deg),
+                static_cast<double>(deps_.motion->headingHoldErrorDeg()),
+                static_cast<double>(deps_.motion->headingHoldAdjustmentDegps()));
+        }
+        else
+        {
+            printFormat(
+                "PATH %lu/%lu result: yaw_before=%.2f yaw_after=%.2f delta=%+.2f "
+                "expected_yaw=%.2f yaw_error=%+.2f\n",
+                static_cast<unsigned long>(i + 1), static_cast<unsigned long>(segments.size()),
+                static_cast<double>(yaw_before_deg), static_cast<double>(yaw_after_deg),
+                static_cast<double>(actual_delta_deg), static_cast<double>(expected_yaw_wrapped),
+                static_cast<double>(segment_error_deg));
+        }
 
         if (!ok || halted_)
         {
@@ -726,9 +809,10 @@ void CommandLineInterface::handle_path_command(const Args& args)
         return;
 
     bool smooth_turns = false;
+    bool raw_mode     = false;
     int  arg_limit    = args.argc;
-    if (args.argc > 2 && parsePathSmoothFlag(args.argv[args.argc - 1], smooth_turns))
-        arg_limit = args.argc - 1;
+    while (arg_limit > 2 && parsePathOption(args.argv[arg_limit - 1], smooth_turns, raw_mode))
+        --arg_limit;
 
     int first_param_index = arg_limit;
     for (int i = 1; i < arg_limit; ++i)
@@ -777,11 +861,11 @@ void CommandLineInterface::handle_path_command(const Args& args)
     if (param < arg_limit)
     {
         printFormat("PATH usage: PATH <sequence> [speed_mmps] [accel_mmps2] [omega_degps] "
-                    "[alpha_degps2] [smooth_bool]\n");
+                    "[alpha_degps2] [SMOOTH] [RAW]\n");
         return;
     }
 
-    run_path_segments(segments, speed, accel, omega, alpha, smooth_turns);
+    run_path_segments(segments, speed, accel, omega, alpha, smooth_turns, raw_mode);
 }
 
 void CommandLineInterface::handle_center_command(const Args& args)
@@ -1367,11 +1451,18 @@ void CommandLineInterface::help_debug()
 {
     printFormat("Jurababa debug extensions:\n");
     printFormat("STYLE [STATIONARY|SMOOTH] : select path execution style\n");
-    printFormat("PATH seq [spd acc omg alp smooth] : blind physical path, smooth default=0\n");
+    printFormat(
+        "PATH seq [spd acc omg alp] [SMOOTH] [RAW] : manual path, RAW disables heading hold\n");
     printFormat("CENTER [spd acc] : move from start pose to cell center (%.1f mm)\n",
                 static_cast<double>(START_CENTER_DISTANCE_MM));
     printFormat("STARTCENTER [spd acc] : CENTER alias\n");
-    printFormat("STAGE n : run competition stage 1..5\n");
+    printFormat("STAGE 1 : search configured goal\n");
+    printFormat("STAGE 2 : return to start\n");
+    printFormat("STAGE 3 : explored cardinal fast goal\n");
+    printFormat("STAGE 4 : explored cardinal fast start\n");
+    printFormat("STAGE 5 : explored diagonal fast goal\n");
+    printFormat("SEARCHGOAL/RETURNSTART/FASTGOAL/FASTSTART/DIAGGOAL : stage aliases\n");
+    printFormat("SIMRUN : STAGE 1 + STAGE 2 + STAGE 5\n");
     printFormat("RESET : reset search state without rebooting\n");
     printFormat("HALT : stop motion\n");
 }

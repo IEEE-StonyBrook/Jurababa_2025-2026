@@ -65,6 +65,8 @@ class Mouse
     virtual void serviceSensors();
     virtual void begin_motion_sequence();
     virtual void end_motion_sequence();
+    void         begin_maze_heading_hold();
+    void         end_maze_heading_hold();
 
     // UKMARS Mouse lifecycle/workflow names.
     void  init();
@@ -189,9 +191,13 @@ class Mouse
 
   private:
     void        turn_to_cardinal_yaw(const std::string& target_heading);
+    void        apply_maze_heading_hold();
+    void        apply_maze_heading_hold_for_heading(const std::string& heading);
+    void        suspend_maze_heading_hold();
     std::string simulatorResponse(const std::string& cmd);
     bool        simulatorBool(const std::string& cmd);
     std::string printMazeRow(int row);
+    bool        maze_heading_hold_active_ = false;
 };
 
 #endif

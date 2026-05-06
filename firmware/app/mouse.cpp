@@ -90,12 +90,20 @@ float normalizeYawDelta(float degrees)
 
 float expectedYawForHeading(const std::string& heading)
 {
+    if (heading == "ne" || heading == "NE")
+        return -45.0f;
     if (heading == "e" || heading == "E")
         return -90.0f;
+    if (heading == "se" || heading == "SE")
+        return -135.0f;
     if (heading == "s" || heading == "S")
         return 180.0f;
+    if (heading == "sw" || heading == "SW")
+        return 135.0f;
     if (heading == "w" || heading == "W")
         return 90.0f;
+    if (heading == "nw" || heading == "NW")
+        return 45.0f;
     return 0.0f;
 }
 
@@ -204,6 +212,28 @@ class MouseMotionSequenceGuard
   private:
     Mouse* mouse_;
 };
+
+class MouseMazeHeadingHoldGuard
+{
+  public:
+    explicit MouseMazeHeadingHoldGuard(Mouse* mouse) : mouse_(mouse)
+    {
+        if (mouse_ != nullptr)
+            mouse_->begin_maze_heading_hold();
+    }
+
+    ~MouseMazeHeadingHoldGuard()
+    {
+        if (mouse_ != nullptr)
+            mouse_->end_maze_heading_hold();
+    }
+
+    MouseMazeHeadingHoldGuard(const MouseMazeHeadingHoldGuard&)            = delete;
+    MouseMazeHeadingHoldGuard& operator=(const MouseMazeHeadingHoldGuard&) = delete;
+
+  private:
+    Mouse* mouse_;
+};
 } // namespace
 
 Mouse::Mouse(MazeMouse* maze_mouse) : run_on_simulator(false), maze_mouse_(maze_mouse)
@@ -308,6 +338,45 @@ void Mouse::end_motion_sequence()
 #endif
 }
 
+void Mouse::begin_maze_heading_hold()
+{
+    maze_heading_hold_active_ = true;
+    apply_maze_heading_hold();
+}
+
+void Mouse::end_maze_heading_hold()
+{
+    maze_heading_hold_active_ = false;
+    suspend_maze_heading_hold();
+}
+
+void Mouse::apply_maze_heading_hold()
+{
+    if (!maze_heading_hold_active_ || run_on_simulator || maze_mouse_ == nullptr)
+        return;
+    apply_maze_heading_hold_for_heading(maze_mouse_->currentDirection());
+}
+
+void Mouse::apply_maze_heading_hold_for_heading(const std::string& heading)
+{
+    if (!maze_heading_hold_active_ || run_on_simulator)
+        return;
+#ifndef SIMULATOR_BUILD
+    if (motion_ != nullptr)
+        motion_->set_heading_hold(expectedYawForHeading(heading));
+#endif
+}
+
+void Mouse::suspend_maze_heading_hold()
+{
+    if (run_on_simulator)
+        return;
+#ifndef SIMULATOR_BUILD
+    if (motion_ != nullptr)
+        motion_->clear_heading_hold();
+#endif
+}
+
 void Mouse::moveForwardHalf()
 {
     if (run_on_simulator)
@@ -315,6 +384,7 @@ void Mouse::moveForwardHalf()
 #ifndef SIMULATOR_BUILD
     else if (motion_ != nullptr)
     {
+        apply_maze_heading_hold();
         motion_->move(HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
     }
@@ -333,6 +403,7 @@ bool Mouse::move_mm(float distance_mm)
     LOG_INFO("MOTION move_mm: distance_mm=" + fixed1(distance_mm) +
              " speed_mmps=" + fixed1(ROBOT_MAX_SEARCH_SPEED_MMPS) +
              " accel_mmps2=" + fixed1(ROBOT_BASE_ACCEL_MMPS2));
+    apply_maze_heading_hold();
     motion_->move(distance_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
     waitForMotion();
     return !haltRequested();
@@ -351,6 +422,7 @@ bool Mouse::move_physical(float distance_mm, float speed_mmps, float accel_mmps2
         return false;
     LOG_INFO("MOTION move_physical: distance_mm=" + fixed1(distance_mm) +
              " speed_mmps=" + fixed1(speed_mmps) + " accel_mmps2=" + fixed1(accel_mmps2));
+    apply_maze_heading_hold();
     motion_->move(distance_mm, speed_mmps, 0.0f, accel_mmps2);
     waitForMotion();
     return !haltRequested();
@@ -374,6 +446,7 @@ void Mouse::moveForward()
 #ifndef SIMULATOR_BUILD
     else if (motion_ != nullptr)
     {
+        apply_maze_heading_hold();
         motion_->move(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
     }
@@ -396,6 +469,7 @@ void Mouse::moveForward(int steps)
 #ifndef SIMULATOR_BUILD
     if (motion_ != nullptr)
     {
+        apply_maze_heading_hold();
         motion_->move(steps * CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f,
                       ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
@@ -417,6 +491,7 @@ void Mouse::turnLeft45()
 #ifndef SIMULATOR_BUILD
     else if (motion_ != nullptr)
     {
+        suspend_maze_heading_hold();
         motion_->spin_turn(45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }
@@ -434,6 +509,7 @@ void Mouse::turnLeft90()
         LOG_INFO(
             "MOTION turnLeft90: angle_deg=90 omega_degps=" + fixed1(ROBOT_MAX_TURN_SPEED_DEGPS) +
             " alpha_degps2=" + fixed1(ROBOT_BASE_ANGULAR_ACCEL_DEGPS2));
+        suspend_maze_heading_hold();
         motion_->spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }
@@ -448,6 +524,7 @@ void Mouse::turnRight45()
 #ifndef SIMULATOR_BUILD
     else if (motion_ != nullptr)
     {
+        suspend_maze_heading_hold();
         motion_->spin_turn(-45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }
@@ -465,6 +542,7 @@ void Mouse::turnRight90()
         LOG_INFO(
             "MOTION turnRight90: angle_deg=-90 omega_degps=" + fixed1(ROBOT_MAX_TURN_SPEED_DEGPS) +
             " alpha_degps2=" + fixed1(ROBOT_BASE_ANGULAR_ACCEL_DEGPS2));
+        suspend_maze_heading_hold();
         motion_->spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }
@@ -479,6 +557,7 @@ void Mouse::turn(int degrees)
 #ifndef SIMULATOR_BUILD
     else if (motion_ != nullptr)
     {
+        suspend_maze_heading_hold();
         motion_->spin_turn(static_cast<float>(degrees), ROBOT_MAX_TURN_SPEED_DEGPS,
                            ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
@@ -499,6 +578,7 @@ void Mouse::move_ahead()
         return;
     LOG_INFO("move_ahead: adjust_forward_position=-" + fixed1(CELL_SIZE_MM) +
              " wait_until_position=" + fixed1(SENSING_POSITION_MM));
+    apply_maze_heading_hold();
     motion_->adjust_forward_position(-CELL_SIZE_MM);
     if (!wait_until_position(SENSING_POSITION_MM))
         return;
@@ -509,7 +589,40 @@ void Mouse::move_ahead()
 void Mouse::turn_to_cardinal_yaw(const std::string& target_heading)
 {
     if (run_on_simulator)
+    {
+        if (maze_mouse_ == nullptr)
+            return;
+        const int current_index = maze_mouse_->findDirectionIndex(maze_mouse_->currentDirection());
+        const int target_index  = maze_mouse_->findDirectionIndex(target_heading);
+        if (current_index < 0 || target_index < 0)
+            return;
+
+        const int half_steps_right = (target_index - current_index + 8) % 8;
+        if (half_steps_right == 1)
+            simulatorResponse("turnRight45");
+        else if (half_steps_right == 2)
+            simulatorResponse("turnRight");
+        else if (half_steps_right == 3)
+        {
+            simulatorResponse("turnRight");
+            simulatorResponse("turnRight45");
+        }
+        else if (half_steps_right == 4)
+        {
+            simulatorResponse("turnRight");
+            simulatorResponse("turnRight");
+        }
+        else if (half_steps_right == 5)
+        {
+            simulatorResponse("turnLeft");
+            simulatorResponse("turnLeft45");
+        }
+        else if (half_steps_right == 6)
+            simulatorResponse("turnLeft");
+        else if (half_steps_right == 7)
+            simulatorResponse("turnLeft45");
         return;
+    }
 #ifndef SIMULATOR_BUILD
     if (motion_ == nullptr)
         return;
@@ -520,6 +633,7 @@ void Mouse::turn_to_cardinal_yaw(const std::string& target_heading)
     LOG_INFO("SEARCH TURN target=" + headingUpper(target_heading) +
              " yaw=" + fixed1(current_yaw_deg) + " target_yaw=" + fixed1(target_yaw_deg) +
              " delta=" + signedFixed1(delta_deg));
+    suspend_maze_heading_hold();
     motion_->spin_turn(delta_deg, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
     waitForMotion();
 #endif
@@ -541,13 +655,15 @@ void Mouse::turn_left()
             return;
         if (!adjustPosition())
             return;
-        turn_to_cardinal_yaw(maze_mouse_->directionLeft());
+        const std::string target_heading = maze_mouse_->directionLeft();
+        turn_to_cardinal_yaw(target_heading);
         if (run_on_simulator)
             simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
         if (!run_on_simulator && motion_ != nullptr)
         {
             motion_->set_position(HALF_CELL_MM);
+            apply_maze_heading_hold_for_heading(target_heading);
             motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
                           ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
             waitForMotion();
@@ -574,13 +690,15 @@ void Mouse::turn_right()
             return;
         if (!adjustPosition())
             return;
-        turn_to_cardinal_yaw(maze_mouse_->directionRight());
+        const std::string target_heading = maze_mouse_->directionRight();
+        turn_to_cardinal_yaw(target_heading);
         if (run_on_simulator)
             simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
         if (!run_on_simulator && motion_ != nullptr)
         {
             motion_->set_position(HALF_CELL_MM);
+            apply_maze_heading_hold_for_heading(target_heading);
             motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
                           ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
             waitForMotion();
@@ -597,13 +715,15 @@ void Mouse::turn_back()
         return;
     if (!adjustPosition())
         return;
-    turn_to_cardinal_yaw(cardinalAfterHalfSteps(maze_mouse_->currentDirection(), 4));
+    const std::string target_heading = cardinalAfterHalfSteps(maze_mouse_->currentDirection(), 4);
+    turn_to_cardinal_yaw(target_heading);
     if (run_on_simulator)
         simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
     if (!run_on_simulator && motion_ != nullptr)
     {
         motion_->set_position(HALF_CELL_MM);
+        apply_maze_heading_hold_for_heading(target_heading);
         motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
                       ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
@@ -625,6 +745,7 @@ void Mouse::turn_smooth(int turn_id)
         return;
     // Motion::turn_smooth starts simultaneous fwd + rot profiles using the
     // SMOOTH_TURN_PARAMS table — same emergent-arc shape as mazerunner.
+    suspend_maze_heading_hold();
     motion_->turn_smooth(turn_id);
     waitForMotion();
 #endif
@@ -641,6 +762,7 @@ void Mouse::turn_IP180()
 #ifndef SIMULATOR_BUILD
     if (motion_ == nullptr)
         return;
+    suspend_maze_heading_hold();
     motion_->turn_IP180();
     waitForMotion();
 #endif
@@ -656,6 +778,7 @@ void Mouse::turn_IP90R()
 #ifndef SIMULATOR_BUILD
     if (motion_ == nullptr)
         return;
+    suspend_maze_heading_hold();
     motion_->turn_IP90R();
     waitForMotion();
 #endif
@@ -671,6 +794,7 @@ void Mouse::turn_IP90L()
 #ifndef SIMULATOR_BUILD
     if (motion_ == nullptr)
         return;
+    suspend_maze_heading_hold();
     motion_->turn_IP90L();
     waitForMotion();
 #endif
@@ -711,11 +835,11 @@ bool Mouse::stopAtCentre()
     const float distance_mm        = centre_position_mm - motion_->position();
     LOG_INFO("stopAtCentre: position_mm=" + fixed1(motion_->position()) +
              " distance_mm=" + fixed1(distance_mm));
+    apply_maze_heading_hold();
     motion_->move(distance_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
     waitForMotion();
     if (haltRequested())
         return false;
-    motion_->reset_drive_control();
     motion_->set_position(HALF_CELL_MM);
 #endif
     return true;
@@ -745,6 +869,7 @@ bool Mouse::adjustPosition()
 
     LOG_INFO("adjustPosition: front_mm=" + fixed1(front_mm) +
              " correction_mm=" + fixed1(correction_mm));
+    apply_maze_heading_hold();
     motion_->move(correction_mm, FRONT_CORRECTION_SPEED_MMPS, 0.0f, FRONT_CORRECTION_ACCEL_MMPS2);
     waitForMotion();
     motion_->set_position(HALF_CELL_MM);
@@ -774,43 +899,9 @@ void Mouse::update_map()
     cell->updateWallState(left[0], left_wall ? WALL : EXIT);
     cell->updateWallState(right[0], right_wall ? WALL : EXIT);
 
-    std::ostringstream map_log;
-    map_log << "SEARCH MAP cell=(" << x << "," << y
-            << ") hdg=" << headingUpper(maze_mouse_->currentDirection());
-#ifndef SIMULATOR_BUILD
-    if (motion_ != nullptr)
-    {
-        const float left_mm  = motion_->leftDistance();
-        const float front_mm = motion_->frontDistance();
-        const float right_mm = motion_->rightDistance();
-        const float position = motion_->position();
-        const float yaw      = motion_->angle();
-        const float yaw_error =
-            normalizeYawDelta(expectedYawForHeading(maze_mouse_->currentDirection()) - yaw);
-        const float               left_norm  = left_mm * TOF_LEFT_SCALE;
-        const float               right_norm = right_mm * TOF_RIGHT_SCALE;
-        const tof_wall::WallState state =
-            tof_wall::evaluate(left_mm, front_mm, right_mm, tof_wall::SteeringMode::STEER_NORMAL);
-
-        map_log << " pos=" << fixed1(position)
-                << " pos_err=" << signedFixed1(position - SENSING_POSITION_MM)
-                << " yaw=" << fixed1(yaw) << " yaw_err=" << signedFixed1(yaw_error)
-                << " ToF=" << fixed1(left_mm) << "/" << fixed1(front_mm) << "/" << fixed1(right_mm)
-                << " norm=" << fixed1(left_norm) << "/" << fixed1(right_norm);
-        map_log << " walls=" << (left_wall ? "L" : "-") << (front_wall ? "F" : "-")
-                << (right_wall ? "R" : "-") << " side=" << tof_wall::sourceName(state.source)
-                << " err=" << signedFixed1(state.side_error_norm)
-                << " th=" << fixed1(TOF_LEFT_WALL_THRESHOLD_MM) << "/"
-                << fixed1(TOF_FRONT_WALL_THRESHOLD_MM) << "/"
-                << fixed1(TOF_RIGHT_WALL_THRESHOLD_MM);
-    }
-    else
-#endif
-    {
-        map_log << " pos=SIM pos_err=NA yaw=NA yaw_err=NA ToF=SIM walls=" << (left_wall ? "L" : "-")
-                << (front_wall ? "F" : "-") << (right_wall ? "R" : "-") << " side=NA err=NA th=NA";
-    }
-    LOG_INFO(map_log.str());
+    LOG_INFO("SEARCH MAP cell=(" + std::to_string(x) + "," + std::to_string(y) + ") hdg=" +
+             headingUpper(maze_mouse_->currentDirection()) + " walls=" + (left_wall ? "L" : "-") +
+             (front_wall ? "F" : "-") + (right_wall ? "R" : "-"));
 
     if (run_on_simulator)
     {
@@ -830,7 +921,8 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
     if (maze_mouse_ == nullptr)
         return false;
 
-    MouseMotionSequenceGuard motion_sequence(this);
+    MouseMotionSequenceGuard  motion_sequence(this);
+    MouseMazeHeadingHoldGuard heading_hold(this);
     state_ = movement_style_ == MovementStyle::Smooth ? State::SMOOTH_RUN : State::SEARCHING;
     maze_mouse_->setMazeMask(MASK_OPEN);
 
@@ -872,6 +964,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
             LOG_INFO("search_to: hand_start distance_mm=" + fixed1(START_CENTER_DISTANCE_MM) +
                      " set_position_mm=" + fixed1(HALF_CELL_MM) +
                      " sensing_position_mm=" + fixed1(SENSING_POSITION_MM));
+            apply_maze_heading_hold();
             motion_->move(START_CENTER_DISTANCE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
                           ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
             waitForMotion();
@@ -1196,7 +1289,8 @@ bool Mouse::follow_to(const std::vector<std::array<int, 2>>& goals)
     if (maze_mouse_ == nullptr)
         return false;
 
-    MouseMotionSequenceGuard motion_sequence(this);
+    MouseMotionSequenceGuard  motion_sequence(this);
+    MouseMazeHeadingHoldGuard heading_hold(this);
     state_ = State::SEARCHING;
 
 #ifndef SIMULATOR_BUILD
@@ -1210,6 +1304,7 @@ bool Mouse::follow_to(const std::vector<std::array<int, 2>>& goals)
             m_handStart = false;
         }
         motion_->set_position(HALF_CELL_MM);
+        apply_maze_heading_hold();
         motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
                       ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
@@ -1261,7 +1356,8 @@ bool Mouse::wander_to(const std::vector<std::array<int, 2>>& goals)
     if (maze_mouse_ == nullptr)
         return false;
 
-    MouseMotionSequenceGuard motion_sequence(this);
+    MouseMotionSequenceGuard  motion_sequence(this);
+    MouseMazeHeadingHoldGuard heading_hold(this);
     state_ = State::SEARCHING;
 
 #ifndef SIMULATOR_BUILD
@@ -1275,6 +1371,7 @@ bool Mouse::wander_to(const std::vector<std::array<int, 2>>& goals)
             m_handStart = false;
         }
         motion_->set_position(HALF_CELL_MM);
+        apply_maze_heading_hold();
         motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
                       ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
@@ -1565,7 +1662,10 @@ void Mouse::arcTurnLeft90()
         simulatorResponse("arcTurnLeft90");
 #ifndef SIMULATOR_BUILD
     else
+    {
+        suspend_maze_heading_hold();
         turn_smooth(SS90EL);
+    }
 #endif
     maze_mouse_->turn45Steps(-2);
 }
@@ -1576,7 +1676,10 @@ void Mouse::arcTurnRight90()
         simulatorResponse("arcTurnRight90");
 #ifndef SIMULATOR_BUILD
     else
+    {
+        suspend_maze_heading_hold();
         turn_smooth(SS90ER);
+    }
 #endif
     maze_mouse_->turn45Steps(2);
 }
@@ -1591,6 +1694,7 @@ void Mouse::arcTurnLeft45()
         // 45-deg arc with a 45 mm radius — same shape startArcTurn produced.
         const float radius_mm = 45.0f;
         const float arc_mm    = 45.0f * (M_PI / 180.0f) * radius_mm;
+        suspend_maze_heading_hold();
         motion_->start_move(arc_mm, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS,
                             ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
         motion_->start_turn(-45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, 0.0f,
@@ -1610,6 +1714,7 @@ void Mouse::arcTurnRight45()
     {
         const float radius_mm = 45.0f;
         const float arc_mm    = 45.0f * (M_PI / 180.0f) * radius_mm;
+        suspend_maze_heading_hold();
         motion_->start_move(arc_mm, ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS,
                             ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
         motion_->start_turn(45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, 0.0f,
@@ -1622,9 +1727,10 @@ void Mouse::arcTurnRight45()
 
 void Mouse::executeSequence(const std::string& sequence)
 {
-    std::istringstream       ss(sequence);
-    std::string              token;
-    std::vector<std::string> tokens;
+    MouseMazeHeadingHoldGuard heading_hold(this);
+    std::istringstream        ss(sequence);
+    std::string               token;
+    std::vector<std::string>  tokens;
 
     while (std::getline(ss, token, '#'))
     {

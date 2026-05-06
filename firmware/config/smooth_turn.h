@@ -30,9 +30,9 @@ enum SmoothTurnId
 };
 
 constexpr float    SENSING_POSITION_MM               = CELL_SIZE_MM - 10.0f;
-constexpr float    FRONT_REFERENCE_MM                = 27.0f;
+constexpr float    FRONT_REFERENCE_MM                = 35.0f;
 constexpr float    FRONT_CORRECTION_TOLERANCE_MM     = 5.0f;
-constexpr float    FRONT_CORRECTION_STEP_MM          = 10.0f;
+constexpr float    FRONT_CORRECTION_STEP_MM          = 25.0f;
 constexpr float    FRONT_CORRECTION_SPEED_MMPS       = 100.0f;
 constexpr float    FRONT_CORRECTION_ACCEL_MMPS2      = 1000.0f;
 constexpr float    STOP_AT_CENTRE_FRONT_SPEED_MMPS   = 30.0f;

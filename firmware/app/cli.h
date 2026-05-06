@@ -129,7 +129,7 @@ class CommandLineInterface
     void append_path_forward_cells(std::vector<PathSegment>& segments, int cells);
     void append_path_turn(std::vector<PathSegment>& segments, float degrees);
     bool run_path_segments(std::vector<PathSegment>& segments, float speed_mmps, float accel_mmps2,
-                           float omega_degps, float alpha_degps2, bool smooth_turns);
+                           float omega_degps, float alpha_degps2, bool smooth_turns, bool raw_mode);
     bool wait_path_segment_motion();
     void stop();
     void reset();

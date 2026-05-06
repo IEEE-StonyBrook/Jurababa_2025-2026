@@ -45,9 +45,18 @@
 #define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2     2866.0f // UKMARS SS90E starting point
 #define ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM 95.0f   // Starting ToF trigger calibration
 
+// ================ Maze Heading Hold =================== //
+// Competition maze-running can use the logical maze heading as a gentle
+// steering correction through the existing rotation PID. This is separate from
+// ToF wall steering: ToF may classify walls while heading hold uses IMU yaw to
+// keep the physical mouse aligned to N/NE/E/... headings.
+#define MAZE_HEADING_HOLD_ENABLE           1
+#define MAZE_HEADING_HOLD_KP_DEGPS_PER_DEG 8.0f
+#define MAZE_HEADING_HOLD_MAX_DEGPS        45.0f
+
 // ================ Blind Path Test Defaults ============= //
-// Normal CLI PATH is a no-ToF known-layout test runner. Keep these gentler
-// than the competition defaults so blind maze tests start safely.
+// PATH defaults stay gentle so manually-entered race paths and RAW drivetrain
+// benchmarks start safely.
 #define CLI_PATH_SPEED_MMPS   180.0f
 #define CLI_PATH_ACCEL_MMPS2  700.0f
 #define CLI_PATH_OMEGA_DEGPS  180.0f

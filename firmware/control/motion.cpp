@@ -26,6 +26,7 @@ void Motion::reset()
 void Motion::reset_drive_system()
 {
     motion_sequence_active_ = false;
+    clear_heading_hold();
     drivetrain_->stop();
     drivetrain_->reset();
     imu_->reset();
@@ -49,12 +50,13 @@ void Motion::resetControlHistory()
     forward_controller_.reset();
     rotation_controller_.reset();
 
-    prev_left_cmd_vel_mmps_           = 0.0f;
-    prev_right_cmd_vel_mmps_          = 0.0f;
-    side_error_prev_norm_             = 0.0f;
-    side_error_prev_valid_            = false;
-    latest_wall_state_                = {};
-    latest_steering_adjustment_degps_ = 0.0f;
+    prev_left_cmd_vel_mmps_               = 0.0f;
+    prev_right_cmd_vel_mmps_              = 0.0f;
+    side_error_prev_norm_                 = 0.0f;
+    side_error_prev_valid_                = false;
+    latest_wall_state_                    = {};
+    latest_steering_adjustment_degps_     = 0.0f;
+    latest_heading_hold_adjustment_degps_ = 0.0f;
 }
 
 void Motion::set_wall_distances(float left_mm, float front_mm, float right_mm)
@@ -115,6 +117,41 @@ tof_wall::WallState Motion::wallSteeringState() const
 float Motion::wallSteeringAdjustmentDegps() const
 {
     return latest_steering_adjustment_degps_;
+}
+
+void Motion::set_heading_hold(float target_yaw_deg)
+{
+    heading_hold_enabled_          = true;
+    heading_hold_target_yaw_deg_   = utils::wrapAngle180(target_yaw_deg);
+    latest_heading_hold_error_deg_ = utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
+}
+
+void Motion::clear_heading_hold()
+{
+    heading_hold_enabled_                 = false;
+    heading_hold_target_yaw_deg_          = 0.0f;
+    latest_heading_hold_error_deg_        = 0.0f;
+    latest_heading_hold_adjustment_degps_ = 0.0f;
+}
+
+bool Motion::headingHoldActive() const
+{
+    return heading_hold_enabled_;
+}
+
+float Motion::headingHoldTargetYawDeg() const
+{
+    return heading_hold_target_yaw_deg_;
+}
+
+float Motion::headingHoldErrorDeg() const
+{
+    return latest_heading_hold_error_deg_;
+}
+
+float Motion::headingHoldAdjustmentDegps() const
+{
+    return latest_heading_hold_adjustment_degps_;
 }
 
 float Motion::position() const
@@ -181,6 +218,7 @@ void Motion::begin_motion_sequence()
 void Motion::end_motion_sequence()
 {
     motion_sequence_active_ = false;
+    clear_heading_hold();
     drivetrain_->stop();
     forward_.reset();
     rotation_.reset();
@@ -299,13 +337,21 @@ void Motion::runPositionControl()
         {
             latest_wall_state_ =
                 tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_, steering_mode_);
-            latest_steering_adjustment_degps_ = 0.0f;
+            latest_steering_adjustment_degps_     = 0.0f;
+            latest_heading_hold_adjustment_degps_ = 0.0f;
+            if (heading_hold_enabled_)
+                latest_heading_hold_error_deg_ =
+                    utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
             return;
         }
         resetControlHistory();
         latest_wall_state_ =
             tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_, steering_mode_);
-        latest_steering_adjustment_degps_ = 0.0f;
+        latest_steering_adjustment_degps_     = 0.0f;
+        latest_heading_hold_adjustment_degps_ = 0.0f;
+        if (heading_hold_enabled_)
+            latest_heading_hold_error_deg_ =
+                utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
         return;
     }
 
@@ -321,13 +367,15 @@ void Motion::runPositionControl()
     // step-input-driven oscillation on spin turns.
     const float forward_output =
         forward_commanded ? forward_controller_.update(fwd_velocity, fwd_change_mm) : 0.0f;
-    const float steering_adjustment =
+    const float wall_adjustment =
         (TOF_STEERING_ENABLE && steering_mode_ != tof_wall::SteeringMode::STEERING_OFF)
             ? wallSteeringAdjustment(fwd_velocity, rot_velocity)
             : 0.0f;
 #if !TOF_STEERING_ENABLE
     wallSteeringAdjustment(fwd_velocity, rot_velocity); // diagnostics only
 #endif
+    const float heading_adjustment  = headingHoldAdjustment(fwd_velocity, rot_velocity);
+    const float steering_adjustment = wall_adjustment + heading_adjustment;
     const float rotation_output =
         rotation_controller_.update(rot_velocity, rot_change_deg, steering_adjustment);
 
@@ -391,6 +439,30 @@ float Motion::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity
     return latest_steering_adjustment_degps_;
 }
 
+float Motion::headingHoldAdjustment(float fwd_velocity_mmps, float rot_velocity_degps)
+{
+    const bool straight_move = forward_.active() && !rotation_.active() &&
+                               fwd_velocity_mmps > 1.0f && std::fabs(rot_velocity_degps) < 1.0f;
+    if (!heading_hold_enabled_ || !straight_move)
+    {
+        latest_heading_hold_adjustment_degps_ = 0.0f;
+        if (heading_hold_enabled_)
+            latest_heading_hold_error_deg_ =
+                utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
+        return 0.0f;
+    }
+
+    latest_heading_hold_error_deg_ = utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
+#if MAZE_HEADING_HOLD_ENABLE
+    latest_heading_hold_adjustment_degps_ =
+        utils::clampAbs(latest_heading_hold_error_deg_ * MAZE_HEADING_HOLD_KP_DEGPS_PER_DEG,
+                        MAZE_HEADING_HOLD_MAX_DEGPS);
+#else
+    latest_heading_hold_adjustment_degps_ = 0.0f;
+#endif
+    return latest_heading_hold_adjustment_degps_;
+}
+
 void Motion::stop()
 {
     drivetrain_->stop();
@@ -398,6 +470,7 @@ void Motion::stop()
 
 void Motion::disable_drive()
 {
+    clear_heading_hold();
     drivetrain_->stop();
 }
 
