@@ -65,7 +65,7 @@ class LineSensor
      * Returns true if the 2 leftmost sensors OR the 2 rightmost sensors
      * are both active, indicating a perpendicular line crossing.
      */
-    bool detect_intersection() const;
+    bool detect_intersection();
 
     /**
      * @brief Last raw byte read from the Yahboom register.
@@ -90,6 +90,10 @@ class LineSensor
     float       last_position_  = 0.0f;
     bool        position_valid_ = false;
     bool        read_valid_     = false;
+    bool        intersection_pending_ = false;
+    bool        intersection_left_seen_ = false;
+    bool        intersection_right_seen_ = false;
+    uint32_t    intersection_window_start_ms_ = 0;
 };
 
 #endif // DRIVERS_LINE_SENSOR_H

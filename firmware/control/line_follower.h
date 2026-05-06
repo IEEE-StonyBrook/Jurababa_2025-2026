@@ -88,11 +88,24 @@ class LineFollower
     float   lineError() const;
     float   filteredLineError() const;
     float   steeringAdjustmentDegps() const;
+    bool    setRoute(const char* route);
+    void    clearRoute();
+    const char* route() const;
+    uint8_t routeIndex() const;
+    bool    routeHasRemaining() const;
 
   private:
+    enum class BranchDirection
+    {
+        None,
+        Left,
+        Right
+    };
+
     void followLine(float dt);
     void updateTurn();
     void resetControlHistory();
+    void evaluateIntersectionCommand(uint32_t now_ms);
 
     LineSensor* line_sensor_;
     Motion*     motion_;
@@ -115,6 +128,16 @@ class LineFollower
     // Intersection debounce
     bool     prev_intersection_  = false;
     uint32_t last_intersection_ms_ = 0;
+
+    static constexpr uint8_t kMaxRouteLength = 64;
+    char                     route_[kMaxRouteLength + 1] = {};
+    uint8_t                  route_length_                = 0;
+    uint8_t                  route_index_                 = 0;
+    BranchDirection          branch_direction_            = BranchDirection::None;
+    uint32_t                 branch_capture_end_ms_       = 0;
+    uint32_t                 intersection_lockout_end_ms_ = 0;
+    bool                     recovery_active_             = false;
+    bool                     major_correction_active_     = false;
 };
 
 #endif // CONTROL_LINE_FOLLOWER_H

@@ -133,6 +133,7 @@
 #define LINE_SENSOR_DATA_REG          0x30 // Sensor data register
 #define LINE_SENSOR_I2C_BAUD          100000
 #define LINE_INTERSECTION_DEBOUNCE_MS 50
+#define LINE_INTERSECTION_WINDOW_MS   80
 
 // Yahboom 8-channel I2C digital mode reports one bit per probe. Bench LINCON
 // testing with Jurababa's mounted sensor showed:

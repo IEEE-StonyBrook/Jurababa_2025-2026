@@ -100,15 +100,57 @@ bool LineSensor::on_line() const
     return position_valid_;
 }
 
-bool LineSensor::detect_intersection() const
+bool LineSensor::detect_intersection()
 {
-    // Check if 2 leftmost sensors (bits 0 and 1 / X8 and X7) are both active.
-    bool left_intersection = (active_mask_ & 0x03) == 0x03;
+    const bool left_edge_active  = (active_mask_ & 0x03) == 0x03;
+    const bool right_edge_active = (active_mask_ & 0xC0) == 0xC0;
+    const uint32_t now_ms        = to_ms_since_boot(get_absolute_time());
 
-    // Check if 2 rightmost sensors (bits 6 and 7 / X2 and X1) are both active.
-    bool right_intersection = (active_mask_ & 0xC0) == 0xC0;
+    // UKMARS-style transition logic: don't require both sides to be active in
+    // the same instant. Angled crossings often light one side first.
+    if (!intersection_pending_)
+    {
+        if (!left_edge_active && !right_edge_active)
+            return false;
 
-    return left_intersection || right_intersection;
+        intersection_pending_         = true;
+        intersection_window_start_ms_ = now_ms;
+        intersection_left_seen_       = left_edge_active;
+        intersection_right_seen_      = right_edge_active;
+    }
+    else
+    {
+        intersection_left_seen_  = intersection_left_seen_ || left_edge_active;
+        intersection_right_seen_ = intersection_right_seen_ || right_edge_active;
+    }
+
+    if (intersection_left_seen_ && intersection_right_seen_)
+    {
+        intersection_pending_    = false;
+        intersection_left_seen_  = false;
+        intersection_right_seen_ = false;
+        return true;
+    }
+
+    if ((now_ms - intersection_window_start_ms_) > LINE_INTERSECTION_WINDOW_MS)
+    {
+        if (left_edge_active || right_edge_active)
+        {
+            // Keep tracking when still on a complex marker region.
+            intersection_window_start_ms_ = now_ms;
+            intersection_left_seen_       = left_edge_active;
+            intersection_right_seen_      = right_edge_active;
+            intersection_pending_         = true;
+        }
+        else
+        {
+            intersection_pending_    = false;
+            intersection_left_seen_  = false;
+            intersection_right_seen_ = false;
+        }
+    }
+
+    return false;
 }
 
 uint8_t LineSensor::rawByte() const

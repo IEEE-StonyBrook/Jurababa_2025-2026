@@ -72,12 +72,15 @@
 // Line position units are sensor slots: -3.5 at X8/left, +3.5 at X1/right.
 // The controller negates line position so a line left of center commands
 // positive omega (CCW/left), matching Jurababa's rotation convention.
-#define LINE_STEERING_KP_DEGPS_PER_SENSOR 20.0f
+#define LINE_STEERING_KP_DEGPS_PER_SENSOR 60.0f
 #define LINE_STEERING_KD_DEG_PER_SENSOR   0.0f
 #define LINE_STEERING_LIMIT_DEGPS         90.0f
 #define LINE_ERROR_FILTER_ALPHA           0.35f
 #define LINE_LOST_HOLD_MS                 150
 #define LINE_LOST_STOP_MS                 350
+#define LINE_BRANCH_STEER_BIAS_DEGPS      90.0f
+#define LINE_BRANCH_CAPTURE_MS            400
+#define LINE_INTERSECTION_LOCKOUT_MS      250
 #define LINE_FOLLOW_BASE_SPEED_MMPS       150.0f
 #define LINE_FOLLOW_RUN_DISTANCE_MM       100000.0f
 

@@ -871,7 +871,32 @@ void CommandLineInterface::handle_line_command(const Args& args)
         return;
     }
 
-    printFormat("LINE usage: LINE [STATUS|START|STOP|LEFT|RIGHT]\n");
+    if (std::strcmp(args.argv[1], "ROUTE") == 0)
+    {
+        if (args.argc < 3)
+        {
+            printFormat("LINE ROUTE usage: LINE ROUTE <LFR...|CLEAR>\n");
+            return;
+        }
+
+        if (std::strcmp(args.argv[2], "CLEAR") == 0)
+        {
+            deps_.line_follower->clearRoute();
+            printFormat("LINE ROUTE cleared\n");
+            return;
+        }
+
+        if (!deps_.line_follower->setRoute(args.argv[2]))
+        {
+            printFormat("LINE ROUTE invalid. Use only L/F/R (optional spaces/commas), max 64.\n");
+            return;
+        }
+
+        printFormat("LINE ROUTE set: %s\n", deps_.line_follower->route());
+        return;
+    }
+
+    printFormat("LINE usage: LINE [STATUS|START|STOP|LEFT|RIGHT|ROUTE]\n");
 }
 
 bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
@@ -1192,14 +1217,15 @@ void CommandLineInterface::printLineSnapshot()
     const bool motion_steering_valid =
         deps_.motion != nullptr ? deps_.motion->lineSteeringValid() : false;
     printFormat("Line raw=0x%02X active=0x%02X present=%d lost=%d pos=%.2f err=%.2f "
-                "filt=%.2f steer=%.1f deg/s motion_steer=%.1f valid=%d state=%s\n",
+                "filt=%.2f steer=%.1f deg/s motion_steer=%.1f valid=%d state=%s route=%s next=%u\n",
                 deps_.line_follower->rawByte(), deps_.line_follower->activeMask(),
                 deps_.line_follower->linePresent(), deps_.line_follower->lineLost(),
                 static_cast<double>(deps_.line_follower->linePosition()),
                 static_cast<double>(deps_.line_follower->lineError()),
                 static_cast<double>(deps_.line_follower->filteredLineError()),
                 static_cast<double>(deps_.line_follower->steeringAdjustmentDegps()),
-                static_cast<double>(motion_steering), motion_steering_valid, name);
+                static_cast<double>(motion_steering), motion_steering_valid, name,
+                deps_.line_follower->route(), static_cast<unsigned>(deps_.line_follower->routeIndex()));
 }
 
 void CommandLineInterface::printMazeView(char mode)
