@@ -16,8 +16,8 @@ class IMU;
  * Per-tick: drivetrain.update() → forward.update() → rotation.update()
  * → runPositionControl(). Motion complete when both profiles report finished().
  *
- * Yaw and omega come from the IMU (deliberate divergence from mazerunner, which
- * derives both from differential encoders). Forward position comes from encoders.
+ * `angle()` and `omega()` intentionally match mazerunner-core profile semantics.
+ * Physical yaw remains available separately through `yaw_deg()` / `yaw_rate_degps()`.
  */
 class Motion
 {
@@ -62,6 +62,8 @@ class Motion
     float   angle() const;
     float   omega() const;
     float   alpha() const;
+    float   yaw_deg() const;
+    float   yaw_rate_degps() const;
     void    set_target_velocity(float velocity_mmps);
     void    set_final_velocity(float velocity_mmps);
     void    extend_move(float distance_mm);
@@ -79,6 +81,8 @@ class Motion
     void turn_IP180();
     void turn_IP90R();
     void turn_IP90L();
+    void stop_at(float position_mm);
+    void stop_after(float distance_mm);
     void set_position(float position_mm);
     void adjust_forward_position(float delta_mm);
     void wait_until_position(float position_mm);

@@ -238,6 +238,7 @@ class MouseMazeHeadingHoldGuard
 
 Mouse::Mouse(MazeMouse* maze_mouse) : run_on_simulator(false), maze_mouse_(maze_mouse)
 {
+    init();
 }
 
 void Mouse::init()
@@ -628,7 +629,7 @@ void Mouse::turn_to_cardinal_yaw(const std::string& target_heading)
         return;
 
     const float target_yaw_deg  = expectedYawForHeading(target_heading);
-    const float current_yaw_deg = motion_->angle();
+    const float current_yaw_deg = motion_->yaw_deg();
     const float delta_deg       = normalizeYawDelta(target_yaw_deg - current_yaw_deg);
     LOG_INFO("SEARCH TURN target=" + headingUpper(target_heading) +
              " yaw=" + fixed1(current_yaw_deg) + " target_yaw=" + fixed1(target_yaw_deg) +
@@ -1042,7 +1043,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         const int         from_y       = current->y();
         const std::string from_heading = headingUpper(maze_mouse_->currentDirection());
 #ifndef SIMULATOR_BUILD
-        const float yaw_before = motion_ != nullptr ? motion_->angle() : 0.0f;
+        const float yaw_before = motion_ != nullptr ? motion_->yaw_deg() : 0.0f;
         const float pos_before = motion_ != nullptr ? motion_->position() : 0.0f;
 #endif
 
@@ -1073,7 +1074,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
 #ifndef SIMULATOR_BUILD
         if (motion_ != nullptr)
         {
-            const float yaw_after       = motion_->angle();
+            const float yaw_after       = motion_->yaw_deg();
             const float pos_after       = motion_->position();
             const float yaw_delta       = normalizeYawDelta(yaw_after - yaw_before);
             const float expected_yaw    = expectedYawForHeading(maze_mouse_->currentDirection());
@@ -1180,6 +1181,23 @@ bool Mouse::turn_to_face(const std::string& heading)
     return !haltRequested();
 }
 
+void Mouse::blink(int count)
+{
+#ifndef SIMULATOR_BUILD
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    for (int i = 0; i < count; ++i)
+    {
+        gpio_put(PICO_DEFAULT_LED_PIN, 1);
+        sleep_ms(100);
+        gpio_put(PICO_DEFAULT_LED_PIN, 0);
+        sleep_ms(100);
+    }
+#else
+    (void)count;
+#endif
+}
+
 void Mouse::panic()
 {
     LOG_ERROR("panic: unrecoverable mouse error; stopping drive");
@@ -1190,15 +1208,8 @@ void Mouse::panic()
         motion_->emergency_stop();
         motion_->disable_drive();
     }
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
     for (int i = 0; i < 5 && !haltRequested(); ++i)
-    {
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-        sleep_ms(100);
-        gpio_put(PICO_DEFAULT_LED_PIN, 0);
-        sleep_ms(100);
-    }
+        blink(1);
 #endif
     state_ = State::FINISHED;
 }
@@ -1511,7 +1522,8 @@ void Mouse::report_profile()
         LOG_INFO("profile: pos=" + fixed1(motion_->position()) +
                  " vel=" + fixed1(motion_->velocity()) + " acc=" + fixed1(motion_->acceleration()) +
                  " angle=" + fixed1(motion_->angle()) + " omega=" + fixed1(motion_->omega()) +
-                 " alpha=" + fixed1(motion_->alpha()));
+                 " alpha=" + fixed1(motion_->alpha()) + " yaw=" + fixed1(motion_->yaw_deg()) +
+                 " yaw_rate=" + fixed1(motion_->yaw_rate_degps()));
         return;
     }
 #endif
@@ -1553,7 +1565,7 @@ void Mouse::report_radial_track(bool use_raw)
         const tof_wall::WallState state =
             tof_wall::evaluate(motion_->leftDistance(), motion_->frontDistance(),
                                motion_->rightDistance(), motion_->steeringMode());
-        LOG_INFO("sensor_track: " + fixed1(motion_->angle()) + "," +
+        LOG_INFO("sensor_track: " + fixed1(motion_->yaw_deg()) + "," +
                  fixed1(motion_->leftDistance()) + "," + fixed1(motion_->frontDistance()) + "," +
                  fixed1(motion_->rightDistance()) + "," + (state.left_wall ? "1" : "0") + "," +
                  (state.front_wall ? "1" : "0") + "," + (state.right_wall ? "1" : "0") + "," +
@@ -1941,6 +1953,8 @@ void Mouse::setUp(std::array<int, 2> start, std::vector<std::array<int, 2>> goal
 {
     start_cell_ = start;
     goal_cells_ = goals;
+    if (maze_mouse_ != nullptr)
+        maze_mouse_->reset(start_cell_, "n", goal_cells_);
 
     clearAllColor();
     clearAllText();

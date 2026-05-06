@@ -115,6 +115,7 @@ class Mouse
     bool getRandomBool();
     std::string randomHeading();
     bool        test_SS90E();
+    void        blink(int count);
 
     // UKMARS setup/report helpers. They intentionally use Jurababa ToF mm
     // readings and IMU yaw, but keep the mazerunner-core method names.

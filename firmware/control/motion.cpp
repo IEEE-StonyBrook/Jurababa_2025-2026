@@ -123,7 +123,7 @@ void Motion::set_heading_hold(float target_yaw_deg)
 {
     heading_hold_enabled_          = true;
     heading_hold_target_yaw_deg_   = utils::wrapAngle180(target_yaw_deg);
-    latest_heading_hold_error_deg_ = utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
+    latest_heading_hold_error_deg_ = utils::wrapAngle180(heading_hold_target_yaw_deg_ - yaw_deg());
 }
 
 void Motion::clear_heading_hold()
@@ -181,17 +181,27 @@ float Motion::acceleration() const
 
 float Motion::angle() const
 {
-    return imu_->robot_angle();
+    return rotation_.position();
 }
 
 float Motion::omega() const
 {
-    return imu_->robot_omega();
+    return rotation_.velocity();
 }
 
 float Motion::alpha() const
 {
     return rotation_.acceleration();
+}
+
+float Motion::yaw_deg() const
+{
+    return imu_->robot_angle();
+}
+
+float Motion::yaw_rate_degps() const
+{
+    return imu_->robot_omega();
 }
 
 void Motion::set_target_velocity(float velocity_mmps)
@@ -261,7 +271,11 @@ void Motion::turn(float degrees, float top_speed_degps, float final_speed_degps,
 
 void Motion::spin_turn(float degrees, float omega_degps, float alpha_degps2)
 {
-    forward_.reset();
+    forward_.setFinalSpeed(0.0f);
+    forward_.setTargetSpeed(0.0f);
+    while (std::fabs(forward_.velocity()) > 1e-3f)
+        sleep_ms(2);
+    rotation_.reset();
     rotation_.start(degrees, omega_degps, 0.0f, alpha_degps2);
 }
 
@@ -280,6 +294,19 @@ void Motion::turn_IP90R()
 void Motion::turn_IP90L()
 {
     spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+}
+
+void Motion::stop_at(float position_mm)
+{
+    const float remaining_mm = position_mm - forward_.position();
+    forward_.start(remaining_mm, forward_.velocity(), std::fabs(forward_.velocity()), 0.0f,
+                   forward_.acceleration());
+}
+
+void Motion::stop_after(float distance_mm)
+{
+    forward_.start(distance_mm, forward_.velocity(), std::fabs(forward_.velocity()), 0.0f,
+                   forward_.acceleration());
 }
 
 void Motion::set_position(float position_mm)
@@ -341,7 +368,7 @@ void Motion::runPositionControl()
             latest_heading_hold_adjustment_degps_ = 0.0f;
             if (heading_hold_enabled_)
                 latest_heading_hold_error_deg_ =
-                    utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
+                    utils::wrapAngle180(heading_hold_target_yaw_deg_ - yaw_deg());
             return;
         }
         resetControlHistory();
@@ -351,7 +378,7 @@ void Motion::runPositionControl()
         latest_heading_hold_adjustment_degps_ = 0.0f;
         if (heading_hold_enabled_)
             latest_heading_hold_error_deg_ =
-                utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
+                utils::wrapAngle180(heading_hold_target_yaw_deg_ - yaw_deg());
         return;
     }
 
@@ -448,11 +475,11 @@ float Motion::headingHoldAdjustment(float fwd_velocity_mmps, float rot_velocity_
         latest_heading_hold_adjustment_degps_ = 0.0f;
         if (heading_hold_enabled_)
             latest_heading_hold_error_deg_ =
-                utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
+                utils::wrapAngle180(heading_hold_target_yaw_deg_ - yaw_deg());
         return 0.0f;
     }
 
-    latest_heading_hold_error_deg_ = utils::wrapAngle180(heading_hold_target_yaw_deg_ - angle());
+    latest_heading_hold_error_deg_ = utils::wrapAngle180(heading_hold_target_yaw_deg_ - yaw_deg());
 #if MAZE_HEADING_HOLD_ENABLE
     latest_heading_hold_adjustment_degps_ =
         utils::clampAbs(latest_heading_hold_error_deg_ * MAZE_HEADING_HOLD_KP_DEGPS_PER_DEG,

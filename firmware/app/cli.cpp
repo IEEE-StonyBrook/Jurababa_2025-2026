@@ -711,7 +711,7 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
     {
         const PathSegment& segment        = segments[i];
         bool               ok             = true;
-        const float        yaw_before_deg = deps_.motion->angle();
+        const float        yaw_before_deg = deps_.motion->yaw_deg();
 
         if (segment.type == PathSegmentType::Forward)
         {
@@ -751,7 +751,7 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
             expected_yaw_deg += segment.value;
         }
 
-        const float yaw_after_deg        = deps_.motion->angle();
+        const float yaw_after_deg        = deps_.motion->yaw_deg();
         const float actual_delta_deg     = normalizeYawDelta(yaw_after_deg - yaw_before_deg);
         const float segment_error_deg    = normalizeYawDelta(expected_yaw_deg - yaw_after_deg);
         const float expected_yaw_wrapped = normalizeYawDelta(expected_yaw_deg);
@@ -766,6 +766,16 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                 static_cast<double>(segment_error_deg),
                 static_cast<double>(deps_.motion->headingHoldErrorDeg()),
                 static_cast<double>(deps_.motion->headingHoldAdjustmentDegps()));
+        }
+        else if (segment.type == PathSegmentType::Turn)
+        {
+            printFormat(
+                "PATH %lu/%lu result: cmd=%+.2f yaw_before=%.2f yaw_after=%.2f delta=%+.2f "
+                "expected_yaw=%.2f yaw_error=%+.2f\n",
+                static_cast<unsigned long>(i + 1), static_cast<unsigned long>(segments.size()),
+                static_cast<double>(segment.value), static_cast<double>(yaw_before_deg),
+                static_cast<double>(yaw_after_deg), static_cast<double>(actual_delta_deg),
+                static_cast<double>(expected_yaw_wrapped), static_cast<double>(segment_error_deg));
         }
         else
         {
@@ -787,7 +797,7 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
     }
 
     deps_.motion->stop();
-    const float final_yaw   = deps_.motion->angle();
+    const float final_yaw   = deps_.motion->yaw_deg();
     const float final_error = normalizeYawDelta(expected_yaw_deg - final_yaw);
     printFormat("PATH done: segments=%lu forward=%.1f mm (%.2f cells) expected_yaw=%.2f "
                 "final_yaw=%.2f error=%+.2f deg\n",
@@ -1298,9 +1308,9 @@ void CommandLineInterface::printEncoderSnapshot()
         printFormat("Motion not initialized.\n");
         return;
     }
-    printFormat("L:%ld R:%ld P:%.1f A:%.2f\n", static_cast<long>(r->encoder_ticks(WheelSide::LEFT)),
+    printFormat("L:%ld R:%ld P:%.1f Y:%.2f\n", static_cast<long>(r->encoder_ticks(WheelSide::LEFT)),
                 static_cast<long>(r->encoder_ticks(WheelSide::RIGHT)),
-                static_cast<double>(r->position()), static_cast<double>(r->angle()));
+                static_cast<double>(r->position()), static_cast<double>(r->yaw_deg()));
 }
 
 bool CommandLineInterface::needsTof(const char* what)

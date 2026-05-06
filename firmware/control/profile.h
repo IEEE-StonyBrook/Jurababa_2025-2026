@@ -42,7 +42,7 @@ class Profile
     void update();
 
     float velocity() const { return current_velocity_; }
-    float acceleration() const { return current_acceleration_; }
+    float acceleration() const { return acceleration_; }
     float position() const { return current_position_; }
     float remaining() const;
     bool  finished() const { return state_ == State::Finished; }
