@@ -103,10 +103,13 @@ class CommandLineInterface
     void handle_style_command(const Args& args);
     void handle_path_command(const Args& args);
     void handle_center_command(const Args& args);
+    void handle_line_command(const Args& args);
     void clear_input_buffer();
     void handleBluetoothCommand();
     bool run_competition_stage(int stage, bool wait_for_start);
 
+    void dumpSensorsOneShot();
+    void printLineSnapshot();
     void printMazeView(char mode);
     void printEncoderSnapshot();
     bool needsTof(const char* what);

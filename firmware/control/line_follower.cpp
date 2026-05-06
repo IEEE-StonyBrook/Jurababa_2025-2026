@@ -2,43 +2,30 @@
 
 #include "common/log.h"
 
-namespace
-{
-float normalizeYawDelta(float delta)
-{
-    if (delta > 180.0f)
-        return delta - 360.0f;
-    if (delta < -180.0f)
-        return delta + 360.0f;
-    return delta;
-}
-} // namespace
-
-LineFollower::LineFollower(Drivetrain* drivetrain, LineSensor* line_sensor, IMU* imu,
-                           Battery* battery)
-    : drivetrain_(drivetrain), line_sensor_(line_sensor), imu_(imu), battery_(battery)
+LineFollower::LineFollower(LineSensor* line_sensor, Motion* motion)
+    : line_sensor_(line_sensor), motion_(motion)
 {
 }
 
 void LineFollower::reset()
 {
     state_                = State::Idle;
-    prev_position_error_  = 0.0f;
-    target_yaw_           = 0.0f;
-    turn_start_yaw_       = 0.0f;
-    turn_degrees_         = 0.0f;
     turn_done_            = true;
     prev_intersection_    = false;
     last_intersection_ms_ = 0;
+    resetControlHistory();
 
-    drivetrain_->stop();
+    motion_->emergency_stop();
 }
 
 void LineFollower::startFollowing()
 {
-    state_               = State::FollowingLine;
-    prev_position_error_ = 0.0f;
-    turn_done_           = true;
+    state_     = State::FollowingLine;
+    turn_done_ = true;
+    resetControlHistory();
+    motion_->reset_drive_system();
+    motion_->start_move(LINE_FOLLOW_RUN_DISTANCE_MM, LINE_FOLLOW_BASE_SPEED_MMPS, 0.0f,
+                        ROBOT_BASE_ACCEL_MMPS2);
 }
 
 void LineFollower::update(float dt)
@@ -46,7 +33,6 @@ void LineFollower::update(float dt)
     if (dt <= 0.0f)
         return;
 
-    // Read sensor each tick
     line_sensor_->read();
 
     switch (state_)
@@ -57,7 +43,7 @@ void LineFollower::update(float dt)
 
         case State::TurningLeft:
         case State::TurningRight:
-            updateTurn(dt);
+            updateTurn();
             break;
 
         case State::Stopping:
@@ -68,35 +54,60 @@ void LineFollower::update(float dt)
 
 void LineFollower::followLine(float dt)
 {
-    float position_error = line_sensor_->get_position();
+    const uint32_t now_ms       = to_ms_since_boot(get_absolute_time());
+    const bool     line_present = line_sensor_->on_line();
 
-    // PD steering computation
-    float derivative = (position_error - prev_position_error_) / dt;
-    float steering   = LINE_KP * position_error + LINE_KD * derivative;
+    if (line_present)
+    {
+        latest_line_position_ = line_sensor_->get_position();
+        latest_line_error_    = -latest_line_position_;
+        last_line_seen_ms_    = now_ms;
+        line_seen_            = true;
+        line_lost_            = false;
+    }
+    else
+    {
+        line_lost_ = true;
+        if (!line_seen_)
+        {
+            stop();
+            return;
+        }
+    }
 
-    prev_position_error_ = position_error;
+    const uint32_t lost_ms = line_present ? 0 : now_ms - last_line_seen_ms_;
+    if (lost_ms > LINE_LOST_STOP_MS)
+    {
+        stop();
+        return;
+    }
+    if (lost_ms > LINE_LOST_HOLD_MS)
+    {
+        latest_steering_degps_ = 0.0f;
+        motion_->set_line_steering_adjustment_degps(0.0f, true);
+        return;
+    }
 
-    // Clamp steering to reasonable range
-    steering = utils::clampAbs(steering, 1.0f);
+    if (!filter_initialized_)
+    {
+        filtered_line_error_ = latest_line_error_;
+        prev_line_error_     = filtered_line_error_;
+        filter_initialized_  = true;
+    }
+    else if (line_present)
+    {
+        filtered_line_error_ +=
+            LINE_ERROR_FILTER_ALPHA * (latest_line_error_ - filtered_line_error_);
+    }
 
-    // Base forward speed with differential steering
-    float base_speed = LINE_FOLLOW_BASE_SPEED_MMPS;
+    const float line_error_delta_per_s = (filtered_line_error_ - prev_line_error_) / dt;
+    prev_line_error_                   = filtered_line_error_;
 
-    // Feedforward returns volts directly (kV V/(mm/s), kS V, kA V/(mm/s^2))
-    float left_ff  = drivetrain_->feedforward(WheelSide::LEFT, base_speed, 0.0f);
-    float right_ff = drivetrain_->feedforward(WheelSide::RIGHT, base_speed, 0.0f);
-
-    // `steering` is normalized [-1, 1] from LINE_KP/LINE_KD applied to line
-    // sensor position; scale to volts with a 30%-of-rail steering authority cap.
-    float steering_volts = steering * MAX_VOLTAGE * 0.3f;
-
-    float left_volts  = left_ff - steering_volts;
-    float right_volts = right_ff + steering_volts;
-
-    left_volts  = utils::clampAbs(left_volts, MAX_VOLTAGE);
-    right_volts = utils::clampAbs(right_volts, MAX_VOLTAGE);
-
-    drivetrain_->setVoltage(left_volts, right_volts);
+    float steering_degps = LINE_STEERING_KP_DEGPS_PER_SENSOR * filtered_line_error_ +
+                           LINE_STEERING_KD_DEG_PER_SENSOR * line_error_delta_per_s;
+    steering_degps = utils::clampAbs(steering_degps, LINE_STEERING_LIMIT_DEGPS);
+    latest_steering_degps_ = steering_degps;
+    motion_->set_line_steering_adjustment_degps(steering_degps, true);
 }
 
 bool LineFollower::isIntersectionDetected()
@@ -124,48 +135,29 @@ bool LineFollower::isIntersectionDetected()
 
 void LineFollower::turnLeft90()
 {
-    state_          = State::TurningLeft;
-    turn_start_yaw_ = imu_->robot_angle();
-    turn_degrees_   = -90.0f;
-    target_yaw_     = utils::wrapAngle180(turn_start_yaw_ + turn_degrees_);
-    turn_done_      = false;
+    state_     = State::TurningLeft;
+    turn_done_ = false;
 
-    drivetrain_->stop();
+    motion_->clear_line_steering_adjustment();
+    motion_->spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
     LOG_DEBUG("LineFollower: Turning left 90°");
 }
 
 void LineFollower::turnRight90()
 {
-    state_          = State::TurningRight;
-    turn_start_yaw_ = imu_->robot_angle();
-    turn_degrees_   = 90.0f;
-    target_yaw_     = utils::wrapAngle180(turn_start_yaw_ + turn_degrees_);
-    turn_done_      = false;
+    state_     = State::TurningRight;
+    turn_done_ = false;
 
-    drivetrain_->stop();
+    motion_->clear_line_steering_adjustment();
+    motion_->spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
     LOG_DEBUG("LineFollower: Turning right 90°");
 }
 
-void LineFollower::updateTurn(float dt)
+void LineFollower::updateTurn()
 {
-    float current_yaw = imu_->robot_angle();
-    float yaw_error   = normalizeYawDelta(target_yaw_ - current_yaw);
-
-    // Simple proportional turn (ROT_KP in V/deg → output is volts).
-    // Cap at 50% of rail to keep line-follower turns gentle.
-    float turn_volts = ROT_KP * yaw_error;
-    turn_volts       = utils::clampAbs(turn_volts, MAX_VOLTAGE * 0.5f);
-
-    // Differential drive: spin in place
-    drivetrain_->setVoltage(-turn_volts, turn_volts);
-
-    // Check completion
-    if (std::fabs(yaw_error) < ROBOT_YAW_TOLERANCE_DEG)
+    if (motion_->turn_finished())
     {
-        drivetrain_->stop();
-        turn_done_           = true;
-        state_               = State::FollowingLine;
-        prev_position_error_ = 0.0f;
+        startFollowing();
         LOG_DEBUG("LineFollower: Turn complete, resuming line follow");
     }
 }
@@ -173,8 +165,10 @@ void LineFollower::updateTurn(float dt)
 void LineFollower::stop()
 {
     state_ = State::Stopping;
-    drivetrain_->stop();
+    motion_->clear_line_steering_adjustment();
+    motion_->emergency_stop();
     turn_done_ = true;
+    resetControlHistory();
 }
 
 bool LineFollower::isMotionDone() const
@@ -187,4 +181,58 @@ bool LineFollower::isMotionDone() const
 LineFollower::State LineFollower::state() const
 {
     return state_;
+}
+
+void LineFollower::resetControlHistory()
+{
+    prev_line_error_      = 0.0f;
+    filtered_line_error_  = 0.0f;
+    latest_line_position_ = 0.0f;
+    latest_line_error_    = 0.0f;
+    latest_steering_degps_ = 0.0f;
+    filter_initialized_   = false;
+    line_seen_            = false;
+    line_lost_            = false;
+    last_line_seen_ms_    = 0;
+    motion_->clear_line_steering_adjustment();
+}
+
+uint8_t LineFollower::rawByte() const
+{
+    return line_sensor_->rawByte();
+}
+
+uint8_t LineFollower::activeMask() const
+{
+    return line_sensor_->activeMask();
+}
+
+bool LineFollower::linePresent() const
+{
+    return line_sensor_->on_line();
+}
+
+bool LineFollower::lineLost() const
+{
+    return line_lost_;
+}
+
+float LineFollower::linePosition() const
+{
+    return latest_line_position_;
+}
+
+float LineFollower::lineError() const
+{
+    return latest_line_error_;
+}
+
+float LineFollower::filteredLineError() const
+{
+    return filtered_line_error_;
+}
+
+float LineFollower::steeringAdjustmentDegps() const
+{
+    return latest_steering_degps_;
 }

@@ -41,6 +41,10 @@ class Motion
     float                  rightDistance();
     tof_wall::WallState    wallSteeringState() const;
     float                  wallSteeringAdjustmentDegps() const;
+    void                   set_line_steering_adjustment_degps(float adjustment_degps, bool valid);
+    void                   clear_line_steering_adjustment();
+    float                  lineSteeringAdjustmentDegps() const;
+    bool                   lineSteeringValid() const;
 
     // === Mazerunner-core compatible motion names ===
     void    reset_drive_system();
@@ -124,6 +128,8 @@ class Motion
     float                  latest_steering_adjustment_degps_ = 0.0f;
     float                  side_error_prev_norm_             = 0.0f;
     bool                   side_error_prev_valid_            = false;
+    float                  line_steering_adjustment_degps_   = 0.0f;
+    bool                   line_steering_valid_              = false;
 };
 
 #endif

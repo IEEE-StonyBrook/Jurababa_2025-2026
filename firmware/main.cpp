@@ -9,7 +9,8 @@
  *
  *   2. Cli
  *        UKMARS mazerunner-core-style command loop. ToF mode runs Motion from
- *        a 500 Hz timer callback; LineSensor mode hands motors to LineFollower.
+ *        a 500 Hz timer callback. LineSensor mode keeps Motion as the motor
+ *        controller and lets LineFollower supply only line offset steering.
  *
  * Boot choices are configured in config/boot.h:
  *   BOOT_MODE_SELECTION   -> DriverLab, Normal CLI, or Prompt
@@ -446,8 +447,9 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
     static FirmwareMouse            mouse(&maze_mouse);
     mouse.setUp(start_cell, goal_cells);
 
-    // LineFollower stack — only built in LineSensor mode (Motion stays
-    // out of the picture so LineFollower owns the H-bridge).
+    // LineFollower stack — only built in LineSensor mode. Motion still owns
+    // the tuned forward/rotation controllers; LineFollower only supplies the
+    // line offset steering adjustment.
     LineFollower* line_follower_ptr = nullptr;
     Motion*       motion_ptr        = nullptr;
     ToF*          left_tof_ptr      = nullptr;
@@ -467,10 +469,12 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
 
         static Drivetrain   drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder,
                                        battery);
-        static LineFollower line_follower(&drivetrain, &line_sensor, &imu, battery);
+        static Motion       motion(&drivetrain, &imu);
+        static LineFollower line_follower(&line_sensor, &motion);
         line_follower_ptr = &line_follower;
+        motion_ptr        = &motion;
 
-        printf("LineFollower stack ready.\n");
+        printf("LineFollower + Motion stack ready.\n");
     }
     else
     {

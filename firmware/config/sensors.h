@@ -134,4 +134,16 @@
 #define LINE_SENSOR_I2C_BAUD          100000
 #define LINE_INTERSECTION_DEBOUNCE_MS 50
 
+// Yahboom 8-channel I2C digital mode reports one bit per probe. Bench LINCON
+// testing with Jurababa's mounted sensor showed:
+//   bit 0 / X8 = leftmost probe  = position -3.5
+//   bit 7 / X1 = rightmost probe = position +3.5
+//
+// Current testing track: black line on white surface. In that setup the line
+// bit is active-high on our module, so LINE_SENSOR_ACTIVE_LOW remains 0.
+// Competition track: white line on black/darker surface. Repeat LINCON on the
+// competition material; if the dark background reports active and the white
+// line reports inactive, flip this to 1 before motor tests.
+#define LINE_SENSOR_ACTIVE_LOW 0
+
 #endif // CONFIG_SENSORS_H

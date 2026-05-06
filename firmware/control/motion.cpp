@@ -46,6 +46,8 @@ void Motion::resetControlHistory()
     side_error_prev_valid_            = false;
     latest_wall_state_                = {};
     latest_steering_adjustment_degps_ = 0.0f;
+    line_steering_adjustment_degps_   = 0.0f;
+    line_steering_valid_              = false;
 }
 
 void Motion::set_wall_distances(float left_mm, float front_mm, float right_mm)
@@ -106,6 +108,28 @@ tof_wall::WallState Motion::wallSteeringState() const
 float Motion::wallSteeringAdjustmentDegps() const
 {
     return latest_steering_adjustment_degps_;
+}
+
+void Motion::set_line_steering_adjustment_degps(float adjustment_degps, bool valid)
+{
+    line_steering_adjustment_degps_ = valid ? adjustment_degps : 0.0f;
+    line_steering_valid_            = valid;
+}
+
+void Motion::clear_line_steering_adjustment()
+{
+    line_steering_adjustment_degps_ = 0.0f;
+    line_steering_valid_            = false;
+}
+
+float Motion::lineSteeringAdjustmentDegps() const
+{
+    return line_steering_adjustment_degps_;
+}
+
+bool Motion::lineSteeringValid() const
+{
+    return line_steering_valid_;
 }
 
 float Motion::position() const
@@ -309,10 +333,16 @@ void Motion::runPositionControl()
     // step-input-driven oscillation on spin turns.
     const float forward_output =
         forward_.active() ? forward_controller_.update(fwd_velocity, fwd_change_mm) : 0.0f;
-    const float steering_adjustment =
-        (TOF_STEERING_ENABLE && steering_mode_ != tof_wall::SteeringMode::STEERING_OFF)
-            ? wallSteeringAdjustment(fwd_velocity, rot_velocity)
-            : 0.0f;
+    const bool straight_move = forward_.active() && !rotation_.active();
+    float      steering_adjustment = 0.0f;
+    if (straight_move && line_steering_valid_)
+    {
+        steering_adjustment = line_steering_adjustment_degps_;
+    }
+    else if (TOF_STEERING_ENABLE && steering_mode_ != tof_wall::SteeringMode::STEERING_OFF)
+    {
+        steering_adjustment = wallSteeringAdjustment(fwd_velocity, rot_velocity);
+    }
 #if !TOF_STEERING_ENABLE
     wallSteeringAdjustment(fwd_velocity, rot_velocity); // diagnostics only
 #endif

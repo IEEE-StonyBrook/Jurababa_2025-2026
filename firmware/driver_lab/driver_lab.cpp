@@ -2514,7 +2514,8 @@ void DriverLab::cmdLinePosition()
     line_sensor_->read();
     const float position = line_sensor_->get_position();
     const bool  on_line  = line_sensor_->on_line();
-    printf("Position: %.2f (%s)\n", position, on_line ? "on line" : "off line");
+    printf("Raw: 0x%02X  Active: 0x%02X  Position: %.2f (%s)\n", line_sensor_->rawByte(),
+           line_sensor_->activeMask(), position, on_line ? "on line" : "off line");
 }
 
 void DriverLab::cmdLineIntersection()
@@ -2548,7 +2549,7 @@ void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
 
     printf("\n=== Continuous Line Sensor (duration: %lu ms, interval: %lu ms) ===\n",
            static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
-    printf("Time(ms)  Position  Intersect\n");
+    printf("Time(ms)  Raw   Active  Position  OnLine  Intersect\n");
 
     const uint32_t start_time = to_ms_since_boot(get_absolute_time());
     uint32_t       elapsed    = 0;
@@ -2557,8 +2558,11 @@ void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
         elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
         line_sensor_->read();
         const float position     = line_sensor_->get_position();
+        const bool  on_line      = line_sensor_->on_line();
         const bool  intersection = line_sensor_->detect_intersection();
-        printf("%7lu  %8.2f  %9s\n", static_cast<unsigned long>(elapsed), position,
+        printf("%7lu  0x%02X  0x%02X  %8.2f  %6s  %9s\n",
+               static_cast<unsigned long>(elapsed), line_sensor_->rawByte(),
+               line_sensor_->activeMask(), position, on_line ? "YES" : "NO",
                intersection ? "YES" : "NO");
         sleep_ms(interval_ms);
     }
