@@ -2,6 +2,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -46,6 +47,13 @@ bool parsePositiveInt(const std::string& text, int& value)
 
     value = parsed;
     return true;
+}
+
+std::string fixed1(float value)
+{
+    char buffer[24];
+    std::snprintf(buffer, sizeof(buffer), "%.1f", static_cast<double>(value));
+    return buffer;
 }
 } // namespace
 
@@ -144,6 +152,9 @@ bool API::move_mm(float distance_mm)
 #ifndef SIMULATOR_BUILD
     if (robot_ == nullptr)
         return false;
+    LOG_INFO("MOTION move_mm: distance_mm=" + fixed1(distance_mm) +
+             " speed_mmps=" + fixed1(ROBOT_MAX_SEARCH_SPEED_MMPS) +
+             " accel_mmps2=" + fixed1(ROBOT_BASE_ACCEL_MMPS2));
     robot_->move(distance_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
     waitForMotion();
     return !haltRequested();
@@ -183,6 +194,10 @@ bool API::search_start_from_wall_check()
 
     constexpr float kStartWallCheckPositionMm = CELL_SIZE_MM;
     const float     total_mm                  = CELL_SIZE_MM + WALL_CHECK_TO_CENTER_MM;
+    LOG_INFO("MOTION search_start_from_wall_check: total_mm=" + fixed1(total_mm) +
+             " latch_at_mm=" + fixed1(kStartWallCheckPositionMm) +
+             " speed_mmps=" + fixed1(ROBOT_MAX_SEARCH_SPEED_MMPS) +
+             " accel_mmps2=" + fixed1(ROBOT_BASE_ACCEL_MMPS2));
     robot_->move(total_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
 
     while (!robot_->move_finished() && robot_->position() < kStartWallCheckPositionMm)
@@ -216,6 +231,10 @@ bool API::search_advance()
         return false;
 
     const float wall_check_position_mm = robot_->position() + CENTER_TO_NEXT_WALL_CHECK_MM;
+    LOG_INFO("MOTION search_advance: distance_mm=" + fixed1(CELL_SIZE_MM) +
+             " latch_after_mm=" + fixed1(CENTER_TO_NEXT_WALL_CHECK_MM) + " latch_position_mm=" +
+             fixed1(wall_check_position_mm) + " speed_mmps=" + fixed1(ROBOT_MAX_SEARCH_SPEED_MMPS) +
+             " accel_mmps2=" + fixed1(ROBOT_BASE_ACCEL_MMPS2));
     robot_->move(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
 
     while (!robot_->move_finished() && robot_->position() < wall_check_position_mm)
@@ -311,6 +330,9 @@ void API::turnLeft90()
 #ifndef SIMULATOR_BUILD
     else if (robot_ != nullptr)
     {
+        LOG_INFO(
+            "MOTION turnLeft90: angle_deg=-90 omega_degps=" + fixed1(ROBOT_MAX_TURN_SPEED_DEGPS) +
+            " alpha_degps2=" + fixed1(ROBOT_BASE_ANGULAR_ACCEL_DEGPS2));
         robot_->spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }
@@ -339,6 +361,9 @@ void API::turnRight90()
 #ifndef SIMULATOR_BUILD
     else if (robot_ != nullptr)
     {
+        LOG_INFO(
+            "MOTION turnRight90: angle_deg=90 omega_degps=" + fixed1(ROBOT_MAX_TURN_SPEED_DEGPS) +
+            " alpha_degps2=" + fixed1(ROBOT_BASE_ANGULAR_ACCEL_DEGPS2));
         robot_->spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }

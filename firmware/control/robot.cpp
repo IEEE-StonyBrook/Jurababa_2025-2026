@@ -251,8 +251,12 @@ void Robot::runPositionControl()
     // IMU as a held-flat per-tick delta; this removes the 10 ms staircase
     // that the old 100 Hz gate produced in rotation_output_ and stops the
     // step-input-driven oscillation on spin turns.
-    const float forward_output      = forward_controller_.update(fwd_velocity, fwd_change_mm);
-    const float steering_adjustment = wallSteeringAdjustment(fwd_velocity, rot_velocity);
+    const float forward_output = forward_controller_.update(fwd_velocity, fwd_change_mm);
+    const float steering_adjustment =
+        TOF_STEERING_ENABLE ? wallSteeringAdjustment(fwd_velocity, rot_velocity) : 0.0f;
+#if !TOF_STEERING_ENABLE
+    wallSteeringAdjustment(fwd_velocity, rot_velocity); // diagnostics only
+#endif
     const float rotation_output =
         rotation_controller_.update(rot_velocity, rot_change_deg, steering_adjustment);
 

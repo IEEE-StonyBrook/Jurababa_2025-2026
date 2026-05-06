@@ -94,10 +94,10 @@ class Robot
     float prev_left_cmd_vel_mmps_  = 0.0f;
     float prev_right_cmd_vel_mmps_ = 0.0f;
 
-    // ToFs are physically read at 50 Hz by Core 1, then cached here for the
-    // 500 Hz controller. This mirrors UKMARS' "sensors update once per tick,
-    // motors consume cached steering feedback" shape without doing I2C inside
-    // runPositionControl().
+    // ToFs are physically read outside Robot, then cached here for wall
+    // detection and optional UKMARS-style steering diagnostics. Search
+    // straightness currently comes from IMU yaw hold unless
+    // TOF_STEERING_ENABLE is turned back on.
     float left_wall_mm_  = 0.0f;
     float front_wall_mm_ = 0.0f;
     float right_wall_mm_ = 0.0f;

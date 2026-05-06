@@ -47,17 +47,16 @@
 #define TOF_RIGHT_WALL_THRESHOLD_MM (TOF_RIGHT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
 #define TOF_FRONT_WALL_THRESHOLD_MM 120.0f
 
-// UKMARS-style wall steering. Operates on TOF_SIDE_NOMINAL units (100 =
-// centered), not mm. KP/KD units changed: deg/s per nominal-unit, not per
-// mm. Starting point comes from the old 0.25 deg/s/mm × (132/100) ≈ 0.33
-// for the left side; right side maps 1:1 from the old constant. Pick a
-// single value that works across the picker; retune in a calibration
-// corridor.
+// UKMARS-style wall steering. Wall detection remains enabled regardless of
+// this switch; TOF_STEERING_ENABLE only controls whether side-wall error is
+// injected into the rotation PID. Keep disabled while search relies on pure
+// forward PID + IMU yaw hold.
 //
 // Jurababa yaw/omega convention: positive yaw = CCW (left), so a positive
 // side_error_norm (drifted right of center) commands a positive omega
 // (steer left). Sign matches the IMU's IMU_YAW_SIGN inversion done once
 // in the driver layer.
+#define TOF_STEERING_ENABLE                 0
 #define TOF_STEERING_KP_DEGPS_PER_NOMINAL   0.33f
 #define TOF_STEERING_KD_DEG_PER_NOMINAL     0.0f
 #define TOF_STEERING_ADJUST_LIMIT_DEGPS     10.0f

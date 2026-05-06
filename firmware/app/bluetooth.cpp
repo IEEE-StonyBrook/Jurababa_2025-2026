@@ -1,5 +1,6 @@
 #include "app/bluetooth.h"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
@@ -7,10 +8,17 @@
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/sync.h"
+#include "hardware/uart.h"
+#include "pico/critical_section.h"
 #include "pico/time.h"
 
 Bluetooth* Bluetooth::instance_                         = nullptr;
 uint8_t    Bluetooth::tx_ring_[Bluetooth::TX_RING_SIZE] = {};
+
+struct Bluetooth::TxLock
+{
+    critical_section_t section;
+};
 
 namespace
 {
@@ -50,10 +58,12 @@ Bluetooth::Command commandFromShortcut(char c)
 } // namespace
 
 Bluetooth::Bluetooth(uart_inst_t* uart, uint32_t baud_rate, uint8_t tx_pin, uint8_t rx_pin)
-    : uart_(uart), baud_rate_(baud_rate), tx_pin_(tx_pin), rx_pin_(rx_pin),
-      pending_command_(Command::NONE), command_ready_(false)
+    : uart_(uart != nullptr ? uart : uart0), baud_rate_(baud_rate), tx_pin_(tx_pin),
+      rx_pin_(rx_pin), pending_command_(Command::NONE), command_ready_(false)
 {
-    critical_section_init(&tx_lock_);
+    static TxLock tx_lock_storage;
+    tx_lock_ = &tx_lock_storage;
+    critical_section_init(&tx_lock_->section);
     instance_ = this;
 }
 
@@ -95,12 +105,12 @@ void Bluetooth::write(const char* data)
     writeBytes(reinterpret_cast<const uint8_t*>(data), std::strlen(data));
 }
 
-void Bluetooth::writeBytes(const uint8_t* data, size_t length)
+void Bluetooth::writeBytes(const uint8_t* data, std::size_t length)
 {
     if (data == nullptr)
         return;
 
-    for (size_t i = 0; i < length; ++i)
+    for (std::size_t i = 0; i < length; ++i)
         enqueueByte(data[i]);
 }
 
@@ -110,16 +120,16 @@ void Bluetooth::drain()
     {
         uint8_t byte = 0;
 
-        critical_section_enter_blocking(&tx_lock_);
+        critical_section_enter_blocking(&tx_lock_->section);
         if (tx_tail_ == tx_head_)
         {
-            critical_section_exit(&tx_lock_);
+            critical_section_exit(&tx_lock_->section);
             break;
         }
 
         byte     = tx_ring_[tx_tail_];
         tx_tail_ = static_cast<uint16_t>((tx_tail_ + 1) % TX_RING_SIZE);
-        critical_section_exit(&tx_lock_);
+        critical_section_exit(&tx_lock_->section);
 
         uart_putc_raw(uart_, byte);
     }
@@ -127,11 +137,11 @@ void Bluetooth::drain()
 
 Bluetooth::Diagnostics Bluetooth::diagnostics() const
 {
-    critical_section_enter_blocking(&tx_lock_);
+    critical_section_enter_blocking(&tx_lock_->section);
     Diagnostics diag = {ringDepthLocked(), max_tx_depth_,      dropped_tx_bytes_,
                         rxLineDepth(),     max_rx_line_depth_, dropped_rx_lines_,
                         dropped_rx_chars_, pending_shortcut_};
-    critical_section_exit(&tx_lock_);
+    critical_section_exit(&tx_lock_->section);
     return diag;
 }
 
@@ -164,13 +174,13 @@ bool Bluetooth::hasLine() const
     return rx_line_tail_ != rx_line_head_;
 }
 
-bool Bluetooth::readLine(char* out, size_t out_length)
+bool Bluetooth::readLine(char* out, std::size_t out_length)
 {
     if (out == nullptr || out_length == 0 || !hasLine())
         return false;
 
     const RxLine& line = rx_lines_[rx_line_tail_];
-    size_t        len  = line.length;
+    std::size_t   len  = line.length;
     if (len >= out_length)
         len = out_length - 1;
 
@@ -239,13 +249,13 @@ void Bluetooth::processChar(char c)
 
 void Bluetooth::enqueueByte(uint8_t byte)
 {
-    critical_section_enter_blocking(&tx_lock_);
+    critical_section_enter_blocking(&tx_lock_->section);
 
     uint16_t next = static_cast<uint16_t>((tx_head_ + 1) % TX_RING_SIZE);
     if (next == tx_tail_)
     {
         ++dropped_tx_bytes_;
-        critical_section_exit(&tx_lock_);
+        critical_section_exit(&tx_lock_->section);
         return;
     }
 
@@ -256,7 +266,7 @@ void Bluetooth::enqueueByte(uint8_t byte)
     if (depth > max_tx_depth_)
         max_tx_depth_ = depth;
 
-    critical_section_exit(&tx_lock_);
+    critical_section_exit(&tx_lock_->section);
 }
 
 void Bluetooth::appendRxChar(char c)

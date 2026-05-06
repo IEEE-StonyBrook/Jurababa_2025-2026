@@ -1,11 +1,11 @@
 #ifndef APP_BLUETOOTH_H
 #define APP_BLUETOOTH_H
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
-#include "hardware/uart.h"
-#include "pico/critical_section.h"
+typedef struct uart_inst uart_inst_t;
 
 /**
  * @brief Non-blocking Bluetooth serial interface using UART with interrupt-driven RX
@@ -40,14 +40,14 @@ class Bluetooth
         UNKNOWN
     };
 
-    Bluetooth(uart_inst_t* uart = uart0, uint32_t baud_rate = 115200, uint8_t tx_pin = 0,
+    Bluetooth(uart_inst_t* uart = nullptr, uint32_t baud_rate = 115200, uint8_t tx_pin = 0,
               uint8_t rx_pin = 1);
 
     void init();
 
     void write(const std::string& data);
     void write(const char* data);
-    void writeBytes(const uint8_t* data, size_t length);
+    void writeBytes(const uint8_t* data, std::size_t length);
     void drain();
 
     struct Diagnostics
@@ -67,7 +67,7 @@ class Bluetooth
     bool    hasCommand();
     Command command();
     bool    hasLine() const;
-    bool    readLine(char* out, size_t out_length);
+    bool    readLine(char* out, std::size_t out_length);
 
     static Bluetooth* instance_;
 
@@ -81,6 +81,8 @@ class Bluetooth
     bool        setPendingCommand(Command command);
     bool        promotePendingShortcut();
     uint16_t    rxLineDepth() const;
+
+    struct TxLock;
 
     uart_inst_t* uart_;
     uint32_t     baud_rate_;
@@ -101,12 +103,12 @@ class Bluetooth
         uint16_t length;
     };
 
-    static uint8_t             tx_ring_[TX_RING_SIZE];
-    mutable critical_section_t tx_lock_;
-    volatile uint16_t          tx_head_          = 0;
-    volatile uint16_t          tx_tail_          = 0;
-    volatile uint16_t          max_tx_depth_     = 0;
-    volatile uint32_t          dropped_tx_bytes_ = 0;
+    static uint8_t    tx_ring_[TX_RING_SIZE];
+    mutable TxLock*   tx_lock_          = nullptr;
+    volatile uint16_t tx_head_          = 0;
+    volatile uint16_t tx_tail_          = 0;
+    volatile uint16_t max_tx_depth_     = 0;
+    volatile uint32_t dropped_tx_bytes_ = 0;
 
     RxLine            rx_lines_[RX_LINE_QUEUE_SIZE]        = {};
     char              rx_line_buffer_[RX_LINE_BUFFER_SIZE] = {};
