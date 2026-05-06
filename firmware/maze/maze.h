@@ -4,26 +4,55 @@
 #include <string>
 #include <vector>
 
+enum WallState
+{
+    EXIT    = 0,
+    WALL    = 1,
+    UNKNOWN = 2,
+    VIRTUAL = 3,
+};
+
+enum MazeMask
+{
+    MASK_OPEN   = 0x01,
+    MASK_CLOSED = 0x03,
+};
+
+struct WallInfo
+{
+    WallState north = UNKNOWN;
+    WallState east  = UNKNOWN;
+    WallState south = UNKNOWN;
+    WallState west  = UNKNOWN;
+};
+
 /**
  * @brief Represents a single cell in the maze
  *
  * Tracks wall presence, exploration status, and pathfinding state.
- * NOTE: Phase 4 will convert this to Maze::Cell nested struct.
  */
 class Cell
 {
   public:
     Cell(int x, int y);
 
-    int  x() const;
-    int  y() const;
-    bool explored() const;
-    bool hasWall(char direction) const; // 'N', 'E', 'S', 'W'
-    int  wallCount() const;
+    int       x() const;
+    int       y() const;
+    bool      explored() const;
+    bool      hasWall(char direction) const; // 'N', 'E', 'S', 'W'
+    bool      isExit(char direction, MazeMask mask = MASK_OPEN) const;
+    bool      hasUnknownWalls() const;
+    WallState wallState(char direction) const;
+    WallInfo  walls() const;
+    int       wallCount() const;
 
     void markExplored();
     void setNeighbor(Cell* cell, char direction);
     void setWall(char direction);
+    void setExit(char direction);
+    void updateWallState(char direction, WallState state);
+    void update_wall_state(char direction, WallState state);
+    void set_wall_state(char direction, WallState state);
     void reset();
 
     static bool equal(Cell* c1, Cell* c2);
@@ -34,15 +63,16 @@ class Cell
     void  clearPathfindingState();
 
   private:
-    void addWall(char direction);
+    void setWallStateLocal(char direction, WallState state);
+    bool shouldUpdate(char direction) const;
 
-    int   x_, y_;
-    Cell* north_;
-    Cell* east_;
-    Cell* south_;
-    Cell* west_;
-    bool  wall_north_, wall_east_, wall_south_, wall_west_;
-    bool  explored_;
+    int      x_, y_;
+    Cell*    north_;
+    Cell*    east_;
+    Cell*    south_;
+    Cell*    west_;
+    WallInfo walls_;
+    bool     explored_;
 };
 
 /**
@@ -57,10 +87,12 @@ class Maze
     Cell*              cell(int x, int y);
     std::vector<Cell*> neighbors(Cell* cell, bool include_diagonal = false);
 
-    int  width() const;
-    int  height() const;
-    void reset();
-    void printASCII();
+    int      width() const;
+    int      height() const;
+    void     reset();
+    void     printASCII();
+    void     setMask(MazeMask mask);
+    MazeMask mask() const;
 
   private:
     void createCells();
@@ -70,6 +102,7 @@ class Maze
     std::string rowString(int row);
 
     std::vector<std::vector<Cell*>> cells_;
+    MazeMask                        mask_ = MASK_OPEN;
 };
 
 #endif

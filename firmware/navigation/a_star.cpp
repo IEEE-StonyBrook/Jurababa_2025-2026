@@ -1,7 +1,7 @@
 #include "navigation/a_star.h"
 #include "navigation/path_converter.h"
 
-AStar::AStar(Mouse* mouse) : mouse_(mouse)
+AStar::AStar(MazeMouse* mouse) : mouse_(mouse)
 {
 }
 

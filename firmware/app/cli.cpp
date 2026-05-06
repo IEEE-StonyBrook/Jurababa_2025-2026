@@ -7,12 +7,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <queue>
 #include <string>
+#include <vector>
 
 #include "pico/stdlib.h"
 
-#include "app/api.h"
 #include "app/bluetooth.h"
+#include "app/mouse.h"
 #include "app/start_gesture.h"
 #include "common/log.h"
 #include "common/tof_wall_utils.h"
@@ -20,20 +22,20 @@
 #include "config/motion.h"
 #include "config/sensors.h"
 #include "config/smooth_turn.h"
-#include "control/robot.h"
+#include "control/motion.h"
 #include "drivers/battery.h"
 #include "drivers/tof.h"
 #include "maze/maze.h"
-#include "maze/mouse.h"
+#include "maze/maze_mouse.h"
 #include "navigation/path_utils.h"
 
 namespace
 {
 constexpr char kBackspace = 0x08;
 
-const char* movementStyleName(API::MovementStyle style)
+const char* movementStyleName(Mouse::MovementStyle style)
 {
-    return style == API::MovementStyle::Smooth ? "SMOOTH" : "STATIONARY";
+    return style == Mouse::MovementStyle::Smooth ? "SMOOTH" : "STATIONARY";
 }
 
 const char* tofReadingName(int16_t mm)
@@ -135,8 +137,8 @@ bool CommandLineInterface::haltCheckThunk()
 CommandLineInterface::CommandLineInterface(const Deps& deps) : deps_(deps)
 {
     s_instance_ = this;
-    if (deps_.api != nullptr)
-        deps_.api->setHaltCheck(&CommandLineInterface::haltCheckThunk);
+    if (deps_.mouse != nullptr)
+        deps_.mouse->setHaltCheck(&CommandLineInterface::haltCheckThunk);
 }
 
 void CommandLineInterface::print(const char* text)
@@ -220,15 +222,15 @@ void CommandLineInterface::loop()
     //   2. Sensor service at its configured cadence
     //   3. Battery filter update at 500 Hz (cheap; ADC is non-blocking)
     //
-    // Robot::update() runs concurrently via the 500 Hz hardware timer
+    // Motion::update() runs concurrently via the 500 Hz hardware timer
     // alarm registered in main.cpp.
     while (true)
     {
         process_serial_data();
         if (deps_.battery != nullptr)
             deps_.battery->update();
-        if (deps_.api != nullptr)
-            deps_.api->serviceSensors();
+        if (deps_.mouse != nullptr)
+            deps_.mouse->serviceSensors();
 
         sleep_ms(2);
     }
@@ -402,11 +404,6 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         handle_stage_command(args);
         return;
     }
-    if (std::strcmp(args.argv[0], "COMP") == 0)
-    {
-        run_competition_flow();
-        return;
-    }
     if (std::strcmp(args.argv[0], "STYLE") == 0)
     {
         handle_style_command(args);
@@ -441,9 +438,9 @@ void CommandLineInterface::handle_search_command(const Args& args)
 {
     if (!needsTof("SEARCH"))
         return;
-    if (deps_.api == nullptr || deps_.mouse == nullptr)
+    if (deps_.mouse == nullptr || deps_.maze_mouse == nullptr)
     {
-        printFormat("Maze API not initialized.\n");
+        printFormat("Maze Mouse not initialized.\n");
         return;
     }
 
@@ -457,9 +454,10 @@ void CommandLineInterface::handle_search_command(const Args& args)
     if (!startWithGesture(true))
         return;
 
+    deps_.mouse->set_hand_start(true);
     printFormat("Search to %d,%d\n", x, y);
     std::vector<std::array<int, 2>> goals = {{x, y}};
-    const bool                      ok    = deps_.api->search_to(goals);
+    const bool                      ok    = deps_.mouse->search_to(goals);
     printFormat(ok ? "Search done.\n" : "Search failed.\n");
 }
 
@@ -477,28 +475,28 @@ void CommandLineInterface::handle_stage_command(const Args& args)
 
 void CommandLineInterface::handle_style_command(const Args& args)
 {
-    if (deps_.api == nullptr)
+    if (deps_.mouse == nullptr)
     {
-        printFormat("API not initialized.\n");
+        printFormat("Mouse not initialized.\n");
         return;
     }
 
     if (args.argc < 2)
     {
-        printFormat("STYLE: %s\n", movementStyleName(deps_.api->movementStyle()));
+        printFormat("STYLE: %s\n", movementStyleName(deps_.mouse->movementStyle()));
         return;
     }
 
     if (std::strcmp(args.argv[1], "SMOOTH") == 0)
     {
-        deps_.api->setMovementStyle(API::MovementStyle::Smooth);
+        deps_.mouse->setMovementStyle(Mouse::MovementStyle::Smooth);
         printFormat("STYLE: SMOOTH\n");
         return;
     }
 
     if (std::strcmp(args.argv[1], "STATIONARY") == 0 || std::strcmp(args.argv[1], "STILL") == 0)
     {
-        deps_.api->setMovementStyle(API::MovementStyle::Stationary);
+        deps_.mouse->setMovementStyle(Mouse::MovementStyle::Stationary);
         printFormat("STYLE: STATIONARY\n");
         return;
     }
@@ -606,9 +604,9 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                                              float accel_mmps2, float omega_degps,
                                              float alpha_degps2, bool smooth_turns)
 {
-    if (deps_.api == nullptr || deps_.robot == nullptr)
+    if (deps_.mouse == nullptr || deps_.motion == nullptr)
     {
-        printFormat("PATH requires Robot/API in ToF CLI mode.\n");
+        printFormat("PATH requires Motion/Mouse in ToF CLI mode.\n");
         return false;
     }
 
@@ -624,7 +622,7 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
         }
     }
 
-    deps_.robot->begin_motion_sequence();
+    deps_.motion->begin_motion_sequence();
     halted_ = false;
 
     float expected_yaw_deg = 0.0f;
@@ -639,14 +637,14 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
     {
         const PathSegment& segment        = segments[i];
         bool               ok             = true;
-        const float        yaw_before_deg = deps_.robot->angle();
+        const float        yaw_before_deg = deps_.motion->angle();
 
         if (segment.type == PathSegmentType::Forward)
         {
             printFormat("PATH %lu/%lu: F %.1f mm\n", static_cast<unsigned long>(i + 1),
                         static_cast<unsigned long>(segments.size()),
                         static_cast<double>(segment.value));
-            deps_.robot->start_move(segment.value, speed_mmps, 0.0f, accel_mmps2);
+            deps_.motion->start_move(segment.value, speed_mmps, 0.0f, accel_mmps2);
             ok = wait_path_segment_motion();
             total_forward_mm += segment.value;
         }
@@ -659,7 +657,7 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                 static_cast<unsigned long>(i + 1), static_cast<unsigned long>(segments.size()),
                 static_cast<double>(params.angle_deg), static_cast<double>(params.speed_mmps),
                 static_cast<double>(params.omega_degps));
-            deps_.robot->turn_smooth(turn_id);
+            deps_.motion->turn_smooth(turn_id);
             ok = wait_path_segment_motion();
             expected_yaw_deg += params.angle_deg;
         }
@@ -668,12 +666,12 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
             printFormat("PATH %lu/%lu: TURN %.1f deg\n", static_cast<unsigned long>(i + 1),
                         static_cast<unsigned long>(segments.size()),
                         static_cast<double>(segment.value));
-            deps_.robot->spin_turn(segment.value, std::fabs(omega_degps), std::fabs(alpha_degps2));
+            deps_.motion->spin_turn(segment.value, std::fabs(omega_degps), std::fabs(alpha_degps2));
             ok = wait_path_segment_motion();
             expected_yaw_deg += segment.value;
         }
 
-        const float yaw_after_deg        = deps_.robot->angle();
+        const float yaw_after_deg        = deps_.motion->angle();
         const float actual_delta_deg     = normalizeYawDelta(yaw_after_deg - yaw_before_deg);
         const float segment_error_deg    = normalizeYawDelta(expected_yaw_deg - yaw_after_deg);
         const float expected_yaw_wrapped = normalizeYawDelta(expected_yaw_deg);
@@ -688,13 +686,13 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
         if (!ok || halted_)
         {
             printFormat("PATH stopped at segment %lu.\n", static_cast<unsigned long>(i + 1));
-            deps_.robot->end_motion_sequence();
+            deps_.motion->end_motion_sequence();
             return false;
         }
     }
 
-    deps_.robot->stop();
-    const float final_yaw   = deps_.robot->angle();
+    deps_.motion->stop();
+    const float final_yaw   = deps_.motion->angle();
     const float final_error = normalizeYawDelta(expected_yaw_deg - final_yaw);
     printFormat("PATH done: segments=%lu forward=%.1f mm (%.2f cells) expected_yaw=%.2f "
                 "final_yaw=%.2f error=%+.2f deg\n",
@@ -702,23 +700,23 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                 static_cast<double>(total_forward_mm / CELL_SIZE_MM),
                 static_cast<double>(expected_yaw_deg), static_cast<double>(final_yaw),
                 static_cast<double>(final_error));
-    deps_.robot->end_motion_sequence();
+    deps_.motion->end_motion_sequence();
     return true;
 }
 
 bool CommandLineInterface::wait_path_segment_motion()
 {
-    if (deps_.robot == nullptr)
+    if (deps_.motion == nullptr)
         return false;
 
-    while (!deps_.robot->move_finished() || !deps_.robot->turn_finished())
+    while (!deps_.motion->move_finished() || !deps_.motion->turn_finished())
     {
-        if (deps_.api != nullptr)
-            deps_.api->serviceSensors();
+        if (deps_.mouse != nullptr)
+            deps_.mouse->serviceSensors();
         pollHaltOnly();
         if (halted_)
         {
-            deps_.robot->emergency_stop();
+            deps_.motion->emergency_stop();
             return false;
         }
         sleep_ms(2);
@@ -816,9 +814,10 @@ void CommandLineInterface::handle_center_command(const Args& args)
     }
 
     printFormat("CENTER distance: %.1f mm\n", static_cast<double>(START_CENTER_DISTANCE_MM));
-    if (deps_.robot != nullptr)
-        deps_.robot->reset_drive_system();
-    if (deps_.api == nullptr || !deps_.api->move_physical(START_CENTER_DISTANCE_MM, speed, accel))
+    if (deps_.motion != nullptr)
+        deps_.motion->reset_drive_system();
+    if (deps_.mouse == nullptr ||
+        !deps_.mouse->move_physical(START_CENTER_DISTANCE_MM, speed, accel))
         printFormat("CENTER failed.\n");
 }
 
@@ -826,9 +825,9 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
 {
     if (!needsTof("STAGE"))
         return false;
-    if (deps_.api == nullptr || deps_.mouse == nullptr)
+    if (deps_.mouse == nullptr || deps_.maze_mouse == nullptr)
     {
-        printFormat("Maze API not initialized.\n");
+        printFormat("Maze Mouse not initialized.\n");
         return false;
     }
 
@@ -845,62 +844,40 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
     {
         case 1:
             printFormat("Stage 1: iterative A* search to goal.\n");
-            deps_.api->setPhaseColor('y');
-            return deps_.api->search_to(deps_.goal_cells);
+            deps_.mouse->setPhaseColor('y');
+            if (wait_for_start)
+                deps_.mouse->set_hand_start(true);
+            return deps_.mouse->search_to(deps_.goal_cells);
 
         case 2:
         {
             printFormat("Stage 2: iterative A* return to start.\n");
-            deps_.api->setPhaseColor('c');
+            deps_.mouse->setPhaseColor('c');
             std::vector<std::array<int, 2>> goals = {deps_.start_cell};
-            return deps_.api->search_to(goals);
+            return deps_.mouse->search_to(goals);
         }
 
         case 3:
             printFormat("Stage 3: explored-only cardinal fast run to goal.\n");
-            deps_.api->setPhaseColor('g');
-            return PathUtils::traverseExploredPath(deps_.api, deps_.mouse, deps_.goal_cells);
+            deps_.mouse->setPhaseColor('g');
+            return PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, deps_.goal_cells);
 
         case 4:
         {
             printFormat("Stage 4: explored-only cardinal fast return to start.\n");
-            deps_.api->setPhaseColor('c');
+            deps_.mouse->setPhaseColor('c');
             std::vector<std::array<int, 2>> goals = {deps_.start_cell};
-            return PathUtils::traverseExploredPath(deps_.api, deps_.mouse, goals);
+            return PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, goals);
         }
 
         case 5:
             printFormat("Stage 5: explored-only diagonal fast run to goal.\n");
-            deps_.api->setPhaseColor('G');
-            return PathUtils::traverseExploredDiagonalPath(deps_.api, deps_.mouse,
+            deps_.mouse->setPhaseColor('G');
+            return PathUtils::traverseExploredDiagonalPath(deps_.mouse, deps_.maze_mouse,
                                                            deps_.goal_cells);
     }
 
     return false;
-}
-
-void CommandLineInterface::run_competition_flow()
-{
-    if (!needsTof("COMP"))
-        return;
-    if (deps_.api == nullptr || deps_.mouse == nullptr)
-    {
-        printFormat("Maze API not initialized.\n");
-        return;
-    }
-    if (!startWithGesture(true))
-        return;
-
-    printFormat("Running competition stages 1..5.\n");
-    for (int stage = 1; stage <= 5; ++stage)
-    {
-        if (!run_competition_stage(stage, /*wait_for_start=*/false))
-        {
-            printFormat("Competition stopped at stage %d.\n", stage);
-            return;
-        }
-    }
-    printFormat("Competition flow complete.\n");
 }
 
 void CommandLineInterface::handleBluetoothCommand()
@@ -981,68 +958,89 @@ void CommandLineInterface::run_function(int cmd)
         case 2:
             if (!needsTof("Search maze"))
                 break;
-            if (deps_.api == nullptr || deps_.mouse == nullptr)
+            if (deps_.mouse == nullptr || deps_.maze_mouse == nullptr)
                 break;
             if (!startWithGesture(true))
                 break;
-            if (deps_.api != nullptr)
-                deps_.api->setPhaseColor('y');
+            if (deps_.mouse != nullptr)
+                deps_.mouse->setPhaseColor('y');
             printFormat("Searching maze...\n");
-            printFormat(deps_.api->search_to(deps_.goal_cells) ? "Search done.\n"
-                                                               : "Search failed.\n");
+            printFormat(deps_.mouse->search_maze() ? "Search done.\n" : "Search failed.\n");
             break;
 
         case 3:
             if (!needsTof("Follow to start"))
                 break;
-            if (deps_.api == nullptr || deps_.mouse == nullptr)
+            if (deps_.mouse == nullptr || deps_.maze_mouse == nullptr)
                 break;
             if (!startWithGesture(true))
                 break;
             printFormat("Follow to start...\n");
             {
                 std::vector<std::array<int, 2>> goals = {deps_.start_cell};
-                printFormat(deps_.api->search_to(goals) ? "Follow done.\n" : "Follow failed.\n");
+                deps_.mouse->set_hand_start(true);
+                printFormat(deps_.mouse->follow_to(goals) ? "Follow done.\n" : "Follow failed.\n");
             }
             break;
 
         case 4:
             if (!needsTof("Test SS90E Turn"))
                 break;
-            if (deps_.api == nullptr)
+            if (deps_.mouse == nullptr)
                 break;
             if (!startWithGesture(true))
                 break;
-            deps_.api->turn_right();
-            printFormat("SS90E right done.\n");
+            deps_.mouse->set_hand_start(true);
+            printFormat(deps_.mouse->test_SS90E() ? "SS90E right done.\n" : "SS90E failed.\n");
             break;
 
         case 5:
-            printFormat("Wander is not implemented on Jurababa.\n");
+            if (!needsTof("Wander"))
+                break;
+            if (deps_.mouse == nullptr || deps_.maze_mouse == nullptr)
+                break;
+            if (!startWithGesture(true))
+                break;
+            deps_.mouse->set_hand_start(true);
+            printFormat(deps_.mouse->wander_to(deps_.goal_cells) ? "Wander done.\n"
+                                                                 : "Wander failed.\n");
             break;
 
         case 6:
             if (!needsTof("Edge detect position test"))
                 break;
-            dumpSensorsOneShot();
+            if (!startWithGesture(true))
+                break;
+            if (deps_.mouse != nullptr)
+                deps_.mouse->conf_edge_detection();
             break;
 
         case 7:
-            printEncoderSnapshot();
+            if (!needsTof("Sensor Spin Calibration"))
+                break;
+            if (!startWithGesture(true))
+                break;
+            if (deps_.mouse != nullptr)
+                deps_.mouse->conf_sensor_spin_calibrate();
             break;
 
         case 8:
-            printTofSnapshot();
+            if (!needsTof("Get Front Sensor table"))
+                break;
+            if (!startWithGesture(true))
+                break;
+            if (deps_.mouse != nullptr)
+                deps_.mouse->conf_log_front_sensor();
             break;
 
         case 9:
             if (!needsTof("Move forward 4 cells"))
                 break;
-            if (deps_.api == nullptr)
+            if (deps_.mouse == nullptr)
                 break;
             if (!startWithGesture(true))
                 break;
-            deps_.api->moveForward(4);
+            deps_.mouse->moveForward(4);
             printFormat("Forward 4 cells done.\n");
             break;
 
@@ -1063,7 +1061,7 @@ void CommandLineInterface::run_function(int cmd)
 
 void CommandLineInterface::dumpSensorsOneShot()
 {
-    Robot* r = deps_.robot;
+    Motion* r = deps_.motion;
     if (r != nullptr)
     {
         printFormat("ToF L=%d mm F=%d mm R=%d mm  yaw=%.1f deg\n",
@@ -1072,7 +1070,7 @@ void CommandLineInterface::dumpSensorsOneShot()
     }
     else
     {
-        printFormat("ToF: robot not initialized\n");
+        printFormat("ToF: motion not initialized\n");
     }
     if (deps_.battery != nullptr)
         printFormat("Battery: %.2f V\n", deps_.battery->voltage());
@@ -1099,25 +1097,143 @@ void CommandLineInterface::dumpSensorsOneShot()
 
 void CommandLineInterface::printMazeView(char mode)
 {
-    if (deps_.api == nullptr)
+    if (deps_.mouse == nullptr)
     {
-        printFormat("Maze API not initialized.\n");
+        printFormat("Maze Mouse not initialized.\n");
         return;
     }
 
-    if (mode == 'C')
-        printFormat("Cost view is not implemented yet; printing maze walls instead.\n");
-    if (mode == 'D')
-        printFormat("Direction view is not implemented yet; printing maze walls instead.\n");
-    print(deps_.api->mazeString());
+    if (mode == 'W' || deps_.maze_mouse == nullptr)
+    {
+        print(deps_.mouse->mazeString());
+        return;
+    }
+
+    MazeMouse*    mouse      = deps_.maze_mouse;
+    int           width      = mouse->mazeWidth();
+    int           height     = mouse->mazeHeight();
+    constexpr int kUnreached = 9999;
+
+    std::vector<std::vector<int>> cost(width, std::vector<int>(height, kUnreached));
+    std::queue<Cell*>             queue;
+    for (const auto& goal : deps_.goal_cells)
+    {
+        Cell* goal_cell = mouse->cellAt(goal[0], goal[1]);
+        if (goal_cell == nullptr)
+            continue;
+        cost[goal_cell->x()][goal_cell->y()] = 0;
+        queue.push(goal_cell);
+    }
+
+    while (!queue.empty())
+    {
+        Cell* cell = queue.front();
+        queue.pop();
+        const int next_cost = cost[cell->x()][cell->y()] + 1;
+        for (Cell* neighbor : mouse->cellNeighbors(cell, /*include_diagonal=*/false))
+        {
+            if (!mouse->canMoveBetween(cell, neighbor, /*diagonals=*/false))
+                continue;
+            if (next_cost >= cost[neighbor->x()][neighbor->y()])
+                continue;
+            cost[neighbor->x()][neighbor->y()] = next_cost;
+            queue.push(neighbor);
+        }
+    }
+
+    auto h_wall = [](WallState state) -> const char*
+    {
+        if (state == WALL)
+            return "---";
+        if (state == EXIT)
+            return "   ";
+        if (state == VIRTUAL)
+            return "###";
+        return "...";
+    };
+    auto v_wall = [](WallState state) -> char
+    {
+        if (state == WALL)
+            return '|';
+        if (state == EXIT)
+            return ' ';
+        if (state == VIRTUAL)
+            return '#';
+        return ':';
+    };
+
+    std::string out = (mode == 'C') ? "Costs:\n" : "Directions:\n";
+    for (int row = height - 1; row >= 0; --row)
+    {
+        for (int col = 0; col < width; ++col)
+        {
+            Cell* cell = mouse->cellAt(col, row);
+            out += '+';
+            out += h_wall(cell->wallState('N'));
+        }
+        out += "+\n";
+
+        for (int col = 0; col < width; ++col)
+        {
+            Cell* cell = mouse->cellAt(col, row);
+            out += v_wall(cell->wallState('W'));
+
+            if (mode == 'C')
+            {
+                char text[4];
+                if (cost[col][row] >= kUnreached)
+                    std::snprintf(text, sizeof(text), "###");
+                else
+                    std::snprintf(text, sizeof(text), "%3d", cost[col][row] % 1000);
+                out += text;
+            }
+            else
+            {
+                char arrow     = ' ';
+                int  best_cost = cost[col][row];
+                for (Cell* neighbor : mouse->cellNeighbors(cell, /*include_diagonal=*/false))
+                {
+                    if (!mouse->canMoveBetween(cell, neighbor, /*diagonals=*/false))
+                        continue;
+                    const int neighbor_cost = cost[neighbor->x()][neighbor->y()];
+                    if (neighbor_cost >= best_cost)
+                        continue;
+                    best_cost = neighbor_cost;
+                    if (neighbor->x() > col)
+                        arrow = '>';
+                    else if (neighbor->x() < col)
+                        arrow = '<';
+                    else if (neighbor->y() > row)
+                        arrow = '^';
+                    else if (neighbor->y() < row)
+                        arrow = 'v';
+                }
+                if (best_cost == 0)
+                    arrow = '*';
+                out += ' ';
+                out += arrow;
+                out += ' ';
+            }
+        }
+        out += v_wall(mouse->cellAt(width - 1, row)->wallState('E'));
+        out += '\n';
+    }
+    for (int col = 0; col < width; ++col)
+    {
+        Cell* cell = mouse->cellAt(col, 0);
+        out += '+';
+        out += h_wall(cell->wallState('S'));
+    }
+    out += "+\n";
+    print(out);
 }
 
 void CommandLineInterface::printEncoderSnapshot()
 {
-    Robot* r = deps_.robot;
+    Motion* r = deps_.motion;
     if (r == nullptr)
     {
-        printFormat("Robot not initialized.\n");
+        printFormat("Motion not initialized.\n");
         return;
     }
     printFormat("position=%.1f mm velocity=%.1f mm/s yaw=%.2f deg omega=%.2f deg/s\n",
@@ -1130,10 +1246,10 @@ void CommandLineInterface::printTofSnapshot()
     if (!needsTof("Q"))
         return;
 
-    Robot* r = deps_.robot;
+    Motion* r = deps_.motion;
     if (r == nullptr)
     {
-        printFormat("Robot not initialized.\n");
+        printFormat("Motion not initialized.\n");
         return;
     }
 
@@ -1141,7 +1257,7 @@ void CommandLineInterface::printTofSnapshot()
     const int16_t f_mm = static_cast<int16_t>(r->frontDistance());
     const int16_t r_mm = static_cast<int16_t>(r->rightDistance());
 
-    const tof_wall::WallState wall_state = tof_wall::evaluate(l_mm, f_mm, r_mm);
+    const tof_wall::WallState wall_state = tof_wall::evaluate(l_mm, f_mm, r_mm, r->steeringMode());
 
     printFormat("ToF L=%d mm (%s) F=%d mm (%s) R=%d mm (%s)\n", l_mm, tofReadingName(l_mm), f_mm,
                 tofReadingName(f_mm), r_mm, tofReadingName(r_mm));
@@ -1172,23 +1288,24 @@ void CommandLineInterface::printTofSnapshot()
                     wall_state.front_blocked);
     }
     const tof_wall::WallState live_state = r->wallSteeringState();
-    printFormat("Cal Lmm=%.1f Rmm=%.1f nominal=%.1f  live src=%s err=%.1f norm adjust=%.1f deg/s "
-                "allowed=%d\n",
-                static_cast<double>(TOF_LEFT_CALIBRATION_MM),
-                static_cast<double>(TOF_RIGHT_CALIBRATION_MM),
-                static_cast<double>(TOF_SIDE_NOMINAL), tof_wall::sourceName(live_state.source),
-                static_cast<double>(live_state.side_error_norm),
-                static_cast<double>(r->wallSteeringAdjustmentDegps()), live_state.steering_allowed);
+    printFormat(
+        "Cal Lmm=%.1f Rmm=%.1f nominal=%.1f  mode=%s live src=%s err=%.1f norm "
+        "adjust=%.1f deg/s allowed=%d\n",
+        static_cast<double>(TOF_LEFT_CALIBRATION_MM), static_cast<double>(TOF_RIGHT_CALIBRATION_MM),
+        static_cast<double>(TOF_SIDE_NOMINAL), tof_wall::modeName(r->steeringMode()),
+        tof_wall::sourceName(live_state.source), static_cast<double>(live_state.side_error_norm),
+        static_cast<double>(r->wallSteeringAdjustmentDegps()), live_state.steering_allowed);
     printFormat("Yaw current=%.2f deg\n", static_cast<double>(r->angle()));
 
-    if (deps_.mouse != nullptr)
+    if (deps_.maze_mouse != nullptr)
     {
-        Cell* cell = deps_.mouse->currentCell();
+        Cell* cell = deps_.maze_mouse->currentCell();
         if (cell != nullptr)
         {
-            printFormat("Mouse cell=(%d,%d) heading=%s cell_walls N=%d E=%d S=%d W=%d\n", cell->x(),
-                        cell->y(), deps_.mouse->currentDirection().c_str(), cell->hasWall('N'),
-                        cell->hasWall('E'), cell->hasWall('S'), cell->hasWall('W'));
+            printFormat("MazeMouse cell=(%d,%d) heading=%s cell_walls N=%d E=%d S=%d W=%d\n",
+                        cell->x(), cell->y(), deps_.maze_mouse->currentDirection().c_str(),
+                        cell->hasWall('N'), cell->hasWall('E'), cell->hasWall('S'),
+                        cell->hasWall('W'));
         }
     }
 }
@@ -1230,24 +1347,24 @@ bool CommandLineInterface::startWithGesture(bool tof_available)
             break;
     }
 
-    if (deps_.sensor_mode == SensorMode::TOF && deps_.robot != nullptr)
+    if (deps_.sensor_mode == SensorMode::TOF && deps_.motion != nullptr)
     {
         // UKMARS pattern: clear any prior motion before starting a new run.
-        deps_.robot->emergency_stop();
+        deps_.motion->emergency_stop();
     }
     return true;
 }
 
 bool CommandLineInterface::startCenter()
 {
-    if (deps_.api == nullptr)
+    if (deps_.mouse == nullptr)
     {
-        printFormat("API not initialized.\n");
+        printFormat("Mouse not initialized.\n");
         return false;
     }
 
     printFormat("Start-center: %.1f mm\n", static_cast<double>(START_CENTER_DISTANCE_MM));
-    return deps_.api->start_center() && !halted_;
+    return deps_.mouse->start_center() && !halted_;
 }
 
 void CommandLineInterface::stop()
@@ -1255,26 +1372,25 @@ void CommandLineInterface::stop()
     // UKMARS pattern: emergency_stop() resets the drive system in place.
     // Any blocking motion call will see halt_check_ return true on its next
     // 2 ms iteration and exit the busy-wait.
-    if (deps_.robot != nullptr)
-        deps_.robot->emergency_stop();
+    if (deps_.motion != nullptr)
+        deps_.motion->emergency_stop();
     halted_ = true;
     printFormat("STOP\n");
 }
 
 void CommandLineInterface::reset()
 {
-    if (deps_.sensor_mode == SensorMode::TOF && deps_.robot != nullptr)
-        deps_.robot->emergency_stop();
+    if (deps_.sensor_mode == SensorMode::TOF && deps_.motion != nullptr)
+        deps_.motion->emergency_stop();
 
     if (deps_.maze != nullptr)
         deps_.maze->reset();
+    if (deps_.maze_mouse != nullptr)
+        deps_.maze_mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
     if (deps_.mouse != nullptr)
-        deps_.mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
-    if (deps_.api != nullptr)
     {
-        deps_.api->clearWallSample();
-        deps_.api->setPhaseColor('y');
-        deps_.api->setUp(deps_.start_cell, deps_.goal_cells);
+        deps_.mouse->setPhaseColor('y');
+        deps_.mouse->setUp(deps_.start_cell, deps_.goal_cells);
     }
 
     halted_        = false;
@@ -1326,8 +1442,8 @@ void CommandLineInterface::help()
     printFormat("? : this text\n");
     printFormat("X : stop motion\n");
     printFormat("W : display maze walls\n");
-    printFormat("C : cost view placeholder; prints maze walls\n");
-    printFormat("D : direction view placeholder; prints maze walls\n");
+    printFormat("C : display goal costs\n");
+    printFormat("D : display best directions\n");
     printFormat("B : show battery voltage\n");
     printFormat("S : show combined sensor readings\n");
     printFormat("E : show encoder/IMU readings\n");
@@ -1345,7 +1461,6 @@ void CommandLineInterface::help()
     printFormat(" 9 = move forward 4 cells\n");
     printFormat("SEARCH x y : search to location (x,y)\n");
     printFormat("STAGE n : run competition stage 1..5\n");
-    printFormat("COMP : run stages 1..5\n");
     printFormat("STYLE [STATIONARY|SMOOTH] : select path execution style\n");
     printFormat("PATH seq [spd acc omg alp smooth] : blind physical path, smooth default=0\n");
     printFormat("CENTER [spd acc] : move from start wall-check pose to cell center (%.1f mm)\n",

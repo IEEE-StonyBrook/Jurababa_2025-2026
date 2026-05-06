@@ -1,30 +1,31 @@
-#ifndef APP_API_H
-#define APP_API_H
+#ifndef APP_MOUSE_H
+#define APP_MOUSE_H
 
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
 
-class Mouse;
-class Robot;
+class MazeMouse;
+class Motion;
+class Cell;
 
 /**
- * @brief High-level maze navigation API
+ * @brief High-level maze navigation Mouse
  *
  * Provides movement commands, wall sensing, and maze visualization. Bridges
  * between navigation algorithms and hardware control.
  *
  * Single-core UKMARS pattern: motion methods on hardware call directly into
- * `robot_->start_move()` / `robot_->start_turn()` and then busy-wait on
- * `robot_->move_finished()`/`turn_finished()` while a 500 Hz hardware timer
+ * `motion_->start_move()` / `motion_->start_turn()` and then busy-wait on
+ * `motion_->move_finished()`/`turn_finished()` while a 500 Hz hardware timer
  * advances the controller in the background. Same shape as
  * mazerunner-core's `motion.move`.
  *
- * `wallLeft/Front/Right` are virtual so `FirmwareApi` can read live ToF
- * distances on hardware while the simulator build keeps using bare `API`.
+ * `wallLeft/Front/Right` are virtual so `FirmwareMouse` can read live ToF
+ * distances on hardware while the simulator build keeps using bare `Mouse`.
  */
-class API
+class Mouse
 {
   public:
     enum class MovementStyle
@@ -33,13 +34,22 @@ class API
         Smooth
     };
 
-    explicit API(Mouse* mouse);
-    virtual ~API() = default;
+    enum class State
+    {
+        FRESH_START,
+        SEARCHING,
+        INPLACE_RUN,
+        SMOOTH_RUN,
+        FINISHED
+    };
 
-    // Set the runtime motion target. Null on simulator builds; FirmwareApi
-    // requires a non-null Robot pointer for any motion to actually happen.
-    void   setRobot(Robot* robot) { robot_ = robot; }
-    Robot* robot() const { return robot_; }
+    explicit Mouse(MazeMouse* maze_mouse);
+    virtual ~Mouse() = default;
+
+    // Set the runtime motion target. Null on simulator builds; FirmwareMouse
+    // requires a non-null Motion pointer for any motion to actually happen.
+    void    set_motion(Motion* motion) { motion_ = motion; }
+    Motion* motion() const { return motion_; }
 
     // Maze dimensions
     int mazeWidth();
@@ -49,13 +59,19 @@ class API
     virtual bool wallLeft();
     virtual bool wallFront();
     virtual bool wallRight();
-    virtual void captureWallSample();
-    virtual void setWallSample(int16_t left_mm, int16_t front_mm, int16_t right_mm);
-    virtual void clearWallSample();
-    virtual bool wallSample(int16_t& left_mm, int16_t& front_mm, int16_t& right_mm);
+    bool         see_left_wall();
+    bool         see_front_wall();
+    bool         see_right_wall();
     virtual void serviceSensors();
     virtual void begin_motion_sequence();
     virtual void end_motion_sequence();
+
+    // UKMARS Mouse lifecycle/workflow names.
+    void  init();
+    void  set_heading(const std::string& heading);
+    void  set_hand_start(bool hand_start) { m_handStart = hand_start; }
+    bool  hand_start() const { return m_handStart; }
+    State state() const { return state_; }
 
     // Movement commands
     void moveForwardHalf();
@@ -86,6 +102,29 @@ class API
     bool wait_until_position(float position_mm);
     void update_map();
     bool search_to(const std::vector<std::array<int, 2>>& goals);
+    bool search_maze();
+    bool turn_to_face(const std::string& heading);
+    void log_action_status(const std::string& action, Cell* cell, const std::string& position_text);
+    void panic();
+    bool run(float distance_mm);
+    bool run_to(const std::vector<std::array<int, 2>>& goals, bool diagonalized);
+    bool follow_to(const std::vector<std::array<int, 2>>& goals);
+    bool wander_to(const std::vector<std::array<int, 2>>& goals);
+    bool getRandomBool();
+    std::string randomHeading();
+    bool        test_SS90E();
+
+    // UKMARS setup/report helpers. They intentionally use Jurababa ToF mm
+    // readings and IMU yaw, but keep the mazerunner-core method names.
+    void print_wall_sensors();
+    void report_profile();
+    void front_sensor_track_header();
+    void front_sensor_track();
+    void report_sensor_track_header();
+    void report_radial_track(bool use_raw = false);
+    void conf_log_front_sensor();
+    void conf_sensor_spin_calibrate();
+    void conf_edge_detection();
 
     // Arc turns (smooth turns with forward motion)
     void arcTurnLeft90();
@@ -130,17 +169,22 @@ class API
     bool run_on_simulator = false;
 
   protected:
-    // UKMARS busy-wait pattern: spin on robot_->{move,turn}_finished() while
-    // the 500 Hz timer ISR keeps Robot::update() advancing the controller.
+    // UKMARS busy-wait pattern: spin on motion_->{move,turn}_finished() while
+    // the 500 Hz timer ISR keeps Motion::update() advancing the controller.
     // Sensor service keeps ToF caches fresh during synchronous SEARCH waits.
     // 2 ms sleep matches mazerunner-core's `delay(2)` cadence.
     void waitForMotion();
 
-    Mouse*        mouse_          = nullptr;
-    Robot*        robot_          = nullptr;
+    MazeMouse*    maze_mouse_     = nullptr;
+    Motion*       motion_         = nullptr;
     HaltCheckFn   halt_check_     = nullptr;
     char          phase_color_    = 'y';
     MovementStyle movement_style_ = MovementStyle::Stationary;
+    State         state_          = State::FRESH_START;
+    bool          m_handStart     = false;
+
+    std::array<int, 2>              start_cell_ = {0, 0};
+    std::vector<std::array<int, 2>> goal_cells_ = {};
 
   private:
     std::string simulatorResponse(const std::string& cmd);

@@ -7,10 +7,10 @@
 #include <string>
 #include <vector>
 
-#include "app/api.h"
+#include "app/maze_mouse.h"
 #include "common/log.h"
 #include "maze/maze.h"
-#include "maze/mouse.h"
+#include "maze/maze_maze_mouse.h"
 #include "navigation/a_star.h"
 #include "navigation/diagonalizer.h"
 #include "navigation/path_converter.h"
@@ -31,23 +31,23 @@ struct ExploredNode
 class MotionSequenceGuard
 {
   public:
-    explicit MotionSequenceGuard(API* api) : api_(api)
+    explicit MotionSequenceGuard(Mouse* mouse) : mouse_(mouse)
     {
-        if (api_ != nullptr)
-            api_->begin_motion_sequence();
+        if (mouse_ != nullptr)
+            mouse_->begin_motion_sequence();
     }
 
     ~MotionSequenceGuard()
     {
-        if (api_ != nullptr)
-            api_->end_motion_sequence();
+        if (mouse_ != nullptr)
+            mouse_->end_motion_sequence();
     }
 
     MotionSequenceGuard(const MotionSequenceGuard&)            = delete;
     MotionSequenceGuard& operator=(const MotionSequenceGuard&) = delete;
 
   private:
-    API* api_;
+    Mouse* mouse_;
 };
 
 float manhattan(Cell* from, Cell* to)
@@ -55,7 +55,7 @@ float manhattan(Cell* from, Cell* to)
     return static_cast<float>(std::abs(from->x() - to->x()) + std::abs(from->y() - to->y()));
 }
 
-std::vector<Cell*> reconstructExploredPath(Mouse*                                 mouse,
+std::vector<Cell*> reconstructExploredPath(MazeMouse*                             mouse,
                                            const std::vector<std::vector<Cell*>>& parents,
                                            Cell* start, Cell* end)
 {
@@ -89,9 +89,9 @@ std::vector<Cell*> reconstructExploredPath(Mouse*                               
     return path;
 }
 
-std::vector<Cell*> exploredPathTo(Mouse* mouse, Cell* end)
+std::vector<Cell*> exploredPathTo(MazeMouse* maze_mouse, Cell* end)
 {
-    Cell* start = mouse->currentCell();
+    Cell* start = maze_mouse->currentCell();
     if (start == nullptr || end == nullptr)
         return {};
 
@@ -104,8 +104,8 @@ std::vector<Cell*> exploredPathTo(Mouse* mouse, Cell* end)
     if (start == end)
         return {};
 
-    const int width  = mouse->mazeWidth();
-    const int height = mouse->mazeHeight();
+    const int width  = maze_mouse->mazeWidth();
+    const int height = maze_mouse->mazeHeight();
 
     std::vector<std::vector<float>> g_costs(
         width, std::vector<float>(height, std::numeric_limits<float>::infinity()));
@@ -128,13 +128,13 @@ std::vector<Cell*> exploredPathTo(Mouse* mouse, Cell* end)
             continue;
         closed[current.cell->x()][current.cell->y()] = true;
 
-        for (Cell* neighbor : mouse->cellNeighbors(current.cell, /*include_diagonal=*/false))
+        for (Cell* neighbor : maze_mouse->cellNeighbors(current.cell, /*include_diagonal=*/false))
         {
             if (!neighbor->explored())
                 continue;
             if (closed[neighbor->x()][neighbor->y()])
                 continue;
-            if (!mouse->canMoveBetween(current.cell, neighbor, /*diagonals=*/false))
+            if (!maze_mouse->canMoveBetween(current.cell, neighbor, /*diagonals=*/false))
                 continue;
 
             const float new_g = current.g_cost + 1.0f;
@@ -151,14 +151,15 @@ std::vector<Cell*> exploredPathTo(Mouse* mouse, Cell* end)
     return {};
 }
 
-std::vector<Cell*> bestExploredPath(Mouse* mouse, const std::vector<std::array<int, 2>>& goals)
+std::vector<Cell*> bestExploredPath(MazeMouse*                             maze_mouse,
+                                    const std::vector<std::array<int, 2>>& goals)
 {
     std::vector<Cell*> best_path;
     float              best_cost = std::numeric_limits<float>::infinity();
 
     for (const auto& goal : goals)
     {
-        Cell* goal_cell = mouse->cellAt(goal[0], goal[1]);
+        Cell* goal_cell = maze_mouse->cellAt(goal[0], goal[1]);
         if (goal_cell == nullptr || !goal_cell->explored())
             continue;
 
@@ -178,115 +179,96 @@ std::vector<Cell*> bestExploredPath(Mouse* mouse, const std::vector<std::array<i
 }
 } // namespace
 
-void setAllExplored(Mouse* mouse)
-{
-    int cols = mouse->mazeWidth();
-    int rows = mouse->mazeHeight();
-
-    for (int x = 0; x < cols; x++)
-    {
-        for (int y = 0; y < rows; y++)
-        {
-            mouse->cellAt(x, y)->markExplored();
-        }
-    }
-}
-
-bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
-                  bool diagonals, bool all_explored, bool avoid_goals, bool start_at_wall_check)
+bool traversePath(Mouse* mouse, MazeMouse* maze_mouse, const std::vector<std::array<int, 2>>& goals,
+                  bool diagonals, bool all_explored, bool avoid_goals)
 {
     (void)diagonals;
     (void)all_explored;
     (void)avoid_goals;
-    (void)start_at_wall_check;
-    if (api == nullptr || mouse == nullptr)
+    if (mouse == nullptr || maze_mouse == nullptr)
         return false;
-    return api->search_to(goals);
+    return mouse->search_to(goals);
 }
 
-bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
-                  bool diagonals, bool all_explored, bool avoid_goals)
+bool traverseExploredPath(Mouse* mouse, MazeMouse* maze_mouse,
+                          const std::vector<std::array<int, 2>>& goals)
 {
-    return traversePath(api, mouse, goals, diagonals, all_explored, avoid_goals,
-                        /*start_at_wall_check=*/false);
-}
-
-bool traverseExploredPath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals)
-{
-    if (api == nullptr || mouse == nullptr)
+    if (mouse == nullptr || maze_mouse == nullptr)
         return false;
 
-    MotionSequenceGuard motion_sequence(api);
+    MotionSequenceGuard motion_sequence(mouse);
+    const MazeMask      previous_mask = maze_mouse->mazeMask();
+    maze_mouse->setMazeMask(MASK_CLOSED);
 
-    std::vector<Cell*> best_path = bestExploredPath(mouse, goals);
+    std::vector<Cell*> best_path = bestExploredPath(maze_mouse, goals);
     if (best_path.empty())
     {
+        maze_mouse->setMazeMask(previous_mask);
         LOG_ERROR("No explored-only cardinal speed run path available.");
         return false;
     }
 
-    colorPath(api, best_path);
+    colorPath(mouse, best_path);
 
-    std::string lfr =
-        PathConverter::buildLFR(mouse->currentCell(), mouse->currentDirectionArray(), best_path);
+    std::string lfr = PathConverter::buildLFR(maze_mouse->currentCell(),
+                                              maze_mouse->currentDirectionArray(), best_path);
     LOG_INFO("Explored Cardinal A* LFR Path: " + lfr);
-    api->executeSequence(lfr);
+    mouse->executeSequence(lfr);
+    maze_mouse->setMazeMask(previous_mask);
     return true;
 }
 
-bool traverseExploredDiagonalPath(API* api, Mouse* mouse,
+bool traverseExploredDiagonalPath(Mouse* mouse, MazeMouse* maze_mouse,
                                   const std::vector<std::array<int, 2>>& goals)
 {
-    if (api == nullptr || mouse == nullptr)
+    if (mouse == nullptr || maze_mouse == nullptr)
         return false;
 
-    MotionSequenceGuard motion_sequence(api);
+    MotionSequenceGuard motion_sequence(mouse);
+    const MazeMask      previous_mask = maze_mouse->mazeMask();
+    maze_mouse->setMazeMask(MASK_CLOSED);
 
-    std::vector<Cell*> best_path = bestExploredPath(mouse, goals);
+    std::vector<Cell*> best_path = bestExploredPath(maze_mouse, goals);
     if (best_path.empty())
     {
+        maze_mouse->setMazeMask(previous_mask);
         LOG_ERROR("No explored-only diagonal speed run path available.");
         return false;
     }
 
-    colorPath(api, best_path);
+    colorPath(mouse, best_path);
 
-    std::string lfr =
-        PathConverter::buildLFR(mouse->currentCell(), mouse->currentDirectionArray(), best_path);
+    std::string lfr = PathConverter::buildLFR(maze_mouse->currentCell(),
+                                              maze_mouse->currentDirectionArray(), best_path);
     LOG_INFO("Explored A* LFR Path: " + lfr);
 
     std::string diag = Diagonalizer::diagonalize(lfr);
     LOG_INFO("Explored Diagonalized Path: " + diag);
-    api->executeSequence(diag);
+    mouse->executeSequence(diag);
+    maze_mouse->setMazeMask(previous_mask);
     return true;
 }
 
-void detectWalls(API& api, Mouse& mouse)
+void detectWalls(Mouse& mouse, MazeMouse& maze_mouse)
 {
-    Cell* cell = mouse.currentCell();
-    int   x    = cell->x();
-    int   y    = cell->y();
+    Cell* cell = maze_mouse.currentCell();
 
-    if (api.wallFront())
-    {
-        api.setWall(x, y, mouse.directionAsString(mouse.currentDirectionArray()));
-    }
-    if (api.wallLeft())
-    {
-        api.setWall(x, y, mouse.directionLeft());
-    }
-    if (api.wallRight())
-    {
-        api.setWall(x, y, mouse.directionRight());
-    }
+    const std::string front = maze_mouse.directionAsString(maze_mouse.currentDirectionArray());
+    const std::string left  = maze_mouse.directionLeft();
+    const std::string right = maze_mouse.directionRight();
+
+    cell->updateWallState(front[0], mouse.wallFront() ? WALL : EXIT);
+    cell->updateWallState(left[0], mouse.wallLeft() ? WALL : EXIT);
+    cell->updateWallState(right[0], mouse.wallRight() ? WALL : EXIT);
+    cell->markExplored();
 }
 
-void colorPath(API* api, const std::vector<Cell*>& path)
+void colorPath(Mouse* mouse, const std::vector<Cell*>& path)
 {
-    char color = api->phaseColor();
+    char color = mouse->phaseColor();
     for (Cell* cell : path)
     {
-        api->setColor(cell->x(), cell->y(), color);
+        mouse->setColor(cell->x(), cell->y(), color);
     }
 }
 

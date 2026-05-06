@@ -8,7 +8,6 @@
 
 Cell::Cell(int x, int y)
     : x_(x), y_(y), north_(nullptr), east_(nullptr), south_(nullptr), west_(nullptr),
-      wall_north_(false), wall_east_(false), wall_south_(false), wall_west_(false),
       explored_(false), parent(nullptr), processed(false)
 {
 }
@@ -28,35 +27,56 @@ bool Cell::explored() const
 
 bool Cell::hasWall(char direction) const
 {
+    return wallState(direction) == WALL;
+}
+
+bool Cell::isExit(char direction, MazeMask mask) const
+{
+    return (wallState(direction) & mask) == EXIT;
+}
+
+bool Cell::hasUnknownWalls() const
+{
+    return walls_.north == UNKNOWN || walls_.east == UNKNOWN || walls_.south == UNKNOWN ||
+           walls_.west == UNKNOWN;
+}
+
+WallState Cell::wallState(char direction) const
+{
     switch (direction)
     {
         case 'N':
         case 'n':
-            return wall_north_;
+            return walls_.north;
         case 'E':
         case 'e':
-            return wall_east_;
+            return walls_.east;
         case 'S':
         case 's':
-            return wall_south_;
+            return walls_.south;
         case 'W':
         case 'w':
-            return wall_west_;
+            return walls_.west;
         default:
-            return false;
+            return WALL;
     }
+}
+
+WallInfo Cell::walls() const
+{
+    return walls_;
 }
 
 int Cell::wallCount() const
 {
     int count = 0;
-    if (wall_north_)
+    if (walls_.north == WALL)
         count++;
-    if (wall_east_)
+    if (walls_.east == WALL)
         count++;
-    if (wall_south_)
+    if (walls_.south == WALL)
         count++;
-    if (wall_west_)
+    if (walls_.west == WALL)
         count++;
     return count;
 }
@@ -91,7 +111,7 @@ void Cell::setNeighbor(Cell* cell, char direction)
 
 void Cell::setWall(char direction)
 {
-    addWall(direction);
+    setWallStateLocal(direction, WALL);
 
     // Set shared wall on neighbor cell (walls are bidirectional)
     switch (direction)
@@ -99,57 +119,116 @@ void Cell::setWall(char direction)
         case 'N':
         case 'n':
             if (north_)
-                north_->addWall('S');
+                north_->setWallStateLocal('S', WALL);
             break;
         case 'E':
         case 'e':
             if (east_)
-                east_->addWall('W');
+                east_->setWallStateLocal('W', WALL);
             break;
         case 'S':
         case 's':
             if (south_)
-                south_->addWall('N');
+                south_->setWallStateLocal('N', WALL);
             break;
         case 'W':
         case 'w':
             if (west_)
-                west_->addWall('E');
+                west_->setWallStateLocal('E', WALL);
             break;
     }
 }
 
+void Cell::setExit(char direction)
+{
+    setWallStateLocal(direction, EXIT);
+
+    switch (direction)
+    {
+        case 'N':
+        case 'n':
+            if (north_)
+                north_->setWallStateLocal('S', EXIT);
+            break;
+        case 'E':
+        case 'e':
+            if (east_)
+                east_->setWallStateLocal('W', EXIT);
+            break;
+        case 'S':
+        case 's':
+            if (south_)
+                south_->setWallStateLocal('N', EXIT);
+            break;
+        case 'W':
+        case 'w':
+            if (west_)
+                west_->setWallStateLocal('E', EXIT);
+            break;
+    }
+}
+
+void Cell::updateWallState(char direction, WallState state)
+{
+    if (!shouldUpdate(direction))
+        return;
+
+    if (state == WALL)
+        setWall(direction);
+    else if (state == EXIT)
+        setExit(direction);
+    else
+        setWallStateLocal(direction, state);
+}
+
+void Cell::update_wall_state(char direction, WallState state)
+{
+    updateWallState(direction, state);
+}
+
+void Cell::set_wall_state(char direction, WallState state)
+{
+    if (state == WALL)
+        setWall(direction);
+    else if (state == EXIT)
+        setExit(direction);
+    else
+        setWallStateLocal(direction, state);
+}
+
 void Cell::reset()
 {
-    wall_north_ = false;
-    wall_east_  = false;
-    wall_south_ = false;
-    wall_west_  = false;
-    explored_   = false;
+    walls_    = {};
+    explored_ = false;
     clearPathfindingState();
 }
 
-void Cell::addWall(char direction)
+void Cell::setWallStateLocal(char direction, WallState state)
 {
     switch (direction)
     {
         case 'N':
         case 'n':
-            wall_north_ = true;
+            walls_.north = state;
             break;
         case 'E':
         case 'e':
-            wall_east_ = true;
+            walls_.east = state;
             break;
         case 'S':
         case 's':
-            wall_south_ = true;
+            walls_.south = state;
             break;
         case 'W':
         case 'w':
-            wall_west_ = true;
+            walls_.west = state;
             break;
     }
+}
+
+bool Cell::shouldUpdate(char direction) const
+{
+    return wallState(direction) == UNKNOWN;
 }
 
 bool Cell::equal(Cell* c1, Cell* c2)
@@ -278,6 +357,17 @@ void Maze::reset()
             cells_[col][row]->reset();
         }
     }
+    mask_ = MASK_OPEN;
+}
+
+void Maze::setMask(MazeMask mask)
+{
+    mask_ = mask;
+}
+
+MazeMask Maze::mask() const
+{
+    return mask_;
 }
 
 void Maze::printASCII()

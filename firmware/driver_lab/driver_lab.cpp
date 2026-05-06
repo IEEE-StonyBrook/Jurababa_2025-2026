@@ -122,7 +122,7 @@ void DriverLab::sampleEncoders()
 
     // 8-tap moving averager — same shape as Drivetrain::update() and
     // ukmars/motorlab/src/encoders.h::update(). Smoothing here means
-    // forward_pid_'s measured_change input matches what Robot's PD sees
+    // forward_pid_'s measured_change input matches what Motion's PD sees
     // in maze mode, so DriverLab-tuned gains transfer.
     dl_left_history_total_ -= dl_left_history_[dl_averager_index_];
     dl_right_history_total_ -= dl_right_history_[dl_averager_index_];

@@ -5,8 +5,8 @@
 #include <string>
 #include <vector>
 
-class API;
 class Mouse;
+class MazeMouse;
 class Cell;
 
 /**
@@ -17,46 +17,38 @@ namespace PathUtils
 
 /**
  * @brief Traverse path to goals with iterative re-planning
- * @param api API interface for movement
- * @param mouse Mouse state tracker
+ * @param mouse Mouse interface for movement
+ * @param maze_mouse MazeMouse state tracker
  * @param goals Target cell coordinates
  * @param diagonals Allow diagonal movement
  * @param all_explored Treat maze as fully explored
  * @param avoid_goals Don't pass through goal cells
  * @return True if goal reached successfully
  */
-bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
-                  bool diagonals, bool all_explored, bool avoid_goals, bool start_at_wall_check);
-
-bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
+bool traversePath(Mouse* mouse, MazeMouse* maze_mouse, const std::vector<std::array<int, 2>>& goals,
                   bool diagonals, bool all_explored, bool avoid_goals);
 
 // Execute one cardinal speed path using only cells already explored.
-bool traverseExploredPath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals);
+bool traverseExploredPath(Mouse* mouse, MazeMouse* maze_mouse,
+                          const std::vector<std::array<int, 2>>& goals);
 
 // Execute one diagonalized speed path using only cells already explored.
-bool traverseExploredDiagonalPath(API* api, Mouse* mouse,
+bool traverseExploredDiagonalPath(Mouse* mouse, MazeMouse* maze_mouse,
                                   const std::vector<std::array<int, 2>>& goals);
 
 /**
- * @brief Mark all cells in maze as explored
- * @param mouse Mouse with maze reference
- */
-void setAllExplored(Mouse* mouse);
-
-/**
  * @brief Detect walls around current position and update maze
- * @param api API interface for wall sensing
- * @param mouse Mouse state tracker
+ * @param mouse Mouse interface for wall sensing
+ * @param maze_mouse MazeMouse state tracker
  */
-void detectWalls(API& api, Mouse& mouse);
+void detectWalls(Mouse& mouse, MazeMouse& maze_mouse);
 
 /**
  * @brief Color path cells on display
- * @param api API interface for display
+ * @param mouse Mouse interface for display
  * @param path Cells to color
  */
-void colorPath(API* api, const std::vector<Cell*>& path);
+void colorPath(Mouse* mouse, const std::vector<Cell*>& path);
 
 } // namespace PathUtils
 

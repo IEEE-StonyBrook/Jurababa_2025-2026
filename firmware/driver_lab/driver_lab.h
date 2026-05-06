@@ -35,7 +35,7 @@ struct DriverLabArgs
  * @brief Standalone calibration / characterization tool — modeled after
  *        Peter Harrison's MotorLab.
  *
- * DriverLab does NOT use Robot. It owns its own profiles, PD controllers,
+ * DriverLab does NOT use Motion. It owns its own profiles, PD controllers,
  * and trial state machines, and talks directly to the HAL drivers (Motor,
  * Encoder, IMU, ToF, Battery). This mirrors the mazerunner-core / motorlab
  * split: shared HAL, separate control logic.
@@ -310,7 +310,7 @@ class DriverLab
     DriverLabSettings settings_;
     DriverLabReporter reporter_;
 
-    // Own controllers + profiles, separate from any Robot instance.
+    // Own controllers + profiles, separate from any Motion instance.
     PID              forward_pid_;
     PID              rotation_pid_;
     DriverLabProfile forward_profile_;

@@ -5,7 +5,7 @@
  * @brief Time-based trapezoidal profile for DriverLab trials.
  *
  * Mirrors UKMARS profile completion while remaining standalone from
- * Robot/Drivetrain.
+ * Motion/Drivetrain.
  */
 
 enum class DriverLabProfileState

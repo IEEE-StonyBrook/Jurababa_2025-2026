@@ -17,9 +17,9 @@
  * Compressed) protocol. Reads yaw angle via interrupt-driven packet reception
  * with checksum validation.
  *
- * API mirrors mazerunner-core's `Encoders` rotation interface — substituting an
+ * Mouse mirrors mazerunner-core's `Encoders` rotation interface — substituting an
  * IMU as the rotation source. Caller invokes update() once per control tick
- * for API parity; robot_omega() / robot_rot_change() return ISR-cached values.
+ * for Mouse parity; robot_omega() / robot_rot_change() return ISR-cached values.
  */
 class IMU
 {
@@ -32,7 +32,7 @@ class IMU
 
     /**
      * @brief Per-tick sampler. No-op for rotation tracking under the new
-     *        IMU model — kept for API parity with mazerunner's Encoders.
+     *        IMU model — kept for Mouse parity with mazerunner's Encoders.
      *
      * Omega and per-packet yaw delta are now computed in the UART ISR at the
      * BNO085's true 100 Hz packet cadence (see parse_packet_and_extract_yaw).

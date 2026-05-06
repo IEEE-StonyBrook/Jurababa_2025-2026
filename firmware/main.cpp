@@ -11,8 +11,9 @@
  *   2. Cli (default)
  *        UKMARS mazerunner-core-style command loop. Same dispatch table
  *        for both ToF and LineSensor sub-modes:
- *          - TOF        : Core 1 launches and runs `Robot` at 500 Hz;
- *                         Core 0 runs the maze brain (FloodFill, A*).
+ *          - TOF        : Core 0 owns hardware, runs the maze brain
+ *                         (A*/LFR), and advances `Motion` from a 500 Hz
+ *                         timer callback.
  *          - LINE_SENSOR: Core 1 does not launch; Core 0 owns motors via
  *                         `LineFollower`.
  *
@@ -33,13 +34,13 @@
 
 #include "app/bluetooth.h"
 #include "app/cli.h"
-#include "app/firmware_api.h"
+#include "app/firmware_mouse.h"
 #include "common/bluetooth_stdio.h"
 #include "common/log.h"
 #include "config/config.h"
 #include "control/drivetrain.h"
 #include "control/line_follower.h"
-#include "control/robot.h"
+#include "control/motion.h"
 #include "driver_lab/driver_lab.h"
 #include "drivers/battery.h"
 #include "drivers/encoder.h"
@@ -48,7 +49,7 @@
 #include "drivers/motor.h"
 #include "drivers/tof.h"
 #include "maze/maze.h"
-#include "maze/mouse.h"
+#include "maze/maze_mouse.h"
 
 // ----------------------------------------------------------------------------
 // Bluetooth UART as a stdio driver (used in DriverLab mode for printf mirroring)
@@ -351,7 +352,7 @@ static void runDriverLabMode(Battery* battery)
     Motor   right_motor(PIN_MOTOR_R_DIR, PIN_MOTOR_R_PWM, true);
     IMU     imu(PIN_IMU_RX);
 
-    // DriverLab is standalone — no Drivetrain, no Robot. Drivers only.
+    // DriverLab is standalone — no Drivetrain, no Motion. Drivers only.
     // LineSensor and ToFs share I2C0 — exactly one branch runs.
     ToF*        left_tof_p    = nullptr;
     ToF*        front_tof_p   = nullptr;
@@ -414,14 +415,14 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
     std::array<int, 2>              start_cell = {0, 0};
     std::vector<std::array<int, 2>> goal_cells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
     static Maze                     maze(MAZE_SIZE, MAZE_SIZE);
-    static Mouse                    mouse(start_cell, std::string("n"), goal_cells, &maze);
-    static FirmwareApi              api(&mouse);
-    api.setUp(start_cell, goal_cells);
+    static MazeMouse                maze_mouse(start_cell, std::string("n"), goal_cells, &maze);
+    static FirmwareMouse            mouse(&maze_mouse);
+    mouse.setUp(start_cell, goal_cells);
 
-    // LineFollower stack — only built in LineSensor mode (Robot stays
+    // LineFollower stack — only built in LineSensor mode (Motion stays
     // out of the picture so LineFollower owns the H-bridge).
     LineFollower* line_follower_ptr = nullptr;
-    Robot*        robot_ptr         = nullptr;
+    Motion*       motion_ptr        = nullptr;
     ToF*          left_tof_ptr      = nullptr;
     ToF*          front_tof_ptr     = nullptr;
     ToF*          right_tof_ptr     = nullptr;
@@ -447,7 +448,7 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
     else
     {
         // ToF mode: single-core UKMARS shape. All hardware lives on Core 0;
-        // Robot is advanced by a 500 Hz hardware-timer alarm registered
+        // Motion is advanced by a 500 Hz hardware-timer alarm registered
         // below. The CLI's main loop (cli.loop()) handles serial I/O and
         // polls ToFs at 50 Hz, exactly like mazerunner-core's Arduino
         // loop() / Timer2 split.
@@ -461,27 +462,27 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
         static ToF        right_tof(PIN_TOF_RIGHT_XSHUT, 'R');
         static Drivetrain drivetrain(&left_motor, &right_motor, &left_encoder, &right_encoder,
                                      battery);
-        static Robot      robot(&drivetrain, &imu);
+        static Motion     motion(&drivetrain, &imu);
 
-        api.setRobot(&robot);
-        api.setTofSensors(&left_tof, &front_tof, &right_tof);
-        robot_ptr     = &robot;
+        mouse.set_motion(&motion);
+        mouse.setTofSensors(&left_tof, &front_tof, &right_tof);
+        motion_ptr    = &motion;
         left_tof_ptr  = &left_tof;
         front_tof_ptr = &front_tof;
         right_tof_ptr = &right_tof;
 
-        // Hand robot + ToFs to a 500 Hz timer alarm. Mirrors UKMARS
+        // Hand motion + ToFs to a 500 Hz timer alarm. Mirrors UKMARS
         // systick.h: encoders.update → motion.update → motors.update_controllers
-        // (we do all of that inside Robot::update). 50 Hz ToF poll runs
+        // (we do all of that inside Motion::update). 50 Hz ToF poll runs
         // outside the alarm to keep its budget sub-millisecond.
         struct CoreLoopCtx
         {
-            Robot* robot;
-            ToF*   left_tof;
-            ToF*   front_tof;
-            ToF*   right_tof;
+            Motion* motion;
+            ToF*    left_tof;
+            ToF*    front_tof;
+            ToF*    right_tof;
         };
-        static CoreLoopCtx ctx{&robot, &left_tof, &front_tof, &right_tof};
+        static CoreLoopCtx ctx{&motion, &left_tof, &front_tof, &right_tof};
 
         static repeating_timer_t systick_timer;
         add_repeating_timer_us(
@@ -489,26 +490,26 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
             +[](repeating_timer_t* t) -> bool
             {
                 auto* c = static_cast<CoreLoopCtx*>(t->user_data);
-                c->robot->update();
+                c->motion->update();
                 return true;
             },
             &ctx, &systick_timer);
 
-        printf("Robot @ 500 Hz on Core 0 (single-core UKMARS shape).\n");
+        printf("Motion @ 500 Hz on Core 0 (single-core UKMARS shape).\n");
     }
 
     Cli::Deps deps;
     deps.bluetooth     = &bluetooth;
     deps.battery       = battery;
-    deps.robot         = robot_ptr;
+    deps.motion        = motion_ptr;
     deps.left_tof      = left_tof_ptr;
     deps.front_tof     = front_tof_ptr;
     deps.right_tof     = right_tof_ptr;
     deps.line_follower = line_follower_ptr;
     deps.driver_lab    = nullptr; // DriverLab requires direct motor access; not in Cli mode.
     deps.maze          = &maze;
+    deps.maze_mouse    = &maze_mouse;
     deps.mouse         = &mouse;
-    deps.api           = &api;
     deps.sensor_mode   = sensor_mode;
     deps.start_cell    = start_cell;
     deps.goal_cells    = goal_cells;

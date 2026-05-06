@@ -1,5 +1,5 @@
-#ifndef CONTROL_ROBOT_H
-#define CONTROL_ROBOT_H
+#ifndef CONTROL_MOTION_H
+#define CONTROL_MOTION_H
 
 #include "common/tof_wall_utils.h"
 #include "control/pid.h"
@@ -17,26 +17,33 @@ class IMU;
  * Yaw and omega come from the IMU (deliberate divergence from mazerunner, which
  * derives both from differential encoders). Forward position comes from encoders.
  */
-class Robot
+class Motion
 {
   public:
-    Robot(Drivetrain* drivetrain, IMU* imu);
+    Motion(Drivetrain* drivetrain, IMU* imu);
 
     void reset();
 
     // === Wall sensing (ToF) ===
-    void                set_wall_distances(float left_mm, float front_mm, float right_mm);
-    bool                wallLeft();
-    bool                wallRight();
-    float               leftDistance();
-    float               frontDistance();
-    float               rightDistance();
-    tof_wall::WallState wallSteeringState() const;
-    float               wallSteeringAdjustmentDegps() const;
+    void                   set_wall_distances(float left_mm, float front_mm, float right_mm);
+    void                   set_steering_mode(tof_wall::SteeringMode mode);
+    tof_wall::SteeringMode steeringMode() const;
+    bool                   wallLeft();
+    bool                   wallFront();
+    bool                   wallRight();
+    bool                   see_left_wall() { return wallLeft(); }
+    bool                   see_front_wall() { return wallFront(); }
+    bool                   see_right_wall() { return wallRight(); }
+    float                  leftDistance();
+    float                  frontDistance();
+    float                  rightDistance();
+    tof_wall::WallState    wallSteeringState() const;
+    float                  wallSteeringAdjustmentDegps() const;
 
     // === Mazerunner-core compatible motion names ===
     void  reset_drive_system();
     void  stop();
+    void  disable_drive();
     void  emergency_stop();
     float position() const;
     float velocity() const;
@@ -63,6 +70,8 @@ class Robot
     void  turn_IP90L();
     void  set_position(float position_mm);
     void  adjust_forward_position(float delta_mm);
+    void  wait_until_position(float position_mm);
+    void  wait_until_distance(float distance_mm);
     void  turn_smooth(int turn_id);
 
     // === Control Loop ===
@@ -98,7 +107,7 @@ class Robot
     float prev_right_cmd_vel_mmps_ = 0.0f;
     bool  motion_sequence_active_  = false;
 
-    // ToFs are physically read outside Robot, then cached here for wall
+    // ToFs are physically read outside Motion, then cached here for wall
     // detection and optional UKMARS-style steering diagnostics. Search
     // straightness currently comes from IMU yaw hold unless
     // TOF_STEERING_ENABLE is turned back on.
@@ -106,10 +115,11 @@ class Robot
     float front_wall_mm_ = 0.0f;
     float right_wall_mm_ = 0.0f;
 
-    tof_wall::WallState latest_wall_state_{};
-    float               latest_steering_adjustment_degps_ = 0.0f;
-    float               side_error_prev_norm_             = 0.0f;
-    bool                side_error_prev_valid_            = false;
+    tof_wall::WallState    latest_wall_state_{};
+    tof_wall::SteeringMode steering_mode_                    = tof_wall::SteeringMode::STEERING_OFF;
+    float                  latest_steering_adjustment_degps_ = 0.0f;
+    float                  side_error_prev_norm_             = 0.0f;
+    bool                   side_error_prev_valid_            = false;
 };
 
 #endif

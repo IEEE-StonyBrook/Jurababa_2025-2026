@@ -54,7 +54,7 @@
 #define CLI_PATH_ALPHA_DEGPS2 720.0f
 
 // =============== Completion Tolerances ================= //
-// Used by line_follower yaw-snap; main Robot now relies purely on profile.finished().
+// Used by line_follower yaw-snap; main Motion now relies purely on profile.finished().
 #define ROBOT_YAW_TOLERANCE_DEG 0.5f
 
 #endif // CONFIG_MOTION_H

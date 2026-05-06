@@ -1,4 +1,4 @@
-#include "control/robot.h"
+#include "control/motion.h"
 
 #include <cmath>
 
@@ -6,8 +6,9 @@
 #include "config/config.h"
 #include "control/drivetrain.h"
 #include "drivers/imu.h"
+#include "pico/stdlib.h"
 
-Robot::Robot(Drivetrain* drivetrain, IMU* imu)
+Motion::Motion(Drivetrain* drivetrain, IMU* imu)
     : drivetrain_(drivetrain), imu_(imu), forward_controller_(FWD_KP, FWD_KD, LOOP_FREQUENCY_HZ),
       rotation_controller_(ROT_KP, ROT_KD, LOOP_FREQUENCY_HZ)
 {
@@ -17,12 +18,12 @@ Robot::Robot(Drivetrain* drivetrain, IMU* imu)
     reset();
 }
 
-void Robot::reset()
+void Motion::reset()
 {
     reset_drive_system();
 }
 
-void Robot::reset_drive_system()
+void Motion::reset_drive_system()
 {
     motion_sequence_active_ = false;
     drivetrain_->stop();
@@ -31,9 +32,10 @@ void Robot::reset_drive_system()
     forward_.reset();
     rotation_.reset();
     resetControlHistory();
+    steering_mode_ = tof_wall::SteeringMode::STEERING_OFF;
 }
 
-void Robot::resetControlHistory()
+void Motion::resetControlHistory()
 {
     forward_controller_.reset();
     rotation_controller_.reset();
@@ -46,100 +48,118 @@ void Robot::resetControlHistory()
     latest_steering_adjustment_degps_ = 0.0f;
 }
 
-void Robot::set_wall_distances(float left_mm, float front_mm, float right_mm)
+void Motion::set_wall_distances(float left_mm, float front_mm, float right_mm)
 {
     left_wall_mm_  = left_mm;
     front_wall_mm_ = front_mm;
     right_wall_mm_ = right_mm;
 }
 
-bool Robot::wallLeft()
+void Motion::set_steering_mode(tof_wall::SteeringMode mode)
+{
+    side_error_prev_norm_             = 0.0f;
+    side_error_prev_valid_            = false;
+    latest_steering_adjustment_degps_ = 0.0f;
+    steering_mode_                    = mode;
+}
+
+tof_wall::SteeringMode Motion::steeringMode() const
+{
+    return steering_mode_;
+}
+
+bool Motion::wallLeft()
 {
     return tof_wall::wallLeft(left_wall_mm_);
 }
 
-bool Robot::wallRight()
+bool Motion::wallFront()
+{
+    return tof_wall::wallFront(front_wall_mm_);
+}
+
+bool Motion::wallRight()
 {
     return tof_wall::wallRight(right_wall_mm_);
 }
 
-float Robot::leftDistance()
+float Motion::leftDistance()
 {
     return left_wall_mm_;
 }
 
-float Robot::frontDistance()
+float Motion::frontDistance()
 {
     return front_wall_mm_;
 }
 
-float Robot::rightDistance()
+float Motion::rightDistance()
 {
     return right_wall_mm_;
 }
 
-tof_wall::WallState Robot::wallSteeringState() const
+tof_wall::WallState Motion::wallSteeringState() const
 {
     return latest_wall_state_;
 }
 
-float Robot::wallSteeringAdjustmentDegps() const
+float Motion::wallSteeringAdjustmentDegps() const
 {
     return latest_steering_adjustment_degps_;
 }
 
-float Robot::position() const
+float Motion::position() const
 {
     return forward_.position();
 }
 
-float Robot::velocity() const
+float Motion::velocity() const
 {
     return forward_.velocity();
 }
 
-float Robot::acceleration() const
+float Motion::acceleration() const
 {
     return forward_.acceleration();
 }
 
-float Robot::angle() const
+float Motion::angle() const
 {
     return imu_->robot_angle();
 }
 
-float Robot::omega() const
+float Motion::omega() const
 {
     return imu_->robot_omega();
 }
 
-float Robot::alpha() const
+float Motion::alpha() const
 {
     return rotation_.acceleration();
 }
 
-void Robot::set_target_velocity(float velocity_mmps)
+void Motion::set_target_velocity(float velocity_mmps)
 {
     forward_.setTargetSpeed(velocity_mmps);
 }
 
-void Robot::set_final_velocity(float velocity_mmps)
+void Motion::set_final_velocity(float velocity_mmps)
 {
     forward_.setFinalSpeed(velocity_mmps);
 }
 
-void Robot::extend_move(float distance_mm)
+void Motion::extend_move(float distance_mm)
 {
     forward_.extendTarget(distance_mm);
 }
 
-void Robot::begin_motion_sequence()
+void Motion::begin_motion_sequence()
 {
     reset_drive_system();
     motion_sequence_active_ = true;
 }
 
-void Robot::end_motion_sequence()
+void Motion::end_motion_sequence()
 {
     motion_sequence_active_ = false;
     drivetrain_->stop();
@@ -148,73 +168,74 @@ void Robot::end_motion_sequence()
     resetControlHistory();
 }
 
-void Robot::start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
-                       float accel_mmps2)
+void Motion::start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
+                        float accel_mmps2)
 {
     forward_.start(distance_mm, velocity(), top_speed_mmps, final_speed_mmps, accel_mmps2);
 }
 
-bool Robot::move_finished() const
+bool Motion::move_finished() const
 {
     return !forward_.active();
 }
 
-void Robot::move(float distance_mm, float top_speed_mmps, float final_speed_mmps, float accel_mmps2)
+void Motion::move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
+                  float accel_mmps2)
 {
     start_move(distance_mm, top_speed_mmps, final_speed_mmps, accel_mmps2);
 }
 
-void Robot::start_turn(float degrees, float top_speed_degps, float final_speed_degps,
-                       float accel_degps2)
+void Motion::start_turn(float degrees, float top_speed_degps, float final_speed_degps,
+                        float accel_degps2)
 {
     rotation_.start(degrees, rotation_.velocity(), top_speed_degps, final_speed_degps,
                     accel_degps2);
 }
 
-bool Robot::turn_finished() const
+bool Motion::turn_finished() const
 {
     return !rotation_.active();
 }
 
-void Robot::turn(float degrees, float top_speed_degps, float final_speed_degps, float accel_degps2)
+void Motion::turn(float degrees, float top_speed_degps, float final_speed_degps, float accel_degps2)
 {
     start_turn(degrees, top_speed_degps, final_speed_degps, accel_degps2);
 }
 
-void Robot::spin_turn(float degrees, float omega_degps, float alpha_degps2)
+void Motion::spin_turn(float degrees, float omega_degps, float alpha_degps2)
 {
     forward_.reset();
     rotation_.start(degrees, omega_degps, 0.0f, alpha_degps2);
 }
 
-void Robot::turn_IP180()
+void Motion::turn_IP180()
 {
     static int direction = 1;
     direction *= -1;
     spin_turn(direction * 180.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
 
-void Robot::turn_IP90R()
+void Motion::turn_IP90R()
 {
     spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
 
-void Robot::turn_IP90L()
+void Motion::turn_IP90L()
 {
     spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
 
-void Robot::set_position(float position_mm)
+void Motion::set_position(float position_mm)
 {
     forward_.setPosition(position_mm);
 }
 
-void Robot::adjust_forward_position(float delta_mm)
+void Motion::adjust_forward_position(float delta_mm)
 {
     forward_.adjustPosition(delta_mm);
 }
 
-void Robot::turn_smooth(int turn_id)
+void Motion::turn_smooth(int turn_id)
 {
     if (turn_id < 0 || turn_id >= SMOOTH_TURN_PARAM_COUNT)
         return;
@@ -233,7 +254,7 @@ void Robot::turn_smooth(int turn_id)
     rotation_.start(params.angle_deg, params.omega_degps, 0.0f, params.alpha_degps2);
 }
 
-void Robot::update()
+void Motion::update()
 {
     // Mazerunner systick.update() shape:
     //   encoders.update(); motion.update(); motors.update_controllers(...)
@@ -247,19 +268,21 @@ void Robot::update()
     runPositionControl();
 }
 
-void Robot::runPositionControl()
+void Motion::runPositionControl()
 {
     if (!forward_.active() && !rotation_.active())
     {
         drivetrain_->stop();
         if (motion_sequence_active_)
         {
-            latest_wall_state_ = tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
+            latest_wall_state_ =
+                tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_, steering_mode_);
             latest_steering_adjustment_degps_ = 0.0f;
             return;
         }
         resetControlHistory();
-        latest_wall_state_ = tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
+        latest_wall_state_ =
+            tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_, steering_mode_);
         latest_steering_adjustment_degps_ = 0.0f;
         return;
     }
@@ -277,7 +300,9 @@ void Robot::runPositionControl()
     const float forward_output =
         forward_.active() ? forward_controller_.update(fwd_velocity, fwd_change_mm) : 0.0f;
     const float steering_adjustment =
-        TOF_STEERING_ENABLE ? wallSteeringAdjustment(fwd_velocity, rot_velocity) : 0.0f;
+        (TOF_STEERING_ENABLE && steering_mode_ != tof_wall::SteeringMode::STEERING_OFF)
+            ? wallSteeringAdjustment(fwd_velocity, rot_velocity)
+            : 0.0f;
 #if !TOF_STEERING_ENABLE
     wallSteeringAdjustment(fwd_velocity, rot_velocity); // diagnostics only
 #endif
@@ -311,19 +336,21 @@ void Robot::runPositionControl()
     drivetrain_->setVoltage(left_volts, right_volts);
 }
 
-float Robot::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps)
+float Motion::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps)
 {
     const bool straight_move = forward_.active() && !rotation_.active() &&
                                fwd_velocity_mmps > 1.0f && std::fabs(rot_velocity_degps) < 1.0f;
     if (!straight_move)
     {
         side_error_prev_valid_ = false;
-        latest_wall_state_     = tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
+        latest_wall_state_ =
+            tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_, steering_mode_);
         latest_steering_adjustment_degps_ = 0.0f;
         return 0.0f;
     }
 
-    latest_wall_state_ = tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
+    latest_wall_state_ =
+        tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_, steering_mode_);
     if (!latest_wall_state_.steering_allowed)
     {
         side_error_prev_valid_            = false;
@@ -342,12 +369,30 @@ float Robot::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_
     return latest_steering_adjustment_degps_;
 }
 
-void Robot::stop()
+void Motion::stop()
 {
     drivetrain_->stop();
 }
 
-void Robot::emergency_stop()
+void Motion::disable_drive()
+{
+    drivetrain_->stop();
+}
+
+void Motion::emergency_stop()
 {
     reset_drive_system();
+    disable_drive();
+}
+
+void Motion::wait_until_position(float position_mm)
+{
+    while (position() < position_mm)
+        sleep_ms(2);
+}
+
+void Motion::wait_until_distance(float distance_mm)
+{
+    const float target_mm = position() + distance_mm;
+    wait_until_position(target_mm);
 }

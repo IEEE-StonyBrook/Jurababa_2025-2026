@@ -6,14 +6,14 @@
 #include <string>
 #include <vector>
 
-class API;
+class Mouse;
 class Battery;
 class Bluetooth;
 class DriverLab;
 class LineFollower;
 class Maze;
-class Mouse;
-class Robot;
+class MazeMouse;
+class Motion;
 class ToF;
 
 /**
@@ -21,7 +21,7 @@ class ToF;
  *
  * I2C0 is shared between the front/left/right ToFs and the YahBoom line
  * sensor, so they're mutually exclusive. The boot prompt picks one. ToF
- * mode wires Robot directly into the API; LineSensor mode hands motors
+ * mode wires Motion directly into the Mouse; LineSensor mode hands motors
  * to LineFollower instead.
  */
 enum class SensorMode
@@ -41,7 +41,7 @@ struct Args
 /**
  * @brief UKMARS mazerunner-core-style command line interface.
  *
- * Single-core: motion commands call directly into Robot via the API and
+ * Single-core: motion commands call directly into Motion via the Mouse and
  * busy-wait while a 500 Hz hardware timer advances the controller. Same
  * shape as mazerunner-core's `loop()` + Timer2 ISR split.
  */
@@ -52,15 +52,15 @@ class CommandLineInterface
     {
         Bluetooth*                      bluetooth     = nullptr;
         Battery*                        battery       = nullptr;
-        Robot*                          robot         = nullptr; // null in LineSensor mode
+        Motion*                         motion        = nullptr; // null in LineSensor mode
         ToF*                            left_tof      = nullptr; // null in LineSensor mode
         ToF*                            front_tof     = nullptr;
         ToF*                            right_tof     = nullptr;
         LineFollower*                   line_follower = nullptr; // null in ToF mode
         DriverLab*                      driver_lab    = nullptr;
         Maze*                           maze          = nullptr;
-        Mouse*                          mouse         = nullptr;
-        API*                            api           = nullptr; // FirmwareApi on hardware
+        MazeMouse*                      maze_mouse    = nullptr;
+        Mouse*                          mouse         = nullptr; // FirmwareMouse on hardware
         SensorMode                      sensor_mode   = SensorMode::TOF;
         std::array<int, 2>              start_cell    = {0, 0};
         std::vector<std::array<int, 2>> goal_cells    = {};
@@ -82,8 +82,8 @@ class CommandLineInterface
 
     bool halted() const { return halted_; }
 
-    // Halt thunk for API: returns true when 'X' / HALT was received over
-    // serial during a long-running motion. API installs this via
+    // Halt thunk for Mouse: returns true when 'X' / HALT was received over
+    // serial during a long-running motion. Mouse installs this via
     // `setHaltCheck` so blocking commands can break early.
     static bool haltCheckThunk();
 
@@ -105,7 +105,6 @@ class CommandLineInterface
     void clear_input_buffer();
     void handleBluetoothCommand();
     bool run_competition_stage(int stage, bool wait_for_start);
-    void run_competition_flow();
 
     void dumpSensorsOneShot();
     void printMazeView(char mode);
@@ -142,7 +141,7 @@ class CommandLineInterface
     void drainConsole();
 
     // Process bluetooth/USB input non-blockingly during motion. Sets
-    // halted_ if HALT/X received. Used by the API halt thunk.
+    // halted_ if HALT/X received. Used by the Mouse halt thunk.
     void pollHaltOnly();
 
     Deps deps_;

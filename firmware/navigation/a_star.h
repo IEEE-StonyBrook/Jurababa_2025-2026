@@ -10,9 +10,9 @@
 
 #include "common/log.h"
 #include "maze/maze.h"
-#include "maze/mouse.h"
+#include "maze/maze_mouse.h"
 
-class API;
+class Mouse;
 
 /**
  * @brief A* pathfinding algorithm for maze navigation
@@ -23,7 +23,7 @@ class API;
 class AStar
 {
   public:
-    explicit AStar(Mouse* mouse);
+    explicit AStar(MazeMouse* mouse);
 
     /**
      * @brief Get LFR path string to goal cells
@@ -53,8 +53,8 @@ class AStar
     static std::string pathToString(const std::vector<Cell*>& path);
     static float       heuristic(Cell* from, Cell* to);
 
-    Mouse* mouse_;
-    float  total_cost_ = 0.0f;
+    MazeMouse* mouse_;
+    float      total_cost_ = 0.0f;
 };
 
 #endif

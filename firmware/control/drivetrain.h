@@ -93,7 +93,7 @@ class Drivetrain
     float right_velocity_mmps_ = 0.0f;
 
     // 8-tap moving average of per-tick deltas (mm) refreshed by update();
-    // consumed by Robot's PD loop via fwdChangeMm(). Mirrors
+    // consumed by Motion's PD loop via fwdChangeMm(). Mirrors
     // ukmars/motorlab/src/encoders.h::m_fwd_change.
     float fwd_change_mm_ = 0.0f;
 

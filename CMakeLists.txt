@@ -43,13 +43,13 @@ set(CONTROL_SOURCES
     firmware/control/pid.cpp
     firmware/control/profile.cpp
     firmware/control/drivetrain.cpp
-    firmware/control/robot.cpp
+    firmware/control/motion.cpp
     firmware/control/line_follower.cpp
 )
 
 set(MAZE_SOURCES
     firmware/maze/maze.cpp
-    firmware/maze/mouse.cpp
+    firmware/maze/maze_mouse.cpp
 )
 
 set(NAVIGATION_SOURCES
@@ -62,8 +62,8 @@ set(NAVIGATION_SOURCES
 
 set(APP_SOURCES
     firmware/app/bluetooth.cpp
-    firmware/app/api.cpp
-    firmware/app/firmware_api.cpp
+    firmware/app/mouse.cpp
+    firmware/app/firmware_mouse.cpp
     firmware/app/start_gesture.cpp
     firmware/app/cli.cpp
 )

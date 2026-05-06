@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <unordered_set>
 
-#include "app/api.h"
+#include "app/mouse.h"
 #include "navigation/path_utils.h"
 
 int FloodFill::distance_grid_[MAZE_SIZE][MAZE_SIZE];
 
-void FloodFill::initDistanceGrid(Mouse& mouse)
+void FloodFill::initDistanceGrid(MazeMouse& mouse)
 {
     (void)mouse;
     for (int x = 0; x < MAZE_SIZE; x++)
@@ -20,7 +20,7 @@ void FloodFill::initDistanceGrid(Mouse& mouse)
     }
 }
 
-void FloodFill::updateDistances(Mouse& mouse, bool diagonals)
+void FloodFill::updateDistances(MazeMouse& mouse, bool diagonals)
 {
     for (int x = 0; x < MAZE_SIZE; x++)
     {
@@ -92,7 +92,7 @@ void FloodFill::updateDistances(Mouse& mouse, bool diagonals)
     }
 }
 
-int FloodFill::turnCost(Mouse& mouse, Cell* neighbor)
+int FloodFill::turnCost(MazeMouse& mouse, Cell* neighbor)
 {
     Cell* current = mouse.currentCell();
     int   dx      = neighbor->x() - current->x();
@@ -108,7 +108,7 @@ int FloodFill::turnCost(Mouse& mouse, Cell* neighbor)
     return 2;     // 180 turn
 }
 
-Cell* FloodFill::bestNeighbor(Mouse& mouse, Cell* current, bool diagonals)
+Cell* FloodFill::bestNeighbor(MazeMouse& mouse, Cell* current, bool diagonals)
 {
     Cell* best_unexplored      = nullptr;
     int   best_unexplored_turn = 3;
@@ -160,7 +160,7 @@ Cell* FloodFill::bestNeighbor(Mouse& mouse, Cell* current, bool diagonals)
     return best_explored;
 }
 
-void FloodFill::moveToAdjacent(API& api, Mouse& mouse, Cell* target)
+void FloodFill::moveToAdjacent(Mouse& api, MazeMouse& mouse, Cell* target)
 {
     Cell* current = mouse.currentCell();
     int   dx      = target->x() - current->x();
@@ -192,7 +192,7 @@ void FloodFill::moveToAdjacent(API& api, Mouse& mouse, Cell* target)
     }
 }
 
-void FloodFill::markDeadEnds(Mouse& mouse, API& api, Cell* cell, bool diagonals)
+void FloodFill::markDeadEnds(MazeMouse& mouse, Mouse& api, Cell* cell, bool diagonals)
 {
     for (Cell* neighbor : mouse.cellNeighbors(cell, false))
     {
@@ -206,7 +206,7 @@ void FloodFill::markDeadEnds(Mouse& mouse, API& api, Cell* cell, bool diagonals)
     }
 }
 
-void FloodFill::updateDisplay(API& api)
+void FloodFill::updateDisplay(Mouse& api)
 {
     for (int x = 0; x < MAZE_SIZE; x++)
     {
@@ -225,7 +225,7 @@ void FloodFill::updateDisplay(API& api)
     }
 }
 
-void FloodFill::explore(Mouse& mouse, API& api, bool diagonals)
+void FloodFill::explore(MazeMouse& mouse, Mouse& api, bool diagonals)
 {
     initDistanceGrid(mouse);
 

@@ -5,7 +5,7 @@
 #ifndef CONFIG_CONFIG_H
 #define CONFIG_CONFIG_H
 
-#include "config/geometry.h"    // Robot dimensions, encoder, maze
+#include "config/geometry.h"    // Physical dimensions, encoder, maze
 #include "config/motion.h"      // Speed/accel limits, tolerances
 #include "config/pins.h"        // GPIO pin assignments
 #include "config/sensors.h"     // Sensor hardware config

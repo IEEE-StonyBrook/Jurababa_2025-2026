@@ -32,7 +32,7 @@ std::string PathConverter::movesForHeadingChange(std::array<int, 2> from, std::a
     // Cardinal only - no diagonal starting position
     if (from[0] != 0 && from[1] != 0)
     {
-        LOG_ERROR("PathConverter: Mouse on diagonal! Not allowed.");
+        LOG_ERROR("PathConverter: MazeMouse on diagonal! Not allowed.");
         return "";
     }
     if (to[0] == 0 && to[1] == 0)

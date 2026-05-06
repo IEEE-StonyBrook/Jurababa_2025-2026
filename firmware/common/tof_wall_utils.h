@@ -15,9 +15,17 @@ enum class SteeringSource : uint8_t
     Right
 };
 
+enum class SteeringMode : uint8_t
+{
+    STEER_NORMAL,
+    STEER_LEFT_WALL,
+    STEER_RIGHT_WALL,
+    STEERING_OFF,
+};
+
 // Mirrors UKMARS mazerunner-core's wall-detection + cross-track error
-// shape (sensors.h:196-258 in /tmp/mazerunner-core), translated from
-// IR-normalized counts to ToF mm via compile-time scale factors. The
+// shape, translated from IR-normalized counts to ToF mm via compile-time
+// scale factors. The
 // per-side scale absorbs per-unit chip bias, mounting, and cover variance:
 // each side reads ~TOF_SIDE_NOMINAL when the robot is centered between
 // two walls.
@@ -57,6 +65,22 @@ inline const char* sourceName(SteeringSource source)
     }
 }
 
+inline const char* modeName(SteeringMode mode)
+{
+    switch (mode)
+    {
+        case SteeringMode::STEER_NORMAL:
+            return "STEER_NORMAL";
+        case SteeringMode::STEER_LEFT_WALL:
+            return "STEER_LEFT_WALL";
+        case SteeringMode::STEER_RIGHT_WALL:
+            return "STEER_RIGHT_WALL";
+        case SteeringMode::STEERING_OFF:
+        default:
+            return "STEERING_OFF";
+    }
+}
+
 inline bool validReading(float distance_mm)
 {
     return distance_mm > 0.0f && distance_mm < TOF_OUT_OF_RANGE_MM;
@@ -82,7 +106,8 @@ inline bool frontWallTooCloseForSteering(float distance_mm)
     return validReading(distance_mm) && distance_mm < TOF_FRONT_WALL_RELIABILITY_LIMIT_MM;
 }
 
-inline WallState evaluate(float left_mm, float front_mm, float right_mm)
+inline WallState evaluate(float left_mm, float front_mm, float right_mm,
+                          SteeringMode mode = SteeringMode::STEER_NORMAL)
 {
     WallState state;
     state.left_wall     = wallLeft(left_mm);
@@ -103,11 +128,34 @@ inline WallState evaluate(float left_mm, float front_mm, float right_mm)
     if (state.right_wall)
         state.right_error_norm = TOF_SIDE_NOMINAL - rss_norm;
 
-    // Picker form lifted directly from mazerunner sensors.h:236-247. Closer
-    // wall wins, with the same 2× factor applied in single-wall and
-    // both-wall cases so the effective steering gain doesn't halve when
-    // one wall ends — see audit item #5.
-    if (state.left_wall && state.right_wall)
+    if (mode == SteeringMode::STEERING_OFF)
+    {
+        state.steering_allowed = false;
+        return state;
+    }
+
+    if (mode == SteeringMode::STEER_LEFT_WALL)
+    {
+        if (state.left_wall)
+        {
+            state.side_error_norm  = 2.0f * state.left_error_norm;
+            state.side_error_valid = true;
+            state.source           = SteeringSource::Left;
+        }
+    }
+    else if (mode == SteeringMode::STEER_RIGHT_WALL)
+    {
+        if (state.right_wall)
+        {
+            state.side_error_norm  = 2.0f * state.right_error_norm;
+            state.side_error_valid = true;
+            state.source           = SteeringSource::Right;
+        }
+    }
+    // Picker form lifted directly from mazerunner sensors.h. Closer wall
+    // wins, with the same 2× factor applied in single-wall and both-wall
+    // cases so the effective steering gain doesn't halve when one wall ends.
+    else if (state.left_wall && state.right_wall)
     {
         // Closer wall = smaller normalized reading (smaller mm × scale).
         if (lss_norm < rss_norm)
