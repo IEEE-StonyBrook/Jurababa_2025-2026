@@ -37,15 +37,14 @@
 #define TOF_LEFT_SCALE           (TOF_SIDE_NOMINAL / TOF_LEFT_CALIBRATION_MM)
 #define TOF_RIGHT_SCALE          (TOF_SIDE_NOMINAL / TOF_RIGHT_CALIBRATION_MM)
 
-// Wall-detection thresholds stay in raw chip-mm. They're binary classifiers
-// (wall present / absent) so per-unit bias doesn't change the decision; all
-// it does is shift the mm threshold by 10–30 mm, which is well inside the
-// margin between "centered between walls" (~100 mm) and "no wall there"
-// (>>200 mm). Re-measure if the per-unit bias is unusually large.
+// Wall-detection thresholds stay in raw chip-mm. Side thresholds classify the
+// adjacent cell walls. The front threshold is the SEARCH mapping threshold at
+// SENSING_POSITION_MM, and is intentionally separate from the smooth-turn
+// front trigger and the front-wall centering reference.
 #define TOF_SIDE_WALL_MARGIN_MM     40.0f
 #define TOF_LEFT_WALL_THRESHOLD_MM  (TOF_LEFT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
 #define TOF_RIGHT_WALL_THRESHOLD_MM (TOF_RIGHT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
-#define TOF_FRONT_WALL_THRESHOLD_MM 110.0f
+#define TOF_FRONT_WALL_THRESHOLD_MM 140.0f
 
 // UKMARS-style wall steering. Wall detection remains enabled regardless of
 // this switch; TOF_STEERING_ENABLE only controls whether side-wall error is

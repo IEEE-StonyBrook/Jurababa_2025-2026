@@ -696,21 +696,27 @@ void Mouse::update_map()
     const std::string front = maze_mouse_->directionAsString(maze_mouse_->currentDirectionArray());
     const std::string left  = maze_mouse_->directionLeft();
     const std::string right = maze_mouse_->directionRight();
+    const bool        left_wall  = wallLeft();
+    const bool        front_wall = wallFront();
+    const bool        right_wall = wallRight();
 
-    cell->updateWallState(front[0], wallFront() ? WALL : EXIT);
-    cell->updateWallState(left[0], wallLeft() ? WALL : EXIT);
-    cell->updateWallState(right[0], wallRight() ? WALL : EXIT);
-    LOG_INFO("update_map: cell=(" + std::to_string(x) + "," + std::to_string(y) + ") heading=" +
-             headingUpper(maze_mouse_->currentDirection()) + " walls=" + (wallLeft() ? "L" : "-") +
-             (wallFront() ? "F" : "-") + (wallRight() ? "R" : "-"));
+    cell->updateWallState(front[0], front_wall ? WALL : EXIT);
+    cell->updateWallState(left[0], left_wall ? WALL : EXIT);
+    cell->updateWallState(right[0], right_wall ? WALL : EXIT);
+    LOG_INFO("update_map: cell=(" + std::to_string(x) + "," + std::to_string(y) +
+             ") heading=" + headingUpper(maze_mouse_->currentDirection()) +
+             " ToF L/F/R=" + fixed1(motion_ != nullptr ? motion_->leftDistance() : 0.0f) + "/" +
+             fixed1(motion_ != nullptr ? motion_->frontDistance() : 0.0f) + "/" +
+             fixed1(motion_ != nullptr ? motion_->rightDistance() : 0.0f) + " walls=" +
+             (left_wall ? "L" : "-") + (front_wall ? "F" : "-") + (right_wall ? "R" : "-"));
 
     if (run_on_simulator)
     {
-        if (wallFront())
+        if (front_wall)
             setWall(x, y, front);
-        if (wallLeft())
+        if (left_wall)
             setWall(x, y, left);
-        if (wallRight())
+        if (right_wall)
             setWall(x, y, right);
     }
 
