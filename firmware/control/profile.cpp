@@ -20,7 +20,7 @@ void Profile::start(float target_distance, float start_speed, float top_speed, f
                     float acceleration)
 {
     direction_       = (target_distance >= 0.0f) ? 1 : -1;
-    target_distance_ = std::fabs(target_distance);
+    target_distance_ = target_distance;
     top_speed_       = std::fabs(top_speed);
     final_speed_     = std::fabs(final_speed);
     acceleration_    = std::fabs(acceleration);
@@ -30,7 +30,7 @@ void Profile::start(float target_distance, float start_speed, float top_speed, f
     current_acceleration_ = 0.0f;
     current_position_     = 0.0f;
 
-    if (target_distance_ <= 0.0f || acceleration_ <= 0.0f)
+    if (std::fabs(target_distance_) <= 0.0f || acceleration_ <= 0.0f)
     {
         state_ = State::Finished;
         return;
@@ -51,9 +51,7 @@ float Profile::brakingDistance() const
 
 float Profile::remaining() const
 {
-    float traveled = std::fabs(current_position_);
-    float r        = target_distance_ - traveled;
-    return (r > 0.0f) ? r : 0.0f;
+    return std::fabs(target_distance_ - current_position_);
 }
 
 void Profile::update()
@@ -100,7 +98,7 @@ void Profile::update()
 
     if (remaining() < 0.125f)
     {
-        current_position_     = direction_ * target_distance_;
+        current_position_     = target_distance_;
         current_velocity_     = direction_ * final_speed_;
         current_acceleration_ = 0.0f;
         state_                = State::Finished;
@@ -133,7 +131,7 @@ void Profile::setFinalSpeed(float speed)
 
 void Profile::extendTarget(float distance)
 {
-    target_distance_ += std::fabs(distance);
+    target_distance_ += direction_ * std::fabs(distance);
     if (state_ == State::Finished)
         state_ = State::Accelerating;
 }
@@ -141,9 +139,13 @@ void Profile::extendTarget(float distance)
 void Profile::setPosition(float position)
 {
     current_position_ = position;
+    target_distance_  = position;
+    direction_        = (position >= 0.0f) ? 1 : -1;
 }
 
 void Profile::adjustPosition(float delta)
 {
     current_position_ += delta;
+    if (state_ == State::Finished && remaining() > 0.125f)
+        state_ = State::Accelerating;
 }

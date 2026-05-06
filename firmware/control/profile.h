@@ -59,7 +59,7 @@ class Profile
   private:
     State state_;
     int   direction_;
-    float target_distance_;
+    float target_distance_; // Signed target position in profile units.
     float target_speed_;
     float top_speed_;
     float final_speed_;

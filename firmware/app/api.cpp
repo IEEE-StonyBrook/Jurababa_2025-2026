@@ -16,9 +16,12 @@
 #endif
 #include "common/log.h"
 #include "config/geometry.h"
+#include "config/sensors.h"
 #include "config/smooth_turn.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
+#include "navigation/a_star.h"
+#include "navigation/path_converter.h"
 
 namespace
 {
@@ -55,6 +58,61 @@ std::string fixed1(float value)
     std::snprintf(buffer, sizeof(buffer), "%.1f", static_cast<double>(value));
     return buffer;
 }
+
+std::string headingUpper(const std::string& heading)
+{
+    std::string out = heading;
+    for (char& c : out)
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return out;
+}
+
+std::string firstToken(const std::string& sequence, std::string* second = nullptr)
+{
+    std::istringstream ss(sequence);
+    std::string        first;
+    std::string        next;
+    while (std::getline(ss, first, '#'))
+    {
+        if (!first.empty())
+            break;
+    }
+    if (second != nullptr)
+    {
+        *second = "";
+        while (std::getline(ss, next, '#'))
+        {
+            if (!next.empty())
+            {
+                *second = next;
+                break;
+            }
+        }
+    }
+    return uppercaseToken(first);
+}
+
+class ApiMotionSequenceGuard
+{
+  public:
+    explicit ApiMotionSequenceGuard(API* api) : api_(api)
+    {
+        if (api_ != nullptr)
+            api_->begin_motion_sequence();
+    }
+
+    ~ApiMotionSequenceGuard()
+    {
+        if (api_ != nullptr)
+            api_->end_motion_sequence();
+    }
+
+    ApiMotionSequenceGuard(const ApiMotionSequenceGuard&)            = delete;
+    ApiMotionSequenceGuard& operator=(const ApiMotionSequenceGuard&) = delete;
+
+  private:
+    API* api_;
+};
 } // namespace
 
 API::API(Mouse* mouse) : mouse_(mouse), run_on_simulator(false)
@@ -206,135 +264,6 @@ bool API::start_center()
     return move_mm(START_CENTER_DISTANCE_MM);
 }
 
-bool API::center_from_wall_check()
-{
-#ifndef SIMULATOR_BUILD
-    if (!run_on_simulator && robot_ != nullptr && !robot_->move_finished())
-    {
-        LOG_INFO("MOTION center_from_wall_check: finish active move to cell center");
-        waitForMotion();
-        clear_search_move();
-        return !haltRequested();
-    }
-#endif
-    if (!move_mm(WALL_CHECK_TO_CENTER_MM))
-        return false;
-    clear_search_move();
-    return true;
-}
-
-bool API::search_start_from_wall_check()
-{
-    if (run_on_simulator)
-    {
-        simulatorResponse("moveForward");
-        mouse_->moveForward(1);
-        return true;
-    }
-#ifndef SIMULATOR_BUILD
-    if (robot_ == nullptr)
-        return false;
-
-    if (!robot_->move_finished())
-    {
-        const float latch_position_mm = robot_->position() + CELL_SIZE_MM;
-        LOG_INFO("MOTION search_start_from_wall_check: extend_mm=" + fixed1(CELL_SIZE_MM) +
-                 " latch_position_mm=" + fixed1(latch_position_mm));
-        robot_->extend_move(CELL_SIZE_MM);
-
-        while (!robot_->move_finished() && robot_->position() < latch_position_mm)
-        {
-            serviceSensors();
-            if (haltRequested())
-            {
-                robot_->emergency_stop();
-                return false;
-            }
-            sleep_ms(2);
-        }
-
-        setWallSample(static_cast<int16_t>(robot_->leftDistance()),
-                      static_cast<int16_t>(robot_->frontDistance()),
-                      static_cast<int16_t>(robot_->rightDistance()));
-        mouse_->moveForward(1);
-        return true;
-    }
-
-    constexpr float kWallCheckLatchMm = CELL_SIZE_MM;
-    const float     total_mm          = CELL_SIZE_MM + WALL_CHECK_TO_CENTER_MM;
-    LOG_INFO("MOTION search_start_from_wall_check: total_mm=" + fixed1(total_mm) + " latch_at_mm=" +
-             fixed1(kWallCheckLatchMm) + " speed_mmps=" + fixed1(ROBOT_MAX_SEARCH_SPEED_MMPS) +
-             " accel_mmps2=" + fixed1(ROBOT_BASE_ACCEL_MMPS2));
-    robot_->move(total_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
-
-    while (!robot_->move_finished() && robot_->position() < kWallCheckLatchMm)
-    {
-        serviceSensors();
-        if (haltRequested())
-        {
-            robot_->emergency_stop();
-            return false;
-        }
-        sleep_ms(2);
-    }
-
-    setWallSample(static_cast<int16_t>(robot_->leftDistance()),
-                  static_cast<int16_t>(robot_->frontDistance()),
-                  static_cast<int16_t>(robot_->rightDistance()));
-#endif
-    mouse_->moveForward(1);
-    return true;
-}
-
-bool API::search_advance()
-{
-    if (run_on_simulator)
-    {
-        simulatorResponse("moveForward");
-        mouse_->moveForward(1);
-        return true;
-    }
-#ifndef SIMULATOR_BUILD
-    if (robot_ == nullptr)
-        return false;
-
-    const float wall_check_position_mm = robot_->position() + CENTER_TO_NEXT_WALL_CHECK_MM;
-    LOG_INFO("MOTION search_advance: distance_mm=" + fixed1(CELL_SIZE_MM) +
-             " latch_after_mm=" + fixed1(CENTER_TO_NEXT_WALL_CHECK_MM) + " latch_position_mm=" +
-             fixed1(wall_check_position_mm) + " speed_mmps=" + fixed1(ROBOT_MAX_SEARCH_SPEED_MMPS) +
-             " accel_mmps2=" + fixed1(ROBOT_BASE_ACCEL_MMPS2));
-    robot_->move(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
-
-    while (!robot_->move_finished() && robot_->position() < wall_check_position_mm)
-    {
-        serviceSensors();
-        if (haltRequested())
-        {
-            robot_->emergency_stop();
-            return false;
-        }
-        sleep_ms(2);
-    }
-
-    setWallSample(static_cast<int16_t>(robot_->leftDistance()),
-                  static_cast<int16_t>(robot_->frontDistance()),
-                  static_cast<int16_t>(robot_->rightDistance()));
-#endif
-    mouse_->moveForward(1);
-    return true;
-}
-
-void API::finish_search_move()
-{
-#ifndef SIMULATOR_BUILD
-    waitForMotion();
-#endif
-}
-
-void API::clear_search_move()
-{
-}
-
 void API::moveForward()
 {
     if (run_on_simulator)
@@ -458,32 +387,103 @@ void API::turn(int degrees)
 void API::move_ahead()
 {
     if (run_on_simulator)
-        simulatorResponse("moveForward");
-#ifndef SIMULATOR_BUILD
-    else if (robot_ != nullptr)
     {
-        robot_->move(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
-        waitForMotion();
+        simulatorResponse("moveForward");
+        mouse_->moveForward(1);
+        return;
     }
+#ifndef SIMULATOR_BUILD
+    if (robot_ == nullptr)
+        return;
+    LOG_INFO("move_ahead: adjust_forward_position=-" + fixed1(CELL_SIZE_MM) +
+             " wait_until_position=" + fixed1(SENSING_POSITION_MM));
+    robot_->adjust_forward_position(-CELL_SIZE_MM);
+    if (!wait_until_position(SENSING_POSITION_MM))
+        return;
+    robot_->set_position(SENSING_POSITION_MM);
 #endif
     mouse_->moveForward(1);
 }
 
 void API::turn_left()
 {
-    turn_smooth(SS90EL);
+    if (movement_style_ == MovementStyle::Smooth)
+    {
+        turn_smooth(SS90EL);
+#ifndef SIMULATOR_BUILD
+        if (!run_on_simulator && robot_ != nullptr)
+            robot_->set_position(SENSING_POSITION_MM);
+#endif
+    }
+    else
+    {
+        if (!stopAtCentre())
+            return;
+        if (!adjustPosition())
+            return;
+        turn_IP90L();
+#ifndef SIMULATOR_BUILD
+        if (!run_on_simulator && robot_ != nullptr)
+        {
+            robot_->set_position(HALF_CELL_MM);
+            robot_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                         ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+            waitForMotion();
+            robot_->set_position(SENSING_POSITION_MM);
+        }
+#endif
+    }
     mouse_->turn45Steps(-2);
 }
 
 void API::turn_right()
 {
-    turn_smooth(SS90ER);
+    if (movement_style_ == MovementStyle::Smooth)
+    {
+        turn_smooth(SS90ER);
+#ifndef SIMULATOR_BUILD
+        if (!run_on_simulator && robot_ != nullptr)
+            robot_->set_position(SENSING_POSITION_MM);
+#endif
+    }
+    else
+    {
+        if (!stopAtCentre())
+            return;
+        if (!adjustPosition())
+            return;
+        turn_IP90R();
+#ifndef SIMULATOR_BUILD
+        if (!run_on_simulator && robot_ != nullptr)
+        {
+            robot_->set_position(HALF_CELL_MM);
+            robot_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                         ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+            waitForMotion();
+            robot_->set_position(SENSING_POSITION_MM);
+        }
+#endif
+    }
     mouse_->turn45Steps(2);
 }
 
 void API::turn_back()
 {
+    if (!stopAtCentre())
+        return;
+    if (!adjustPosition())
+        return;
     turn_IP180();
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator && robot_ != nullptr)
+    {
+        robot_->set_position(HALF_CELL_MM);
+        robot_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                     ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+        waitForMotion();
+        robot_->set_position(SENSING_POSITION_MM);
+    }
+#endif
     mouse_->turn45Steps(4);
 }
 
@@ -548,6 +548,208 @@ void API::turn_IP90L()
     robot_->turn_IP90L();
     waitForMotion();
 #endif
+}
+
+bool API::wait_until_position(float position_mm)
+{
+    if (run_on_simulator)
+        return true;
+#ifndef SIMULATOR_BUILD
+    if (robot_ == nullptr)
+        return false;
+    while (robot_->position() < position_mm && !robot_->move_finished())
+    {
+        serviceSensors();
+        if (haltRequested())
+        {
+            robot_->emergency_stop();
+            return false;
+        }
+        sleep_ms(2);
+    }
+    return robot_->position() >= position_mm - 0.125f && !haltRequested();
+#else
+    return true;
+#endif
+}
+
+bool API::stopAtCentre()
+{
+    if (run_on_simulator)
+        return true;
+#ifndef SIMULATOR_BUILD
+    if (robot_ == nullptr)
+        return false;
+    const float centre_position_mm = CELL_SIZE_MM + HALF_CELL_MM;
+    const float distance_mm        = centre_position_mm - robot_->position();
+    LOG_INFO("stopAtCentre: position_mm=" + fixed1(robot_->position()) +
+             " distance_mm=" + fixed1(distance_mm));
+    robot_->move(distance_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+    waitForMotion();
+    if (haltRequested())
+        return false;
+    robot_->set_position(HALF_CELL_MM);
+#endif
+    return true;
+}
+
+bool API::adjustPosition()
+{
+    if (run_on_simulator)
+        return true;
+#ifndef SIMULATOR_BUILD
+    if (robot_ == nullptr)
+        return false;
+
+    serviceSensors();
+    const float front_mm = robot_->frontDistance();
+    if (front_mm <= 0.0f || front_mm >= TOF_OUT_OF_RANGE_MM || !wallFront())
+        return true;
+
+    float correction_mm = front_mm - FRONT_REFERENCE_MM;
+    if (std::fabs(correction_mm) <= FRONT_CORRECTION_TOLERANCE_MM)
+        return true;
+
+    if (correction_mm > FRONT_CORRECTION_STEP_MM)
+        correction_mm = FRONT_CORRECTION_STEP_MM;
+    if (correction_mm < -FRONT_CORRECTION_STEP_MM)
+        correction_mm = -FRONT_CORRECTION_STEP_MM;
+
+    LOG_INFO("adjustPosition: front_mm=" + fixed1(front_mm) +
+             " correction_mm=" + fixed1(correction_mm));
+    robot_->move(correction_mm, FRONT_CORRECTION_SPEED_MMPS, 0.0f, FRONT_CORRECTION_ACCEL_MMPS2);
+    waitForMotion();
+    robot_->set_position(HALF_CELL_MM);
+    return !haltRequested();
+#else
+    return true;
+#endif
+}
+
+void API::update_map()
+{
+    serviceSensors();
+    Cell* cell = mouse_ != nullptr ? mouse_->currentCell() : nullptr;
+    if (cell == nullptr)
+        return;
+
+    const int x = cell->x();
+    const int y = cell->y();
+    if (wallFront())
+        setWall(x, y, mouse_->directionAsString(mouse_->currentDirectionArray()));
+    if (wallLeft())
+        setWall(x, y, mouse_->directionLeft());
+    if (wallRight())
+        setWall(x, y, mouse_->directionRight());
+    cell->markExplored();
+}
+
+bool API::search_to(const std::vector<std::array<int, 2>>& goals)
+{
+    if (mouse_ == nullptr)
+        return false;
+
+    ApiMotionSequenceGuard motion_sequence(this);
+
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator)
+    {
+        if (robot_ == nullptr)
+            return false;
+        Cell*      start_cell = mouse_->currentCell();
+        const bool start_from_wall =
+            start_cell != nullptr && start_cell->x() == 0 && start_cell->y() == 0;
+        if (start_from_wall)
+        {
+            robot_->move(START_CENTER_DISTANCE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                         ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+            waitForMotion();
+            if (haltRequested())
+                return false;
+        }
+        robot_->set_position(HALF_CELL_MM);
+        robot_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                     ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+        waitForMotion();
+        if (haltRequested())
+            return false;
+        robot_->set_position(SENSING_POSITION_MM);
+    }
+#endif
+
+    int step = 1;
+    while (true)
+    {
+        Cell* current = mouse_->currentCell();
+        if (current == nullptr)
+            return false;
+
+        bool reached_goal = false;
+        for (const auto& goal : goals)
+        {
+            if (current->x() == goal[0] && current->y() == goal[1])
+            {
+                reached_goal = true;
+                break;
+            }
+        }
+        if (reached_goal)
+        {
+            LOG_INFO("search_to: goal reached at (" + std::to_string(current->x()) + "," +
+                     std::to_string(current->y()) + ")");
+            if (!stopAtCentre())
+                return false;
+            if (!adjustPosition())
+                return false;
+            return true;
+        }
+
+        update_map();
+
+        AStar              a_star(mouse_);
+        std::vector<Cell*> cell_path = a_star.cellPath(goals, /*diagonals=*/false,
+                                                       /*pass_goals=*/true);
+        if (cell_path.empty())
+        {
+            LOG_ERROR("search_to: no path found from (" + std::to_string(current->x()) + "," +
+                      std::to_string(current->y()) + ")");
+            return false;
+        }
+
+        std::string lfr =
+            PathConverter::buildLFR(current, mouse_->currentDirectionArray(), cell_path);
+        std::string second;
+        std::string action = firstToken(lfr, &second);
+#ifndef SIMULATOR_BUILD
+        const std::string position_text =
+            robot_ != nullptr ? fixed1(robot_->position()) : std::string("NA");
+#else
+        const std::string position_text = "SIM";
+#endif
+        LOG_INFO("search_to step=" + std::to_string(step) + " cell=(" +
+                 std::to_string(current->x()) + "," + std::to_string(current->y()) +
+                 ") heading=" + headingUpper(mouse_->currentDirection()) + " lfr=" + lfr +
+                 " action=" + action + " position_mm=" + position_text);
+
+        if (action == "F")
+            move_ahead();
+        else if ((action == "L" && second == "L") || (action == "R" && second == "R") ||
+                 action == "B")
+            turn_back();
+        else if (action == "L")
+            turn_left();
+        else if (action == "R")
+            turn_right();
+        else
+        {
+            LOG_ERROR("search_to: unsupported LFR action: " + action);
+            return false;
+        }
+
+        if (haltRequested())
+            return false;
+        ++step;
+    }
 }
 
 void API::arcTurnLeft90()

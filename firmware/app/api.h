@@ -62,11 +62,6 @@ class API
     bool move_mm(float distance_mm);
     bool move_physical(float distance_mm, float speed_mmps, float accel_mmps2);
     bool start_center();
-    bool center_from_wall_check();
-    bool search_start_from_wall_check();
-    bool search_advance();
-    void finish_search_move();
-    void clear_search_move();
     void moveForward();
     void moveForward(int steps);
     void ghostMoveForward(int steps);
@@ -86,6 +81,11 @@ class API
     void turn_IP180();
     void turn_IP90R();
     void turn_IP90L();
+    bool stopAtCentre();
+    bool adjustPosition();
+    bool wait_until_position(float position_mm);
+    void update_map();
+    bool search_to(const std::vector<std::array<int, 2>>& goals);
 
     // Arc turns (smooth turns with forward motion)
     void arcTurnLeft90();

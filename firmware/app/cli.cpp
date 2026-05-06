@@ -459,9 +459,7 @@ void CommandLineInterface::handle_search_command(const Args& args)
 
     printFormat("Search to %d,%d\n", x, y);
     std::vector<std::array<int, 2>> goals = {{x, y}};
-    const bool ok = PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
-                                            /*all_explored=*/false, /*avoid_goals=*/false,
-                                            /*start_at_wall_check=*/true);
+    const bool                      ok    = deps_.api->search_to(goals);
     printFormat(ok ? "Search done.\n" : "Search failed.\n");
 }
 
@@ -848,18 +846,14 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
         case 1:
             printFormat("Stage 1: iterative A* search to goal.\n");
             deps_.api->setPhaseColor('y');
-            return PathUtils::traversePath(deps_.api, deps_.mouse, deps_.goal_cells,
-                                           /*diagonals=*/false, /*all_explored=*/false,
-                                           /*avoid_goals=*/false,
-                                           /*start_at_wall_check=*/true);
+            return deps_.api->search_to(deps_.goal_cells);
 
         case 2:
         {
             printFormat("Stage 2: iterative A* return to start.\n");
             deps_.api->setPhaseColor('c');
             std::vector<std::array<int, 2>> goals = {deps_.start_cell};
-            return PathUtils::traversePath(deps_.api, deps_.mouse, goals, /*diagonals=*/false,
-                                           /*all_explored=*/false, /*avoid_goals=*/false);
+            return deps_.api->search_to(goals);
         }
 
         case 3:
@@ -994,12 +988,8 @@ void CommandLineInterface::run_function(int cmd)
             if (deps_.api != nullptr)
                 deps_.api->setPhaseColor('y');
             printFormat("Searching maze...\n");
-            printFormat(PathUtils::traversePath(deps_.api, deps_.mouse, deps_.goal_cells,
-                                                /*diagonals=*/false, /*all_explored=*/false,
-                                                /*avoid_goals=*/false,
-                                                /*start_at_wall_check=*/true)
-                            ? "Search done.\n"
-                            : "Search failed.\n");
+            printFormat(deps_.api->search_to(deps_.goal_cells) ? "Search done.\n"
+                                                               : "Search failed.\n");
             break;
 
         case 3:
@@ -1012,11 +1002,7 @@ void CommandLineInterface::run_function(int cmd)
             printFormat("Follow to start...\n");
             {
                 std::vector<std::array<int, 2>> goals = {deps_.start_cell};
-                printFormat(PathUtils::traversePath(deps_.api, deps_.mouse, goals,
-                                                    /*diagonals=*/false, /*all_explored=*/false,
-                                                    /*avoid_goals=*/false)
-                                ? "Follow done.\n"
-                                : "Follow failed.\n");
+                printFormat(deps_.api->search_to(goals) ? "Follow done.\n" : "Follow failed.\n");
             }
             break;
 
