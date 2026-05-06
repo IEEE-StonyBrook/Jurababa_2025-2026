@@ -1,25 +1,19 @@
 /**
  * main.cpp — Raspberry Pi Pico Micromouse entry point.
  *
- * Two top-level operating modes:
+ * Top-level operating modes:
  *
- *   1. DriverLab (press 'M' within 3 s of boot)
+ *   1. DriverLab
  *        Single-core motor characterization CLI. Core 0 owns motors,
- *        encoders, IMU, and either ToFs or the line sensor (mutually
- *        exclusive on I2C0).
+ *        encoders, IMU, and either ToFs or the line sensor.
  *
- *   2. Cli (default)
- *        UKMARS mazerunner-core-style command loop. Same dispatch table
- *        for both ToF and LineSensor sub-modes:
- *          - TOF        : Core 0 owns hardware, runs the maze brain
- *                         (A*/LFR), and advances `Motion` from a 500 Hz
- *                         timer callback.
- *          - LINE_SENSOR: Core 1 does not launch; Core 0 owns motors via
- *                         `LineFollower`.
+ *   2. Cli
+ *        UKMARS mazerunner-core-style command loop. ToF mode runs Motion from
+ *        a 500 Hz timer callback; LineSensor mode hands motors to LineFollower.
  *
- * At boot:
- *   Press 'M' within 3 s → DriverLab.
- *   Else → prompt for sensor mode (T/L), then run Cli.
+ * Boot choices are configured in config/boot.h:
+ *   BOOT_MODE_SELECTION   -> DriverLab, Normal CLI, or Prompt
+ *   BOOT_SENSOR_SELECTION -> ToF, LineSensor, or Prompt
  */
 
 #include <array>
@@ -27,6 +21,8 @@
 #include <string>
 #include <vector>
 
+#include "hardware/clocks.h"
+#include "hardware/pio.h"
 #include "hardware/sync.h"
 #include "hardware/timer.h"
 #include "pico/stdio/driver.h"
@@ -50,6 +46,7 @@
 #include "drivers/tof.h"
 #include "maze/maze.h"
 #include "maze/maze_mouse.h"
+#include "ws2812.pio.h"
 
 // ----------------------------------------------------------------------------
 // Bluetooth UART as a stdio driver (used in DriverLab mode for printf mirroring)
@@ -244,7 +241,7 @@ void resetDiagnostics()
 // ----------------------------------------------------------------------------
 // Boot-time selection
 // ----------------------------------------------------------------------------
-static bool selectDriverLab(uint32_t timeout_ms)
+static bool selectDriverLabPrompt(uint32_t timeout_ms)
 {
     printf("\n==========================================\n");
     printf("  Jurababa -- boot\n");
@@ -285,7 +282,23 @@ static bool selectDriverLab(uint32_t timeout_ms)
     }
 }
 
-static SensorMode selectSensorMode(uint32_t timeout_ms)
+static bool configuredDriverLabMode()
+{
+    switch (BOOT_MODE_SELECTION)
+    {
+        case BootModeSelection::DriverLab:
+            printf("\n*** DriverLab selected (config) ***\n\n");
+            return true;
+        case BootModeSelection::NormalCli:
+            printf("\n*** Normal CLI Mode selected (config) ***\n\n");
+            return false;
+        case BootModeSelection::Prompt:
+        default:
+            return selectDriverLabPrompt(BOOT_MODE_PROMPT_TIMEOUT_MS);
+    }
+}
+
+static SensorMode selectSensorModePrompt(uint32_t timeout_ms)
 {
     printf("\n==========================================\n");
     printf("  I2C0 sensor selection\n");
@@ -320,10 +333,26 @@ static SensorMode selectSensorMode(uint32_t timeout_ms)
     }
 }
 
+static SensorMode configuredSensorMode()
+{
+    switch (BOOT_SENSOR_SELECTION)
+    {
+        case BootSensorSelection::LineSensor:
+            printf("\n*** LineSensor selected (config) ***\n\n");
+            return SensorMode::LINE_SENSOR;
+        case BootSensorSelection::ToF:
+            printf("\n*** ToF selected (config) ***\n\n");
+            return SensorMode::TOF;
+        case BootSensorSelection::Prompt:
+        default:
+            return selectSensorModePrompt(BOOT_SENSOR_PROMPT_TIMEOUT_MS);
+    }
+}
+
 // ----------------------------------------------------------------------------
 // DriverLab mode (single-core motor characterization)
 // ----------------------------------------------------------------------------
-static void runDriverLabMode(Battery* battery)
+static void runDriverLabMode(Battery* battery, SensorMode sensor_mode)
 {
     // 115200 baud matches the HC-05 Bluetooth module. The HC-05 must be
     // reconfigured once via AT mode to use this rate (default ships at
@@ -343,8 +372,6 @@ static void runDriverLabMode(Battery* battery)
 
     printf("\n=== DriverLab ===\n");
     printf("Battery: %.2f V\n", battery->voltage());
-
-    SensorMode sensor_mode = selectSensorMode(3000);
 
     Encoder left_encoder(pio0, PIN_ENCODER_L_A, false);
     Encoder right_encoder(pio0, PIN_ENCODER_R_A, true);
@@ -522,18 +549,45 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
 // ----------------------------------------------------------------------------
 // Startup LED
 // ----------------------------------------------------------------------------
-static void blinkStartupLED(int count, uint32_t on_ms, uint32_t off_ms)
+static uint32_t grbPixel(uint8_t r, uint8_t g, uint8_t b)
 {
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
-    for (int i = 0; i < count; i++)
+    return (static_cast<uint32_t>(g) << 16u) | (static_cast<uint32_t>(r) << 8u) |
+           static_cast<uint32_t>(b);
+}
+
+static void putBootLedPixel(uint32_t grb)
+{
+#if WAVESHARE_ZERO_LED_ENABLE
+    static bool initialized = false;
+    static PIO  pio         = pio1;
+    static uint sm          = 0;
+
+    if (!initialized)
     {
-        gpio_put(PICO_DEFAULT_LED_PIN, 1);
-        sleep_ms(on_ms);
-        gpio_put(PICO_DEFAULT_LED_PIN, 0);
-        if (i < count - 1)
-            sleep_ms(off_ms);
+        const uint offset = pio_add_program(pio, &ws2812_program);
+        ws2812_program_init(pio, sm, offset, PIN_WAVESHARE_WS2812, 800000.0f, false);
+        initialized = true;
     }
+
+    pio_sm_put_blocking(pio, sm, grb << 8u);
+#else
+    (void)grb;
+#endif
+}
+
+static void flashBootLed()
+{
+#if WAVESHARE_ZERO_LED_ENABLE
+    const uint8_t level = static_cast<uint8_t>(BOOT_LED_BRIGHTNESS);
+    for (int i = 0; i < BOOT_LED_FLASH_COUNT; i++)
+    {
+        putBootLedPixel(grbPixel(0, level, 0));
+        sleep_ms(BOOT_LED_FLASH_ON_MS);
+        putBootLedPixel(0);
+        if (i < BOOT_LED_FLASH_COUNT - 1)
+            sleep_ms(BOOT_LED_FLASH_OFF_MS);
+    }
+#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -542,7 +596,7 @@ static void blinkStartupLED(int count, uint32_t on_ms, uint32_t off_ms)
 int main()
 {
     stdio_init_all();
-    blinkStartupLED(3, 150, 150);
+    flashBootLed();
     sleep_ms(2000); // wait for USB-CDC enumeration
 
     Battery battery(PIN_BATTERY_ADC, 10000.0f, 5100.0f);
@@ -568,13 +622,15 @@ int main()
                battery.voltage());
     }
 
-    if (selectDriverLab(3000))
+    const bool       driver_lab_mode = configuredDriverLabMode();
+    const SensorMode sensor_mode     = configuredSensorMode();
+
+    if (driver_lab_mode)
     {
-        runDriverLabMode(battery_ptr);
+        runDriverLabMode(battery_ptr, sensor_mode);
     }
     else
     {
-        SensorMode sensor_mode = selectSensorMode(3000);
         runCliMode(battery_ptr, sensor_mode);
     }
 

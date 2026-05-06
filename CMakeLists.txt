@@ -91,20 +91,16 @@ add_executable(Jurababa
     firmware/main.cpp
 )
 
+pico_generate_pio_header(Jurababa ${CMAKE_CURRENT_LIST_DIR}/firmware/drivers/ws2812.pio)
+
 # Define PICO_BUILD for conditional compilation
 target_compile_definitions(Jurababa PRIVATE PICO_BUILD)
 
 pico_set_program_name(Jurababa "Jurababa")
 pico_set_program_version(Jurababa "1.0")
 
-# Configure UART stdio pins for HM-10 Bluetooth (GP16=TX, GP17=RX)
-target_compile_definitions(Jurababa PRIVATE
-    PICO_DEFAULT_UART=0
-    PICO_DEFAULT_UART_TX_PIN=16
-    PICO_DEFAULT_UART_RX_PIN=17
-)
-
-# USB only - UART will be handled manually in DriverLab at 9600 baud
+# USB only. Bluetooth UART is owned manually by firmware/app/bluetooth.cpp and
+# DriverLab's stdio mirror, using PIN_BT_TX/PIN_BT_RX from config/pins.h.
 pico_enable_stdio_uart(Jurababa 0)
 pico_enable_stdio_usb(Jurababa 1)
 
@@ -114,6 +110,7 @@ add_subdirectory(third_party/vl53l0x_api_rp2040)
 # Link libraries
 target_link_libraries(Jurababa
     pico_stdlib
+    hardware_clocks
     hardware_gpio
     hardware_pio
     hardware_pwm

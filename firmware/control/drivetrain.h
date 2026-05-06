@@ -33,7 +33,8 @@ class Drivetrain
      * @param side Which wheel (WheelSide::LEFT or WheelSide::RIGHT)
      * @return Distance in millimeters
      */
-    float position(WheelSide side);
+    float   position(WheelSide side);
+    int32_t ticks(WheelSide side) const;
 
     /**
      * @brief Returns wheel velocity

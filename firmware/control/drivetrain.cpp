@@ -61,6 +61,12 @@ float Drivetrain::position(WheelSide side)
     return enc->ticks() * MM_PER_TICK;
 }
 
+int32_t Drivetrain::ticks(WheelSide side) const
+{
+    Encoder* enc = (side == WheelSide::LEFT) ? left_encoder_ : right_encoder_;
+    return enc != nullptr ? enc->ticks() : 0;
+}
+
 float Drivetrain::velocity(WheelSide side)
 {
     return (side == WheelSide::LEFT) ? left_velocity_mmps_ : right_velocity_mmps_;

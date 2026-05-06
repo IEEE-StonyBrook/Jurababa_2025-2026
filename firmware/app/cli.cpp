@@ -20,7 +20,6 @@
 #include "common/tof_wall_utils.h"
 #include "config/geometry.h"
 #include "config/motion.h"
-#include "config/sensors.h"
 #include "config/smooth_turn.h"
 #include "control/motion.h"
 #include "drivers/battery.h"
@@ -36,13 +35,6 @@ constexpr char kBackspace = 0x08;
 const char* movementStyleName(Mouse::MovementStyle style)
 {
     return style == Mouse::MovementStyle::Smooth ? "SMOOTH" : "STATIONARY";
-}
-
-const char* tofReadingName(int16_t mm)
-{
-    if (mm <= 0)
-        return "invalid";
-    return mm >= static_cast<int16_t>(TOF_OUT_OF_RANGE_MM) ? "open" : "valid";
 }
 
 bool startsNumericArg(const char* text)
@@ -209,8 +201,6 @@ void CommandLineInterface::greet()
     print("==========================================\n");
     print("  Jurababa Micromouse -- UKMARS CLI\n");
     print("==========================================\n");
-    printFormat("Sensor mode: %s\n", deps_.sensor_mode == SensorMode::TOF ? "ToF" : "LineSensor");
-    print("DriverLab is a separate boot mode; Normal CLI does not run OL/STEP/MOVE/TURN.\n");
     help();
     prompt();
 }
@@ -357,13 +347,16 @@ void CommandLineInterface::run_short_cmd(const Args& args)
             run_function(10);
             break;
         case 'S':
-            dumpSensorsOneShot();
+            if (deps_.mouse != nullptr)
+                deps_.mouse->print_wall_sensors();
+            else
+                printFormat("Mouse not initialized.\n");
             break;
         case 'E':
             printEncoderSnapshot();
             break;
         case 'Q':
-            printTofSnapshot();
+            printEncoderSnapshot();
             break;
         case 'F':
         {
@@ -391,7 +384,10 @@ void CommandLineInterface::run_long_cmd(const Args& args)
 {
     if (std::strcmp(args.argv[0], "HELP") == 0)
     {
-        help();
+        if (args.argc >= 2 && std::strcmp(args.argv[1], "DEBUG") == 0)
+            help_debug();
+        else
+            help();
         return;
     }
     if (std::strcmp(args.argv[0], "SEARCH") == 0)
@@ -952,7 +948,10 @@ void CommandLineInterface::run_function(int cmd)
     switch (cmd)
     {
         case 1:
-            dumpSensorsOneShot();
+            if (!needsTof("Sensor Static Calibration"))
+                break;
+            if (deps_.mouse != nullptr)
+                deps_.mouse->show_sensor_calibration();
             break;
 
         case 2:
@@ -969,18 +968,16 @@ void CommandLineInterface::run_function(int cmd)
             break;
 
         case 3:
-            if (!needsTof("Follow to start"))
+            if (!needsTof("Follow to goal"))
                 break;
             if (deps_.mouse == nullptr || deps_.maze_mouse == nullptr)
                 break;
             if (!startWithGesture(true))
                 break;
-            printFormat("Follow to start...\n");
-            {
-                std::vector<std::array<int, 2>> goals = {deps_.start_cell};
-                deps_.mouse->set_hand_start(true);
-                printFormat(deps_.mouse->follow_to(goals) ? "Follow done.\n" : "Follow failed.\n");
-            }
+            printFormat("Follow to goal...\n");
+            deps_.mouse->set_hand_start(true);
+            printFormat(deps_.mouse->follow_to(deps_.goal_cells) ? "Follow done.\n"
+                                                                 : "Follow failed.\n");
             break;
 
         case 4:
@@ -1040,8 +1037,7 @@ void CommandLineInterface::run_function(int cmd)
                 break;
             if (!startWithGesture(true))
                 break;
-            deps_.mouse->moveForward(4);
-            printFormat("Forward 4 cells done.\n");
+            printFormat(deps_.mouse->run(4.0f * CELL_SIZE_MM) ? "Run done.\n" : "Run failed.\n");
             break;
 
         case 10:
@@ -1050,48 +1046,14 @@ void CommandLineInterface::run_function(int cmd)
                 printFormat("Battery monitor not initialized.\n");
                 break;
             }
-            printFormat("Battery: %.2f V\n", deps_.battery->voltage());
+            printFormat("Battery: %.2f Volts\n", deps_.battery->voltage());
             break;
 
         default:
+            if (deps_.motion != nullptr)
+                deps_.motion->set_steering_mode(tof_wall::SteeringMode::STEERING_OFF);
             stop();
             break;
-    }
-}
-
-void CommandLineInterface::dumpSensorsOneShot()
-{
-    Motion* r = deps_.motion;
-    if (r != nullptr)
-    {
-        printFormat("ToF L=%d mm F=%d mm R=%d mm  yaw=%.1f deg\n",
-                    static_cast<int>(r->leftDistance()), static_cast<int>(r->frontDistance()),
-                    static_cast<int>(r->rightDistance()), static_cast<double>(r->angle()));
-    }
-    else
-    {
-        printFormat("ToF: motion not initialized\n");
-    }
-    if (deps_.battery != nullptr)
-        printFormat("Battery: %.2f V\n", deps_.battery->voltage());
-    if (deps_.bluetooth != nullptr)
-    {
-        Log::BluetoothDiagnostics log = Log::bluetoothDiagnostics();
-        Bluetooth::Diagnostics    bt  = deps_.bluetooth->diagnostics();
-        printFormat("BT log queued=%u max=%u dropped=%lu truncated=%lu\n",
-                    static_cast<unsigned>(log.queued_messages),
-                    static_cast<unsigned>(log.max_queued_messages),
-                    static_cast<unsigned long>(log.dropped_messages),
-                    static_cast<unsigned long>(log.truncated_messages));
-        printFormat("BT tx depth=%u max=%u dropped=%lu\n", static_cast<unsigned>(bt.ring_depth),
-                    static_cast<unsigned>(bt.max_ring_depth),
-                    static_cast<unsigned long>(bt.dropped_bytes));
-        printFormat("BT rx lines=%u max=%u dropped_lines=%lu dropped_chars=%lu pending=%u\n",
-                    static_cast<unsigned>(bt.rx_line_depth),
-                    static_cast<unsigned>(bt.max_rx_line_depth),
-                    static_cast<unsigned long>(bt.dropped_rx_lines),
-                    static_cast<unsigned long>(bt.dropped_rx_chars),
-                    static_cast<unsigned>(bt.pending_shortcut));
     }
 }
 
@@ -1236,78 +1198,9 @@ void CommandLineInterface::printEncoderSnapshot()
         printFormat("Motion not initialized.\n");
         return;
     }
-    printFormat("position=%.1f mm velocity=%.1f mm/s yaw=%.2f deg omega=%.2f deg/s\n",
-                static_cast<double>(r->position()), static_cast<double>(r->velocity()),
-                static_cast<double>(r->angle()), static_cast<double>(r->omega()));
-}
-
-void CommandLineInterface::printTofSnapshot()
-{
-    if (!needsTof("Q"))
-        return;
-
-    Motion* r = deps_.motion;
-    if (r == nullptr)
-    {
-        printFormat("Motion not initialized.\n");
-        return;
-    }
-
-    const int16_t l_mm = static_cast<int16_t>(r->leftDistance());
-    const int16_t f_mm = static_cast<int16_t>(r->frontDistance());
-    const int16_t r_mm = static_cast<int16_t>(r->rightDistance());
-
-    const tof_wall::WallState wall_state = tof_wall::evaluate(l_mm, f_mm, r_mm, r->steeringMode());
-
-    printFormat("ToF L=%d mm (%s) F=%d mm (%s) R=%d mm (%s)\n", l_mm, tofReadingName(l_mm), f_mm,
-                tofReadingName(f_mm), r_mm, tofReadingName(r_mm));
-    printFormat("Walls L=%d F=%d R=%d  thresholds L=%.1f F=%.1f R=%.1f  open=%d\n",
-                wall_state.left_wall, wall_state.front_wall, wall_state.right_wall,
-                static_cast<double>(TOF_LEFT_WALL_THRESHOLD_MM),
-                static_cast<double>(TOF_FRONT_WALL_THRESHOLD_MM),
-                static_cast<double>(TOF_RIGHT_WALL_THRESHOLD_MM),
-                static_cast<int>(TOF_OUT_OF_RANGE_MM));
-    if (wall_state.side_error_valid)
-    {
-        const float steering_preview =
-            wall_state.steering_allowed
-                ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_norm, 0.0f)
-                : 0.0f;
-        printFormat("Side src=%s err=%.1f norm Lerr=%.1f Rerr=%.1f preview=%.1f deg/s allowed=%d "
-                    "front_blocked=%d\n",
-                    tof_wall::sourceName(wall_state.source),
-                    static_cast<double>(wall_state.side_error_norm),
-                    static_cast<double>(wall_state.left_error_norm),
-                    static_cast<double>(wall_state.right_error_norm),
-                    static_cast<double>(steering_preview), wall_state.steering_allowed,
-                    wall_state.front_blocked);
-    }
-    else
-    {
-        printFormat("Side src=NONE err=unavailable preview=0.0 deg/s front_blocked=%d\n",
-                    wall_state.front_blocked);
-    }
-    const tof_wall::WallState live_state = r->wallSteeringState();
-    printFormat(
-        "Cal Lmm=%.1f Rmm=%.1f nominal=%.1f  mode=%s live src=%s err=%.1f norm "
-        "adjust=%.1f deg/s allowed=%d\n",
-        static_cast<double>(TOF_LEFT_CALIBRATION_MM), static_cast<double>(TOF_RIGHT_CALIBRATION_MM),
-        static_cast<double>(TOF_SIDE_NOMINAL), tof_wall::modeName(r->steeringMode()),
-        tof_wall::sourceName(live_state.source), static_cast<double>(live_state.side_error_norm),
-        static_cast<double>(r->wallSteeringAdjustmentDegps()), live_state.steering_allowed);
-    printFormat("Yaw current=%.2f deg\n", static_cast<double>(r->angle()));
-
-    if (deps_.maze_mouse != nullptr)
-    {
-        Cell* cell = deps_.maze_mouse->currentCell();
-        if (cell != nullptr)
-        {
-            printFormat("MazeMouse cell=(%d,%d) heading=%s cell_walls N=%d E=%d S=%d W=%d\n",
-                        cell->x(), cell->y(), deps_.maze_mouse->currentDirection().c_str(),
-                        cell->hasWall('N'), cell->hasWall('E'), cell->hasWall('S'),
-                        cell->hasWall('W'));
-        }
-    }
+    printFormat("L:%ld R:%ld P:%.1f A:%.2f\n", static_cast<long>(r->encoder_ticks(WheelSide::LEFT)),
+                static_cast<long>(r->encoder_ticks(WheelSide::RIGHT)),
+                static_cast<double>(r->position()), static_cast<double>(r->angle()));
 }
 
 bool CommandLineInterface::needsTof(const char* what)
@@ -1442,29 +1335,43 @@ void CommandLineInterface::help()
     printFormat("? : this text\n");
     printFormat("X : stop motion\n");
     printFormat("W : display maze walls\n");
-    printFormat("C : display goal costs\n");
-    printFormat("D : display best directions\n");
+    printFormat("C : display maze costs\n");
+    printFormat("D : display maze with directions\n");
     printFormat("B : show battery voltage\n");
-    printFormat("S : show combined sensor readings\n");
-    printFormat("E : show encoder/IMU readings\n");
-    printFormat("Q : show ToF readings, wall decisions, and side steering error\n");
+    printFormat("S : show sensor readings\n");
+    printFormat("E : show encoder readings\n");
+    printFormat("Q : show encoder readings\n");
     printFormat("F n : Run user function n\n");
     printFormat(" 0 = ---\n");
     printFormat(" 1 = Sensor Static Calibration\n");
     printFormat(" 2 = Search to the goal and back\n");
-    printFormat(" 3 = Follow to start\n");
+    printFormat(" 3 = Follow a wall to the goal\n");
     printFormat(" 4 = Test SS90E Turn\n");
     printFormat(" 5 = Wander\n");
     printFormat(" 6 = Test Edge Detect Position\n");
     printFormat(" 7 = Sensor Spin Calibration\n");
     printFormat(" 8 = Get Front Sensor table\n");
     printFormat(" 9 = move forward 4 cells\n");
+    printFormat(" 10 = \n");
+    printFormat(" 11 = \n");
+    printFormat(" 12 = \n");
+    printFormat(" 13 = \n");
+    printFormat(" 14 = \n");
+    printFormat(" 15 = \n");
     printFormat("SEARCH x y : search to location (x,y)\n");
-    printFormat("STAGE n : run competition stage 1..5\n");
+    printFormat("HELP DEBUG : Jurababa extensions\n");
+    printFormat("HELP : this text\n");
+}
+
+void CommandLineInterface::help_debug()
+{
+    printFormat("Jurababa debug extensions:\n");
     printFormat("STYLE [STATIONARY|SMOOTH] : select path execution style\n");
     printFormat("PATH seq [spd acc omg alp smooth] : blind physical path, smooth default=0\n");
-    printFormat("CENTER [spd acc] : move from start wall-check pose to cell center (%.1f mm)\n",
+    printFormat("CENTER [spd acc] : move from start pose to cell center (%.1f mm)\n",
                 static_cast<double>(START_CENTER_DISTANCE_MM));
+    printFormat("STARTCENTER [spd acc] : CENTER alias\n");
+    printFormat("STAGE n : run competition stage 1..5\n");
     printFormat("RESET : reset search state without rebooting\n");
-    printFormat("HELP : this text\n");
+    printFormat("HALT : stop motion\n");
 }

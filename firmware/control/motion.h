@@ -1,6 +1,8 @@
 #ifndef CONTROL_MOTION_H
 #define CONTROL_MOTION_H
 
+#include <cstdint>
+
 #include "common/tof_wall_utils.h"
 #include "control/pid.h"
 #include "control/profile.h"
@@ -41,38 +43,40 @@ class Motion
     float                  wallSteeringAdjustmentDegps() const;
 
     // === Mazerunner-core compatible motion names ===
-    void  reset_drive_system();
-    void  stop();
-    void  disable_drive();
-    void  emergency_stop();
-    float position() const;
-    float velocity() const;
-    float acceleration() const;
-    float angle() const;
-    float omega() const;
-    float alpha() const;
-    void  set_target_velocity(float velocity_mmps);
-    void  set_final_velocity(float velocity_mmps);
-    void  extend_move(float distance_mm);
-    void  begin_motion_sequence();
-    void  end_motion_sequence();
-    void  start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
-                     float accel_mmps2);
-    bool  move_finished() const;
-    void  move(float distance_mm, float top_speed_mmps, float final_speed_mmps, float accel_mmps2);
-    void  start_turn(float degrees, float top_speed_degps, float final_speed_degps,
-                     float accel_degps2);
-    bool  turn_finished() const;
-    void  turn(float degrees, float top_speed_degps, float final_speed_degps, float accel_degps2);
-    void  spin_turn(float degrees, float omega_degps, float alpha_degps2);
-    void  turn_IP180();
-    void  turn_IP90R();
-    void  turn_IP90L();
-    void  set_position(float position_mm);
-    void  adjust_forward_position(float delta_mm);
-    void  wait_until_position(float position_mm);
-    void  wait_until_distance(float distance_mm);
-    void  turn_smooth(int turn_id);
+    void    reset_drive_system();
+    void    stop();
+    void    disable_drive();
+    void    emergency_stop();
+    float   position() const;
+    float   wheel_position(WheelSide side);
+    int32_t encoder_ticks(WheelSide side) const;
+    float   velocity() const;
+    float   acceleration() const;
+    float   angle() const;
+    float   omega() const;
+    float   alpha() const;
+    void    set_target_velocity(float velocity_mmps);
+    void    set_final_velocity(float velocity_mmps);
+    void    extend_move(float distance_mm);
+    void    begin_motion_sequence();
+    void    end_motion_sequence();
+    void    start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
+                       float accel_mmps2);
+    bool    move_finished() const;
+    void move(float distance_mm, float top_speed_mmps, float final_speed_mmps, float accel_mmps2);
+    void start_turn(float degrees, float top_speed_degps, float final_speed_degps,
+                    float accel_degps2);
+    bool turn_finished() const;
+    void turn(float degrees, float top_speed_degps, float final_speed_degps, float accel_degps2);
+    void spin_turn(float degrees, float omega_degps, float alpha_degps2);
+    void turn_IP180();
+    void turn_IP90R();
+    void turn_IP90L();
+    void set_position(float position_mm);
+    void adjust_forward_position(float delta_mm);
+    void wait_until_position(float position_mm);
+    void wait_until_distance(float distance_mm);
+    void turn_smooth(int turn_id);
 
     // === Control Loop ===
     // Caller must invoke update() exactly once per tick from a deterministic

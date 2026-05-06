@@ -32,7 +32,7 @@
 // becomes "100" after multiplication. We don't need accurate mm; we need
 // symmetric normalized units, which compile-time scaling delivers for free.
 #define TOF_SIDE_NOMINAL         100.0f
-#define TOF_LEFT_CALIBRATION_MM  132.0f // raw left ToF reading at center (re-measure!)
+#define TOF_LEFT_CALIBRATION_MM  120.0f // raw left ToF reading at center (re-measure!)
 #define TOF_RIGHT_CALIBRATION_MM 100.0f // raw right ToF reading at center (re-measure!)
 #define TOF_LEFT_SCALE           (TOF_SIDE_NOMINAL / TOF_LEFT_CALIBRATION_MM)
 #define TOF_RIGHT_SCALE          (TOF_SIDE_NOMINAL / TOF_RIGHT_CALIBRATION_MM)

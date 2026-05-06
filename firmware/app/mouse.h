@@ -116,6 +116,7 @@ class Mouse
 
     // UKMARS setup/report helpers. They intentionally use Jurababa ToF mm
     // readings and IMU yaw, but keep the mazerunner-core method names.
+    void show_sensor_calibration();
     void print_wall_sensors();
     void report_profile();
     void front_sensor_track_header();

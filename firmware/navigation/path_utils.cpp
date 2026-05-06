@@ -7,10 +7,10 @@
 #include <string>
 #include <vector>
 
-#include "app/maze_mouse.h"
+#include "app/mouse.h"
 #include "common/log.h"
 #include "maze/maze.h"
-#include "maze/maze_maze_mouse.h"
+#include "maze/maze_mouse.h"
 #include "navigation/a_star.h"
 #include "navigation/diagonalizer.h"
 #include "navigation/path_converter.h"
@@ -55,8 +55,7 @@ float manhattan(Cell* from, Cell* to)
     return static_cast<float>(std::abs(from->x() - to->x()) + std::abs(from->y() - to->y()));
 }
 
-std::vector<Cell*> reconstructExploredPath(MazeMouse*                             mouse,
-                                           const std::vector<std::vector<Cell*>>& parents,
+std::vector<Cell*> reconstructExploredPath(const std::vector<std::vector<Cell*>>& parents,
                                            Cell* start, Cell* end)
 {
     std::vector<Cell*> path;
@@ -122,7 +121,7 @@ std::vector<Cell*> exploredPathTo(MazeMouse* maze_mouse, Cell* end)
         open.pop();
 
         if (current.cell == end)
-            return reconstructExploredPath(mouse, parents, start, end);
+            return reconstructExploredPath(parents, start, end);
 
         if (closed[current.cell->x()][current.cell->y()])
             continue;
@@ -163,7 +162,7 @@ std::vector<Cell*> bestExploredPath(MazeMouse*                             maze_
         if (goal_cell == nullptr || !goal_cell->explored())
             continue;
 
-        std::vector<Cell*> path = exploredPathTo(mouse, goal_cell);
+        std::vector<Cell*> path = exploredPathTo(maze_mouse, goal_cell);
         if (path.empty())
             continue;
 

@@ -5,6 +5,7 @@
 #ifndef CONFIG_CONFIG_H
 #define CONFIG_CONFIG_H
 
+#include "config/boot.h"        // Boot mode/sensor selection and status LED
 #include "config/geometry.h"    // Physical dimensions, encoder, maze
 #include "config/motion.h"      // Speed/accel limits, tolerances
 #include "config/pins.h"        // GPIO pin assignments

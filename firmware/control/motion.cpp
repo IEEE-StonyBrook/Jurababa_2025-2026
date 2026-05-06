@@ -113,6 +113,16 @@ float Motion::position() const
     return forward_.position();
 }
 
+float Motion::wheel_position(WheelSide side)
+{
+    return drivetrain_->position(side);
+}
+
+int32_t Motion::encoder_ticks(WheelSide side) const
+{
+    return drivetrain_->ticks(side);
+}
+
 float Motion::velocity() const
 {
     return forward_.velocity();

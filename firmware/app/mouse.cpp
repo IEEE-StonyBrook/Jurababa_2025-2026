@@ -55,11 +55,16 @@ bool parsePositiveInt(const std::string& text, int& value)
     return true;
 }
 
-std::string fixed1(float value)
+[[maybe_unused]] std::string fixed1(float value)
 {
+#ifdef SIMULATOR_BUILD
+    (void)value;
+    return {};
+#else
     char buffer[24];
     std::snprintf(buffer, sizeof(buffer), "%.1f", static_cast<double>(value));
     return buffer;
+#endif
 }
 
 std::string headingUpper(const std::string& heading)
@@ -151,7 +156,7 @@ class MouseMotionSequenceGuard
 };
 } // namespace
 
-Mouse::Mouse(MazeMouse* maze_mouse) : maze_mouse_(maze_mouse), run_on_simulator(false)
+Mouse::Mouse(MazeMouse* maze_mouse) : run_on_simulator(false), maze_mouse_(maze_mouse)
 {
 }
 
@@ -282,6 +287,7 @@ bool Mouse::move_mm(float distance_mm)
     waitForMotion();
     return !haltRequested();
 #else
+    (void)distance_mm;
     return true;
 #endif
 }
@@ -299,6 +305,9 @@ bool Mouse::move_physical(float distance_mm, float speed_mmps, float accel_mmps2
     waitForMotion();
     return !haltRequested();
 #else
+    (void)distance_mm;
+    (void)speed_mmps;
+    (void)accel_mmps2;
     return true;
 #endif
 }
@@ -613,6 +622,7 @@ bool Mouse::wait_until_position(float position_mm)
     }
     return motion_->position() >= position_mm - 0.125f && !haltRequested();
 #else
+    (void)position_mm;
     return true;
 #endif
 }
@@ -1142,6 +1152,40 @@ bool Mouse::test_SS90E()
     turn_smooth(SS90ER);
     maze_mouse_->turn45Steps(2);
     return !haltRequested();
+}
+
+void Mouse::show_sensor_calibration()
+{
+    serviceSensors();
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator && motion_ != nullptr)
+    {
+        const float               left_mm    = motion_->leftDistance();
+        const float               front_mm   = motion_->frontDistance();
+        const float               right_mm   = motion_->rightDistance();
+        const float               left_norm  = left_mm * TOF_LEFT_SCALE;
+        const float               right_norm = right_mm * TOF_RIGHT_SCALE;
+        const tof_wall::WallState state =
+            tof_wall::evaluate(left_mm, front_mm, right_mm, motion_->steeringMode());
+        const float preview_degps =
+            state.steering_allowed ? tof_wall::steeringAdjustmentDegps(state.side_error_norm, 0.0f)
+                                   : 0.0f;
+
+        LOG_INFO("Sensor static calibration");
+        LOG_INFO("L raw=" + fixed1(left_mm) + " mm norm=" + fixed1(left_norm) +
+                 " wall=" + std::to_string(state.left_wall ? 1 : 0));
+        LOG_INFO("F raw=" + fixed1(front_mm) +
+                 " mm wall=" + std::to_string(state.front_wall ? 1 : 0));
+        LOG_INFO("R raw=" + fixed1(right_mm) + " mm norm=" + fixed1(right_norm) +
+                 " wall=" + std::to_string(state.right_wall ? 1 : 0));
+        LOG_INFO("Side src=" + std::string(tof_wall::sourceName(state.source)) +
+                 " err=" + fixed1(state.side_error_norm) + " preview=" + fixed1(preview_degps) +
+                 " deg/s mode=" + tof_wall::modeName(motion_->steeringMode()));
+        return;
+    }
+#endif
+    LOG_INFO(std::string("Sensor static calibration: walls=") + (wallLeft() ? "L" : "-") +
+             (wallFront() ? "F" : "-") + (wallRight() ? "R" : "-"));
 }
 
 void Mouse::print_wall_sensors()

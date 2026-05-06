@@ -78,6 +78,7 @@ class CommandLineInterface
     void runFunction(int n) { run_function(n); }
     void run_function(int cmd);
     void help();
+    void help_debug();
     void prompt();
 
     bool halted() const { return halted_; }
@@ -106,10 +107,8 @@ class CommandLineInterface
     void handleBluetoothCommand();
     bool run_competition_stage(int stage, bool wait_for_start);
 
-    void dumpSensorsOneShot();
     void printMazeView(char mode);
     void printEncoderSnapshot();
-    void printTofSnapshot();
     bool needsTof(const char* what);
     bool startWithGesture(bool tof_available);
     bool startCenter();
