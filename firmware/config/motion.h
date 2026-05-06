@@ -51,7 +51,7 @@
 // ToF wall steering: ToF may classify walls while heading hold uses IMU yaw to
 // keep the physical mouse aligned to N/NE/E/... headings.
 #define MAZE_HEADING_HOLD_ENABLE           1
-#define MAZE_HEADING_HOLD_KP_DEGPS_PER_DEG 8.0f
+#define MAZE_HEADING_HOLD_KP_DEGPS_PER_DEG 3.0f
 #define MAZE_HEADING_HOLD_MAX_DEGPS        45.0f
 
 // ================ Blind Path Test Defaults ============= //
@@ -59,8 +59,8 @@
 // benchmarks start safely.
 #define CLI_PATH_SPEED_MMPS   180.0f
 #define CLI_PATH_ACCEL_MMPS2  700.0f
-#define CLI_PATH_OMEGA_DEGPS  180.0f
-#define CLI_PATH_ALPHA_DEGPS2 720.0f
+#define CLI_PATH_OMEGA_DEGPS  270.0f
+#define CLI_PATH_ALPHA_DEGPS2 3500.0f
 
 // =============== Completion Tolerances ================= //
 // Used by line_follower yaw-snap; main Motion now relies purely on profile.finished().

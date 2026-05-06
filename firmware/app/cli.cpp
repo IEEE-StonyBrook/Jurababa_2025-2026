@@ -691,6 +691,22 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                 static_cast<double>(alpha_degps2), smooth_turns ? "true" : "false",
                 raw_mode ? "true" : "false");
 
+    if (!raw_mode)
+    {
+        deps_.motion->set_heading_hold(0.0f);
+        deps_.motion->move(START_CENTER_DISTANCE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f,
+                           ROBOT_BASE_ACCEL_MMPS2);
+        if (!wait_path_segment_motion())
+        {
+            deps_.motion->end_motion_sequence();
+            return false;
+        }
+        deps_.motion->set_position(HALF_CELL_MM);
+        printFormat("PATH hand_start: advance=%.1f mm pos=%.1f mm\n",
+                    static_cast<double>(START_CENTER_DISTANCE_MM),
+                    static_cast<double>(HALF_CELL_MM));
+    }
+
     for (size_t i = 0; i < segments.size(); ++i)
     {
         const PathSegment& segment        = segments[i];
