@@ -53,10 +53,14 @@ class API
     virtual void setWallSample(int16_t left_mm, int16_t front_mm, int16_t right_mm);
     virtual void clearWallSample();
     virtual bool wallSample(int16_t& left_mm, int16_t& front_mm, int16_t& right_mm);
+    virtual void serviceSensors();
+    virtual void begin_motion_sequence();
+    virtual void end_motion_sequence();
 
     // Movement commands
     void moveForwardHalf();
     bool move_mm(float distance_mm);
+    bool move_physical(float distance_mm, float speed_mmps, float accel_mmps2);
     bool start_center();
     bool center_from_wall_check();
     bool search_start_from_wall_check();
@@ -128,6 +132,7 @@ class API
   protected:
     // UKMARS busy-wait pattern: spin on robot_->{move,turn}_finished() while
     // the 500 Hz timer ISR keeps Robot::update() advancing the controller.
+    // Sensor service keeps ToF caches fresh during synchronous SEARCH waits.
     // 2 ms sleep matches mazerunner-core's `delay(2)` cadence.
     void waitForMotion();
 

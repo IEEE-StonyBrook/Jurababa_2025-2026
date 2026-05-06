@@ -24,11 +24,17 @@ void Robot::reset()
 
 void Robot::reset_drive_system()
 {
+    motion_sequence_active_ = false;
     drivetrain_->stop();
     drivetrain_->reset();
     imu_->reset();
     forward_.reset();
     rotation_.reset();
+    resetControlHistory();
+}
+
+void Robot::resetControlHistory()
+{
     forward_controller_.reset();
     rotation_controller_.reset();
 
@@ -127,6 +133,21 @@ void Robot::extend_move(float distance_mm)
     forward_.extendTarget(distance_mm);
 }
 
+void Robot::begin_motion_sequence()
+{
+    reset_drive_system();
+    motion_sequence_active_ = true;
+}
+
+void Robot::end_motion_sequence()
+{
+    motion_sequence_active_ = false;
+    drivetrain_->stop();
+    forward_.reset();
+    rotation_.reset();
+    resetControlHistory();
+}
+
 void Robot::start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
                        float accel_mmps2)
 {
@@ -175,12 +196,12 @@ void Robot::turn_IP180()
 
 void Robot::turn_IP90R()
 {
-    spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
 
 void Robot::turn_IP90L()
 {
-    spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
 
 void Robot::set_position(float position_mm)
@@ -231,11 +252,13 @@ void Robot::runPositionControl()
     if (!forward_.active() && !rotation_.active())
     {
         drivetrain_->stop();
-        forward_controller_.reset();
-        rotation_controller_.reset();
-        prev_left_cmd_vel_mmps_  = 0.0f;
-        prev_right_cmd_vel_mmps_ = 0.0f;
-        side_error_prev_valid_   = false;
+        if (motion_sequence_active_)
+        {
+            latest_wall_state_ = tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
+            latest_steering_adjustment_degps_ = 0.0f;
+            return;
+        }
+        resetControlHistory();
         latest_wall_state_ = tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_);
         latest_steering_adjustment_degps_ = 0.0f;
         return;
@@ -251,7 +274,8 @@ void Robot::runPositionControl()
     // IMU as a held-flat per-tick delta; this removes the 10 ms staircase
     // that the old 100 Hz gate produced in rotation_output_ and stops the
     // step-input-driven oscillation on spin turns.
-    const float forward_output = forward_controller_.update(fwd_velocity, fwd_change_mm);
+    const float forward_output =
+        forward_.active() ? forward_controller_.update(fwd_velocity, fwd_change_mm) : 0.0f;
     const float steering_adjustment =
         TOF_STEERING_ENABLE ? wallSteeringAdjustment(fwd_velocity, rot_velocity) : 0.0f;
 #if !TOF_STEERING_ENABLE

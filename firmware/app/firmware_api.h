@@ -3,6 +3,8 @@
 
 #include "app/api.h"
 
+class ToF;
+
 /**
  * @brief Hardware-backed API: bridges maze-solver wall queries to live ToFs.
  *
@@ -24,12 +26,19 @@ class FirmwareApi : public API
     void setWallSample(int16_t left_mm, int16_t front_mm, int16_t right_mm) override;
     void clearWallSample() override;
     bool wallSample(int16_t& left_mm, int16_t& front_mm, int16_t& right_mm) override;
+    void serviceSensors() override;
+
+    void setTofSensors(ToF* left_tof, ToF* front_tof, ToF* right_tof);
 
   private:
-    bool    use_wall_sample_      = false;
-    int16_t wall_sample_left_mm_  = 0;
-    int16_t wall_sample_front_mm_ = 0;
-    int16_t wall_sample_right_mm_ = 0;
+    ToF*     left_tof_             = nullptr;
+    ToF*     front_tof_            = nullptr;
+    ToF*     right_tof_            = nullptr;
+    uint32_t next_tof_poll_ms_     = 0;
+    bool     use_wall_sample_      = false;
+    int16_t  wall_sample_left_mm_  = 0;
+    int16_t  wall_sample_front_mm_ = 0;
+    int16_t  wall_sample_right_mm_ = 0;
 };
 
 #endif

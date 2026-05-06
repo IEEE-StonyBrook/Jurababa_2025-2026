@@ -464,6 +464,7 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
         static Robot      robot(&drivetrain, &imu);
 
         api.setRobot(&robot);
+        api.setTofSensors(&left_tof, &front_tof, &right_tof);
         robot_ptr     = &robot;
         left_tof_ptr  = &left_tof;
         front_tof_ptr = &front_tof;

@@ -72,6 +72,7 @@ void API::waitForMotion()
         return;
     while (!robot_->move_finished() || !robot_->turn_finished())
     {
+        serviceSensors();
         if (haltRequested())
         {
             robot_->emergency_stop();
@@ -130,6 +131,26 @@ bool API::wallSample(int16_t& left_mm, int16_t& front_mm, int16_t& right_mm)
     return false;
 }
 
+void API::serviceSensors()
+{
+}
+
+void API::begin_motion_sequence()
+{
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator && robot_ != nullptr)
+        robot_->begin_motion_sequence();
+#endif
+}
+
+void API::end_motion_sequence()
+{
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator && robot_ != nullptr)
+        robot_->end_motion_sequence();
+#endif
+}
+
 void API::moveForwardHalf()
 {
     if (run_on_simulator)
@@ -163,6 +184,23 @@ bool API::move_mm(float distance_mm)
 #endif
 }
 
+bool API::move_physical(float distance_mm, float speed_mmps, float accel_mmps2)
+{
+    if (run_on_simulator)
+        return true;
+#ifndef SIMULATOR_BUILD
+    if (robot_ == nullptr)
+        return false;
+    LOG_INFO("MOTION move_physical: distance_mm=" + fixed1(distance_mm) +
+             " speed_mmps=" + fixed1(speed_mmps) + " accel_mmps2=" + fixed1(accel_mmps2));
+    robot_->move(distance_mm, speed_mmps, 0.0f, accel_mmps2);
+    waitForMotion();
+    return !haltRequested();
+#else
+    return true;
+#endif
+}
+
 bool API::start_center()
 {
     return move_mm(START_CENTER_DISTANCE_MM);
@@ -170,6 +208,15 @@ bool API::start_center()
 
 bool API::center_from_wall_check()
 {
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator && robot_ != nullptr && !robot_->move_finished())
+    {
+        LOG_INFO("MOTION center_from_wall_check: finish active move to cell center");
+        waitForMotion();
+        clear_search_move();
+        return !haltRequested();
+    }
+#endif
     if (!move_mm(WALL_CHECK_TO_CENTER_MM))
         return false;
     clear_search_move();
@@ -185,23 +232,44 @@ bool API::search_start_from_wall_check()
         return true;
     }
 #ifndef SIMULATOR_BUILD
-    // Single-cell forward: capture wall snapshot at the wall-check position,
-    // then keep moving toward the cell center. Mirrors mazerunner-core's
-    // sensor-triggered approach: act on the live ToF reading mid-cell rather
-    // than waiting for the profile to finish.
     if (robot_ == nullptr)
         return false;
 
-    constexpr float kStartWallCheckPositionMm = CELL_SIZE_MM;
-    const float     total_mm                  = CELL_SIZE_MM + WALL_CHECK_TO_CENTER_MM;
-    LOG_INFO("MOTION search_start_from_wall_check: total_mm=" + fixed1(total_mm) +
-             " latch_at_mm=" + fixed1(kStartWallCheckPositionMm) +
-             " speed_mmps=" + fixed1(ROBOT_MAX_SEARCH_SPEED_MMPS) +
+    if (!robot_->move_finished())
+    {
+        const float latch_position_mm = robot_->position() + CELL_SIZE_MM;
+        LOG_INFO("MOTION search_start_from_wall_check: extend_mm=" + fixed1(CELL_SIZE_MM) +
+                 " latch_position_mm=" + fixed1(latch_position_mm));
+        robot_->extend_move(CELL_SIZE_MM);
+
+        while (!robot_->move_finished() && robot_->position() < latch_position_mm)
+        {
+            serviceSensors();
+            if (haltRequested())
+            {
+                robot_->emergency_stop();
+                return false;
+            }
+            sleep_ms(2);
+        }
+
+        setWallSample(static_cast<int16_t>(robot_->leftDistance()),
+                      static_cast<int16_t>(robot_->frontDistance()),
+                      static_cast<int16_t>(robot_->rightDistance()));
+        mouse_->moveForward(1);
+        return true;
+    }
+
+    constexpr float kWallCheckLatchMm = CELL_SIZE_MM;
+    const float     total_mm          = CELL_SIZE_MM + WALL_CHECK_TO_CENTER_MM;
+    LOG_INFO("MOTION search_start_from_wall_check: total_mm=" + fixed1(total_mm) + " latch_at_mm=" +
+             fixed1(kWallCheckLatchMm) + " speed_mmps=" + fixed1(ROBOT_MAX_SEARCH_SPEED_MMPS) +
              " accel_mmps2=" + fixed1(ROBOT_BASE_ACCEL_MMPS2));
     robot_->move(total_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
 
-    while (!robot_->move_finished() && robot_->position() < kStartWallCheckPositionMm)
+    while (!robot_->move_finished() && robot_->position() < kWallCheckLatchMm)
     {
+        serviceSensors();
         if (haltRequested())
         {
             robot_->emergency_stop();
@@ -239,6 +307,7 @@ bool API::search_advance()
 
     while (!robot_->move_finished() && robot_->position() < wall_check_position_mm)
     {
+        serviceSensors();
         if (haltRequested())
         {
             robot_->emergency_stop();
@@ -316,7 +385,7 @@ void API::turnLeft45()
 #ifndef SIMULATOR_BUILD
     else if (robot_ != nullptr)
     {
-        robot_->spin_turn(-45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        robot_->spin_turn(45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }
 #endif
@@ -331,9 +400,9 @@ void API::turnLeft90()
     else if (robot_ != nullptr)
     {
         LOG_INFO(
-            "MOTION turnLeft90: angle_deg=-90 omega_degps=" + fixed1(ROBOT_MAX_TURN_SPEED_DEGPS) +
+            "MOTION turnLeft90: angle_deg=90 omega_degps=" + fixed1(ROBOT_MAX_TURN_SPEED_DEGPS) +
             " alpha_degps2=" + fixed1(ROBOT_BASE_ANGULAR_ACCEL_DEGPS2));
-        robot_->spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        robot_->spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }
 #endif
@@ -347,7 +416,7 @@ void API::turnRight45()
 #ifndef SIMULATOR_BUILD
     else if (robot_ != nullptr)
     {
-        robot_->spin_turn(45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        robot_->spin_turn(-45.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }
 #endif
@@ -362,9 +431,9 @@ void API::turnRight90()
     else if (robot_ != nullptr)
     {
         LOG_INFO(
-            "MOTION turnRight90: angle_deg=90 omega_degps=" + fixed1(ROBOT_MAX_TURN_SPEED_DEGPS) +
+            "MOTION turnRight90: angle_deg=-90 omega_degps=" + fixed1(ROBOT_MAX_TURN_SPEED_DEGPS) +
             " alpha_degps2=" + fixed1(ROBOT_BASE_ANGULAR_ACCEL_DEGPS2));
-        robot_->spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+        robot_->spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
         waitForMotion();
     }
 #endif
@@ -791,26 +860,43 @@ void API::printMaze()
 std::string API::mazeString()
 {
     std::stringstream ss;
+    ss << "Maze:\n";
+
+    for (int col = 0; col < mazeWidth(); col++)
+    {
+        ss << "+---";
+    }
+    ss << "+\n";
+
     for (int row = mazeHeight() - 1; row >= 0; row--)
     {
-        ss << printMazeRow(row) << '\n';
+        ss << printMazeRow(row);
     }
     return ss.str();
 }
 
 std::string API::printMazeRow(int row)
 {
-    std::stringstream ss;
+    std::stringstream vertical, horizontal;
+
+    vertical << "|";
     for (int col = 0; col < mazeWidth(); col++)
     {
         Cell* cell = mouse_->cellAt(col, row);
         if (cell == nullptr)
         {
-            ss << "?";
+            vertical << "   ?";
+            horizontal << "+???";
             continue;
         }
 
-        ss << (cell->explored() ? 'X' : '.');
+        vertical << (cell->hasWall('E') ? "   |" : "    ");
+        horizontal << (cell->hasWall('S') ? "+---" : "+   ");
     }
-    return ss.str();
+
+    horizontal << "+\n";
+
+    std::stringstream result;
+    result << vertical.str() << "\n" << horizontal.str();
+    return result.str();
 }

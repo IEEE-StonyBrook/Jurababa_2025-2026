@@ -1,10 +1,12 @@
 #include "app/cli.h"
 
 #include <cctype>
+#include <cmath>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <string>
 
 #include "pico/stdlib.h"
@@ -15,7 +17,9 @@
 #include "common/log.h"
 #include "common/tof_wall_utils.h"
 #include "config/geometry.h"
+#include "config/motion.h"
 #include "config/sensors.h"
+#include "config/smooth_turn.h"
 #include "control/robot.h"
 #include "drivers/battery.h"
 #include "drivers/tof.h"
@@ -38,6 +42,83 @@ const char* tofReadingName(int16_t mm)
         return "invalid";
     return mm >= static_cast<int16_t>(TOF_OUT_OF_RANGE_MM) ? "open" : "valid";
 }
+
+bool startsNumericArg(const char* text)
+{
+    if (text == nullptr || *text == '\0')
+        return false;
+    if (*text == '+' || *text == '-')
+        ++text;
+    return std::isdigit(static_cast<unsigned char>(*text)) || *text == '.';
+}
+
+bool equalsIgnoreCase(const char* lhs, const char* rhs)
+{
+    if (lhs == nullptr || rhs == nullptr)
+        return false;
+
+    while (*lhs != '\0' && *rhs != '\0')
+    {
+        const char l = static_cast<char>(std::toupper(static_cast<unsigned char>(*lhs)));
+        const char r = static_cast<char>(std::toupper(static_cast<unsigned char>(*rhs)));
+        if (l != r)
+            return false;
+        ++lhs;
+        ++rhs;
+    }
+    return *lhs == '\0' && *rhs == '\0';
+}
+
+bool parsePathSmoothFlag(const char* text, bool& smooth_turns)
+{
+    if (equalsIgnoreCase(text, "1") || equalsIgnoreCase(text, "TRUE") ||
+        equalsIgnoreCase(text, "SMOOTH"))
+    {
+        smooth_turns = true;
+        return true;
+    }
+    if (equalsIgnoreCase(text, "0") || equalsIgnoreCase(text, "FALSE") ||
+        equalsIgnoreCase(text, "STILL") || equalsIgnoreCase(text, "STATIONARY"))
+    {
+        smooth_turns = false;
+        return true;
+    }
+    return false;
+}
+
+bool parseFloatArg(const Args& args, int index, float min_value, float max_value, float& value)
+{
+    if (index < 0 || index >= args.argc)
+        return false;
+
+    char* end    = nullptr;
+    float parsed = std::strtof(args.argv[index], &end);
+    if (end == args.argv[index] || *end != '\0')
+        return false;
+    if (parsed < min_value || parsed > max_value)
+        return false;
+
+    value = parsed;
+    return true;
+}
+
+float normalizeYawDelta(float delta)
+{
+    while (delta > 180.0f)
+        delta -= 360.0f;
+    while (delta < -180.0f)
+        delta += 360.0f;
+    return delta;
+}
+
+constexpr float PATH_DEFAULT_SPEED_MMPS      = CLI_PATH_SPEED_MMPS;
+constexpr float PATH_DEFAULT_ACCEL_MMPS2     = CLI_PATH_ACCEL_MMPS2;
+constexpr float PATH_DEFAULT_OMEGA_DEGPS     = CLI_PATH_OMEGA_DEGPS;
+constexpr float PATH_DEFAULT_ALPHA_DEGPS2    = CLI_PATH_ALPHA_DEGPS2;
+constexpr float CLI_PATH_NO_SPEED_LIMIT_MMPS = std::numeric_limits<float>::max();
+constexpr float CLI_PATH_MAX_ACCEL_MMPS2     = 5000.0f;
+constexpr float CLI_PATH_MAX_OMEGA_DEGPS     = 720.0f;
+constexpr float CLI_PATH_MAX_ALPHA_DEGPS2    = 7200.0f;
 
 } // namespace
 
@@ -136,33 +217,18 @@ void CommandLineInterface::loop()
 {
     // UKMARS-style main loop. Three concurrent activities, all on Core 0:
     //   1. Serial input + command dispatch (process_serial_data → ~500 Hz)
-    //   2. ToF I2C polling at 50 Hz (gated by to_ms_since_boot)
+    //   2. Sensor service at its configured cadence
     //   3. Battery filter update at 500 Hz (cheap; ADC is non-blocking)
     //
     // Robot::update() runs concurrently via the 500 Hz hardware timer
     // alarm registered in main.cpp.
-    constexpr uint32_t kTofPollIntervalMs = 20; // 50 Hz
-    uint32_t           next_tof_poll_ms   = 0;
-
     while (true)
     {
         process_serial_data();
         if (deps_.battery != nullptr)
             deps_.battery->update();
-
-        if (deps_.robot != nullptr && deps_.left_tof != nullptr && deps_.front_tof != nullptr &&
-            deps_.right_tof != nullptr)
-        {
-            const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
-            if (now_ms >= next_tof_poll_ms)
-            {
-                next_tof_poll_ms = now_ms + kTofPollIntervalMs;
-                const float l    = deps_.left_tof->get_distance();
-                const float f    = deps_.front_tof->get_distance();
-                const float r    = deps_.right_tof->get_distance();
-                deps_.robot->set_wall_distances(l, f, r);
-            }
-        }
+        if (deps_.api != nullptr)
+            deps_.api->serviceSensors();
 
         sleep_ms(2);
     }
@@ -346,6 +412,16 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         handle_style_command(args);
         return;
     }
+    if (std::strcmp(args.argv[0], "PATH") == 0)
+    {
+        handle_path_command(args);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "CENTER") == 0 || std::strcmp(args.argv[0], "STARTCENTER") == 0)
+    {
+        handle_center_command(args);
+        return;
+    }
     if (std::strcmp(args.argv[0], "HALT") == 0)
     {
         stop();
@@ -430,6 +506,322 @@ void CommandLineInterface::handle_style_command(const Args& args)
     }
 
     printFormat("STYLE expects STATIONARY or SMOOTH.\n");
+}
+
+void CommandLineInterface::append_path_forward_cells(std::vector<PathSegment>& segments, int cells)
+{
+    const float distance_mm = cells * CELL_SIZE_MM;
+    if (!segments.empty() && segments.back().type == PathSegmentType::Forward)
+    {
+        segments.back().value += distance_mm;
+        return;
+    }
+    segments.push_back({PathSegmentType::Forward, distance_mm});
+}
+
+void CommandLineInterface::append_path_turn(std::vector<PathSegment>& segments, float degrees)
+{
+    segments.push_back({PathSegmentType::Turn, degrees});
+}
+
+bool CommandLineInterface::parse_path_chunk(const char* chunk, std::vector<PathSegment>& segments)
+{
+    if (chunk == nullptr)
+        return false;
+
+    const char* p = chunk;
+    while (*p != '\0')
+    {
+        if (*p == '#')
+        {
+            ++p;
+            continue;
+        }
+
+        const char token = static_cast<char>(std::toupper(static_cast<unsigned char>(*p)));
+        ++p;
+
+        if (token == 'F')
+        {
+            int  cells      = 0;
+            bool has_digits = false;
+            while (std::isdigit(static_cast<unsigned char>(*p)))
+            {
+                has_digits = true;
+                cells      = cells * 10 + (*p - '0');
+                ++p;
+            }
+            if (has_digits && cells <= 0)
+            {
+                printFormat("PATH forward count must be positive.\n");
+                return false;
+            }
+            append_path_forward_cells(segments, cells == 0 ? 1 : cells);
+            continue;
+        }
+
+        if (token == 'L' || token == 'R' || token == 'B')
+        {
+            if (std::isdigit(static_cast<unsigned char>(*p)))
+            {
+                printFormat("PATH only supports L/R/B as turns, not %c%c...\n", token, *p);
+                return false;
+            }
+            if (token == 'L')
+                append_path_turn(segments, 90.0f);
+            else if (token == 'R')
+                append_path_turn(segments, -90.0f);
+            else
+                append_path_turn(segments, 180.0f);
+            continue;
+        }
+
+        printFormat("Invalid PATH token near '%c'.\n", token);
+        return false;
+    }
+
+    return true;
+}
+
+bool CommandLineInterface::parse_path_sequence(const Args& args, int first_param_index,
+                                               std::vector<PathSegment>& segments)
+{
+    segments.clear();
+    for (int i = 1; i < first_param_index; ++i)
+    {
+        if (!parse_path_chunk(args.argv[i], segments))
+        {
+            segments.clear();
+            return false;
+        }
+    }
+
+    if (segments.empty())
+    {
+        printFormat("PATH expects a sequence, e.g. PATH FFFFLFFFFLFFF\n");
+        return false;
+    }
+    return true;
+}
+
+bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments, float speed_mmps,
+                                             float accel_mmps2, float omega_degps,
+                                             float alpha_degps2, bool smooth_turns)
+{
+    if (deps_.api == nullptr || deps_.robot == nullptr)
+    {
+        printFormat("PATH requires Robot/API in ToF CLI mode.\n");
+        return false;
+    }
+
+    if (smooth_turns)
+    {
+        for (PathSegment& segment : segments)
+        {
+            if (segment.type == PathSegmentType::Turn &&
+                std::fabs(std::fabs(segment.value) - 90.0f) < 0.125f)
+            {
+                segment.type = PathSegmentType::SmoothTurn;
+            }
+        }
+    }
+
+    deps_.robot->begin_motion_sequence();
+    halted_ = false;
+
+    float expected_yaw_deg = 0.0f;
+    float total_forward_mm = 0.0f;
+
+    printFormat("PATH segments=%lu speed=%.1f accel=%.1f omega=%.1f alpha=%.1f smooth=%s\n",
+                static_cast<unsigned long>(segments.size()), static_cast<double>(speed_mmps),
+                static_cast<double>(accel_mmps2), static_cast<double>(omega_degps),
+                static_cast<double>(alpha_degps2), smooth_turns ? "true" : "false");
+
+    for (size_t i = 0; i < segments.size(); ++i)
+    {
+        const PathSegment& segment        = segments[i];
+        bool               ok             = true;
+        const float        yaw_before_deg = deps_.robot->angle();
+
+        if (segment.type == PathSegmentType::Forward)
+        {
+            printFormat("PATH %lu/%lu: F %.1f mm\n", static_cast<unsigned long>(i + 1),
+                        static_cast<unsigned long>(segments.size()),
+                        static_cast<double>(segment.value));
+            deps_.robot->start_move(segment.value, speed_mmps, 0.0f, accel_mmps2);
+            ok = wait_path_segment_motion();
+            total_forward_mm += segment.value;
+        }
+        else if (segment.type == PathSegmentType::SmoothTurn)
+        {
+            const int                   turn_id = segment.value >= 0.0f ? SS90L : SS90R;
+            const SmoothTurnParameters& params  = SMOOTH_TURN_PARAMS[turn_id];
+            printFormat(
+                "PATH %lu/%lu: SMOOTH %.1f deg speed=%.1f omega=%.1f\n",
+                static_cast<unsigned long>(i + 1), static_cast<unsigned long>(segments.size()),
+                static_cast<double>(params.angle_deg), static_cast<double>(params.speed_mmps),
+                static_cast<double>(params.omega_degps));
+            deps_.robot->turn_smooth(turn_id);
+            ok = wait_path_segment_motion();
+            expected_yaw_deg += params.angle_deg;
+        }
+        else
+        {
+            printFormat("PATH %lu/%lu: TURN %.1f deg\n", static_cast<unsigned long>(i + 1),
+                        static_cast<unsigned long>(segments.size()),
+                        static_cast<double>(segment.value));
+            deps_.robot->spin_turn(segment.value, std::fabs(omega_degps), std::fabs(alpha_degps2));
+            ok = wait_path_segment_motion();
+            expected_yaw_deg += segment.value;
+        }
+
+        const float yaw_after_deg        = deps_.robot->angle();
+        const float actual_delta_deg     = normalizeYawDelta(yaw_after_deg - yaw_before_deg);
+        const float segment_error_deg    = normalizeYawDelta(expected_yaw_deg - yaw_after_deg);
+        const float expected_yaw_wrapped = normalizeYawDelta(expected_yaw_deg);
+        printFormat("PATH %lu/%lu result: yaw_before=%.2f yaw_after=%.2f delta=%+.2f "
+                    "expected_yaw=%.2f yaw_error=%+.2f\n",
+                    static_cast<unsigned long>(i + 1), static_cast<unsigned long>(segments.size()),
+                    static_cast<double>(yaw_before_deg), static_cast<double>(yaw_after_deg),
+                    static_cast<double>(actual_delta_deg),
+                    static_cast<double>(expected_yaw_wrapped),
+                    static_cast<double>(segment_error_deg));
+
+        if (!ok || halted_)
+        {
+            printFormat("PATH stopped at segment %lu.\n", static_cast<unsigned long>(i + 1));
+            deps_.robot->end_motion_sequence();
+            return false;
+        }
+    }
+
+    deps_.robot->stop();
+    const float final_yaw   = deps_.robot->angle();
+    const float final_error = normalizeYawDelta(expected_yaw_deg - final_yaw);
+    printFormat("PATH done: segments=%lu forward=%.1f mm (%.2f cells) expected_yaw=%.2f "
+                "final_yaw=%.2f error=%+.2f deg\n",
+                static_cast<unsigned long>(segments.size()), static_cast<double>(total_forward_mm),
+                static_cast<double>(total_forward_mm / CELL_SIZE_MM),
+                static_cast<double>(expected_yaw_deg), static_cast<double>(final_yaw),
+                static_cast<double>(final_error));
+    deps_.robot->end_motion_sequence();
+    return true;
+}
+
+bool CommandLineInterface::wait_path_segment_motion()
+{
+    if (deps_.robot == nullptr)
+        return false;
+
+    while (!deps_.robot->move_finished() || !deps_.robot->turn_finished())
+    {
+        if (deps_.api != nullptr)
+            deps_.api->serviceSensors();
+        pollHaltOnly();
+        if (halted_)
+        {
+            deps_.robot->emergency_stop();
+            return false;
+        }
+        sleep_ms(2);
+    }
+    return true;
+}
+
+void CommandLineInterface::handle_path_command(const Args& args)
+{
+    if (!needsTof("PATH"))
+        return;
+
+    bool smooth_turns = false;
+    int  arg_limit    = args.argc;
+    if (args.argc > 2 && parsePathSmoothFlag(args.argv[args.argc - 1], smooth_turns))
+        arg_limit = args.argc - 1;
+
+    int first_param_index = arg_limit;
+    for (int i = 1; i < arg_limit; ++i)
+    {
+        if (startsNumericArg(args.argv[i]))
+        {
+            first_param_index = i;
+            break;
+        }
+    }
+
+    std::vector<PathSegment> segments;
+    if (!parse_path_sequence(args, first_param_index, segments))
+        return;
+
+    float speed = PATH_DEFAULT_SPEED_MMPS;
+    float accel = PATH_DEFAULT_ACCEL_MMPS2;
+    float omega = PATH_DEFAULT_OMEGA_DEGPS;
+    float alpha = PATH_DEFAULT_ALPHA_DEGPS2;
+
+    int param = first_param_index;
+    if (param < arg_limit &&
+        !parseFloatArg(args, param++, 1.0f, CLI_PATH_NO_SPEED_LIMIT_MMPS, speed))
+    {
+        printFormat("PATH speed must be a positive mm/s value.\n");
+        return;
+    }
+    if (param < arg_limit && !parseFloatArg(args, param++, 1.0f, CLI_PATH_MAX_ACCEL_MMPS2, accel))
+    {
+        printFormat("PATH accel must be 1..%.0f mm/s^2.\n",
+                    static_cast<double>(CLI_PATH_MAX_ACCEL_MMPS2));
+        return;
+    }
+    if (param < arg_limit && !parseFloatArg(args, param++, 1.0f, CLI_PATH_MAX_OMEGA_DEGPS, omega))
+    {
+        printFormat("PATH omega must be 1..%.0f deg/s.\n",
+                    static_cast<double>(CLI_PATH_MAX_OMEGA_DEGPS));
+        return;
+    }
+    if (param < arg_limit && !parseFloatArg(args, param++, 1.0f, CLI_PATH_MAX_ALPHA_DEGPS2, alpha))
+    {
+        printFormat("PATH alpha must be 1..%.0f deg/s^2.\n",
+                    static_cast<double>(CLI_PATH_MAX_ALPHA_DEGPS2));
+        return;
+    }
+    if (param < arg_limit)
+    {
+        printFormat("PATH usage: PATH <sequence> [speed_mmps] [accel_mmps2] [omega_degps] "
+                    "[alpha_degps2] [smooth_bool]\n");
+        return;
+    }
+
+    run_path_segments(segments, speed, accel, omega, alpha, smooth_turns);
+}
+
+void CommandLineInterface::handle_center_command(const Args& args)
+{
+    if (!needsTof("CENTER"))
+        return;
+
+    float speed = PATH_DEFAULT_SPEED_MMPS;
+    float accel = PATH_DEFAULT_ACCEL_MMPS2;
+
+    if (args.argc > 1 && !parseFloatArg(args, 1, 1.0f, CLI_PATH_NO_SPEED_LIMIT_MMPS, speed))
+    {
+        printFormat("CENTER speed must be a positive mm/s value.\n");
+        return;
+    }
+    if (args.argc > 2 && !parseFloatArg(args, 2, 1.0f, CLI_PATH_MAX_ACCEL_MMPS2, accel))
+    {
+        printFormat("CENTER accel must be 1..%.0f mm/s^2.\n",
+                    static_cast<double>(CLI_PATH_MAX_ACCEL_MMPS2));
+        return;
+    }
+    if (args.argc > 3)
+    {
+        printFormat("CENTER usage: CENTER [speed_mmps] [accel_mmps2]\n");
+        return;
+    }
+
+    printFormat("CENTER distance: %.1f mm\n", static_cast<double>(START_CENTER_DISTANCE_MM));
+    if (deps_.robot != nullptr)
+        deps_.robot->reset_drive_system();
+    if (deps_.api == nullptr || !deps_.api->move_physical(START_CENTER_DISTANCE_MM, speed, accel))
+        printFormat("CENTER failed.\n");
 }
 
 bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
@@ -969,6 +1361,9 @@ void CommandLineInterface::help()
     printFormat("STAGE n : run competition stage 1..5\n");
     printFormat("COMP : run stages 1..5\n");
     printFormat("STYLE [STATIONARY|SMOOTH] : select path execution style\n");
+    printFormat("PATH seq [spd acc omg alp smooth] : blind physical path, smooth default=0\n");
+    printFormat("CENTER [spd acc] : move from start wall-check pose to cell center (%.1f mm)\n",
+                static_cast<double>(START_CENTER_DISTANCE_MM));
     printFormat("RESET : reset search state without rebooting\n");
     printFormat("HELP : this text\n");
 }

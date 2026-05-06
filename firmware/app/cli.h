@@ -100,6 +100,8 @@ class CommandLineInterface
     void handle_search_command(const Args& args);
     void handle_stage_command(const Args& args);
     void handle_style_command(const Args& args);
+    void handle_path_command(const Args& args);
+    void handle_center_command(const Args& args);
     void clear_input_buffer();
     void handleBluetoothCommand();
     bool run_competition_stage(int stage, bool wait_for_start);
@@ -112,6 +114,25 @@ class CommandLineInterface
     bool needsTof(const char* what);
     bool startWithGesture(bool tof_available);
     bool startCenter();
+    enum class PathSegmentType
+    {
+        Forward,
+        Turn,
+        SmoothTurn
+    };
+    struct PathSegment
+    {
+        PathSegmentType type;
+        float           value; // Forward: mm. Turns: deg.
+    };
+    bool parse_path_sequence(const Args& args, int first_param_index,
+                             std::vector<PathSegment>& segments);
+    bool parse_path_chunk(const char* chunk, std::vector<PathSegment>& segments);
+    void append_path_forward_cells(std::vector<PathSegment>& segments, int cells);
+    void append_path_turn(std::vector<PathSegment>& segments, float degrees);
+    bool run_path_segments(std::vector<PathSegment>& segments, float speed_mmps, float accel_mmps2,
+                           float omega_degps, float alpha_degps2, bool smooth_turns);
+    bool wait_path_segment_motion();
     void stop();
     void reset();
     void print(const char* text);

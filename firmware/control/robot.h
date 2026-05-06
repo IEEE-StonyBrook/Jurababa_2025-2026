@@ -47,6 +47,8 @@ class Robot
     void  set_target_velocity(float velocity_mmps);
     void  set_final_velocity(float velocity_mmps);
     void  extend_move(float distance_mm);
+    void  begin_motion_sequence();
+    void  end_motion_sequence();
     void  start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
                      float accel_mmps2);
     bool  move_finished() const;
@@ -71,6 +73,7 @@ class Robot
   private:
     void  runPositionControl();
     float wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps);
+    void  resetControlHistory();
 
     // Hardware
     Drivetrain* drivetrain_;
@@ -93,6 +96,7 @@ class Robot
     // `(v - prev_v) * LOOP_FREQUENCY_HZ`.
     float prev_left_cmd_vel_mmps_  = 0.0f;
     float prev_right_cmd_vel_mmps_ = 0.0f;
+    bool  motion_sequence_active_  = false;
 
     // ToFs are physically read outside Robot, then cached here for wall
     // detection and optional UKMARS-style steering diagnostics. Search

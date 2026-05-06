@@ -45,7 +45,7 @@
 #define TOF_SIDE_WALL_MARGIN_MM     40.0f
 #define TOF_LEFT_WALL_THRESHOLD_MM  (TOF_LEFT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
 #define TOF_RIGHT_WALL_THRESHOLD_MM (TOF_RIGHT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
-#define TOF_FRONT_WALL_THRESHOLD_MM 120.0f
+#define TOF_FRONT_WALL_THRESHOLD_MM 95.0f
 
 // UKMARS-style wall steering. Wall detection remains enabled regardless of
 // this switch; TOF_STEERING_ENABLE only controls whether side-wall error is

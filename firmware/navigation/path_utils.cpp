@@ -1,6 +1,7 @@
 #include "navigation/path_utils.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -14,15 +15,12 @@
 #include "common/log.h"
 #include "common/tof_wall_utils.h"
 #include "config/geometry.h"
+#include "control/robot.h"
 #include "maze/maze.h"
 #include "maze/mouse.h"
 #include "navigation/a_star.h"
 #include "navigation/diagonalizer.h"
 #include "navigation/path_converter.h"
-
-#ifndef SIMULATOR_BUILD
-#include "control/robot.h"
-#endif
 
 namespace PathUtils
 {
@@ -35,6 +33,28 @@ struct ExploredNode
     float f_cost;
 
     bool operator<(const ExploredNode& other) const { return f_cost > other.f_cost; }
+};
+
+class MotionSequenceGuard
+{
+  public:
+    explicit MotionSequenceGuard(API* api) : api_(api)
+    {
+        if (api_ != nullptr)
+            api_->begin_motion_sequence();
+    }
+
+    ~MotionSequenceGuard()
+    {
+        if (api_ != nullptr)
+            api_->end_motion_sequence();
+    }
+
+    MotionSequenceGuard(const MotionSequenceGuard&)            = delete;
+    MotionSequenceGuard& operator=(const MotionSequenceGuard&) = delete;
+
+  private:
+    API* api_;
 };
 
 float manhattan(Cell* from, Cell* to)
@@ -79,72 +99,156 @@ std::string movementStyleName(API* api)
     return api->movementStyle() == API::MovementStyle::Smooth ? "smooth" : "stationary";
 }
 
-std::string actionDescription(const std::string& token, bool at_wall_check, API* api)
+// Sensor data captured once per planning iteration at the wall-check pose.
+// Re-used across all tokens emitted from one A* solve.
+struct SenseSnapshot
 {
-    if (token == "F")
-    {
-        if (at_wall_check)
-            return "move ahead from first wall-check pose, latch next wall-check sample";
-        return "move ahead one cell, latch wall-check sample";
-    }
-    if (token == "L")
-        return "turn left 90 deg using " + movementStyleName(api) + " style";
-    if (token == "R")
-        return "turn right 90 deg using " + movementStyleName(api) + " style";
-    if (token == "L45")
-        return "turn left 45 deg using " + movementStyleName(api) + " style";
-    if (token == "R45")
-        return "turn right 45 deg using " + movementStyleName(api) + " style";
-    if (token == "FH")
-        return "move half cell";
-    if (token == "GMF" || token == "GFM")
-        return "update virtual diagonal cell only";
-    if (token.size() > 1 && token[0] == 'F')
-        return "move ahead " + token.substr(1) + " cells";
-    return "execute token";
+    int16_t tof_l_mm  = 0;
+    int16_t tof_f_mm  = 0;
+    int16_t tof_r_mm  = 0;
+    bool    tof_valid = false;
+};
+
+std::string headingUpper(const std::string& d)
+{
+    std::string r = d;
+    for (auto& c : r)
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    return r;
 }
 
-void logNoPathDiagnostics(API* api, Mouse* mouse)
+// Robot-relative wall string in {L,F,R} order. '_' = open, letter = wall.
+// Cardinal headings only — diagonal headings return "???".
+std::string symbolicWalls(Mouse* mouse, Cell* cell)
+{
+    if (cell == nullptr || mouse == nullptr)
+        return "???";
+
+    const std::string dir = mouse->currentDirection();
+    if (dir.size() != 1)
+        return "???";
+
+    char left_dir = '?', front_dir = '?', right_dir = '?';
+    switch (dir[0])
+    {
+        case 'n':
+            left_dir  = 'W';
+            front_dir = 'N';
+            right_dir = 'E';
+            break;
+        case 'e':
+            left_dir  = 'N';
+            front_dir = 'E';
+            right_dir = 'S';
+            break;
+        case 's':
+            left_dir  = 'E';
+            front_dir = 'S';
+            right_dir = 'W';
+            break;
+        case 'w':
+            left_dir  = 'S';
+            front_dir = 'W';
+            right_dir = 'N';
+            break;
+        default:
+            return "???";
+    }
+
+    std::string out = "___";
+    if (cell->hasWall(left_dir))
+        out[0] = 'L';
+    if (cell->hasWall(front_dir))
+        out[1] = 'F';
+    if (cell->hasWall(right_dir))
+        out[2] = 'R';
+    return out;
+}
+
+std::string tofTriple(const SenseSnapshot& s)
+{
+    if (!s.tof_valid)
+        return "----/----/----";
+    char buf[24];
+    std::snprintf(buf, sizeof(buf), "%4d/%4d/%4d", s.tof_l_mm, s.tof_f_mm, s.tof_r_mm);
+    return buf;
+}
+
+// "[NN] @(x,y) H  ToF=L/F/R  walls=LFR" — common prefix for every per-step line.
+std::string senseSummary(int step, Mouse* mouse, const SenseSnapshot& s)
+{
+    Cell*       cell    = mouse != nullptr ? mouse->currentCell() : nullptr;
+    std::string heading = mouse != nullptr ? headingUpper(mouse->currentDirection()) : "?";
+    char        step_buf[8];
+    std::snprintf(step_buf, sizeof(step_buf), "[%2d]", step);
+    return std::string(step_buf) + " @" + cellName(cell) + " " + heading + "  ToF=" + tofTriple(s) +
+           "  walls=" + symbolicWalls(mouse, cell);
+}
+
+std::string goalsList(const std::vector<std::array<int, 2>>& goals)
+{
+    std::string out;
+    for (size_t i = 0; i < goals.size(); ++i)
+    {
+        if (i > 0)
+            out += ",";
+        out += "(" + std::to_string(goals[i][0]) + "," + std::to_string(goals[i][1]) + ")";
+    }
+    return out;
+}
+
+void logSearchStartBanner(API* api, const std::vector<std::array<int, 2>>& goals,
+                          bool at_wall_check, bool diagonals)
+{
+    LOG_INFO("=== SEARCH start  goal=" + goalsList(goals) + "  pose=" + poseName(at_wall_check) +
+             "  style=" + movementStyleName(api) + "  diagonals=" + std::to_string(diagonals) +
+             " ===");
+}
+
+void logSearchDoneBanner(int steps)
+{
+    LOG_INFO("=== SEARCH done  reached goal  steps=" + std::to_string(steps) + " ===");
+}
+
+void logSearchFailBanner(const std::string& reason, int step)
+{
+    LOG_ERROR("=== SEARCH FAILED  " + reason + "  step=" + std::to_string(step) + " ===");
+}
+
+void logNoPathDiagnostics(API* api, Mouse* mouse, const SenseSnapshot& snap)
 {
     if (mouse == nullptr)
         return;
 
     Cell* cell = mouse->currentCell();
-    if (cell != nullptr)
-    {
-        LOG_ERROR("No-path current cell=(" + std::to_string(cell->x()) + "," +
-                  std::to_string(cell->y()) + ") heading=" + mouse->currentDirection() +
-                  " cell_walls " + wallBits(cell));
-    }
 
 #ifndef SIMULATOR_BUILD
-    int16_t left_mm  = 0;
-    int16_t front_mm = 0;
-    int16_t right_mm = 0;
-    readWallSample(api, left_mm, front_mm, right_mm);
-    const tof_wall::WallState wall_state = tof_wall::evaluate(left_mm, front_mm, right_mm);
-    const float               steering_preview =
-        wall_state.steering_allowed
-            ? tof_wall::steeringAdjustmentDegps(wall_state.side_error_norm, 0.0f)
-            : 0.0f;
-
-    LOG_ERROR("No-path ToF L=" + std::to_string(left_mm) + " F=" + std::to_string(front_mm) +
-              " R=" + std::to_string(right_mm) + " inferred_walls L=" +
-              std::to_string(wall_state.left_wall) + " F=" + std::to_string(wall_state.front_wall) +
-              " R=" + std::to_string(wall_state.right_wall) +
-              " src=" + tof_wall::sourceName(wall_state.source) +
-              " left_err_norm=" + fixed1(wall_state.left_error_norm) +
-              " right_err_norm=" + fixed1(wall_state.right_error_norm) + " side_error_norm=" +
-              fixed1(wall_state.side_error_norm) + " steering_degps=" + fixed1(steering_preview) +
-              " front_blocked=" + std::to_string(wall_state.front_blocked));
+    if (snap.tof_valid)
+    {
+        const tof_wall::WallState wall_state =
+            tof_wall::evaluate(snap.tof_l_mm, snap.tof_f_mm, snap.tof_r_mm);
+        LOG_ERROR("no-path ToF=" + tofTriple(snap) +
+                  "  inferred[L,F,R]=" + std::to_string(wall_state.left_wall) + "," +
+                  std::to_string(wall_state.front_wall) + "," +
+                  std::to_string(wall_state.right_wall) +
+                  "  src=" + tof_wall::sourceName(wall_state.source) +
+                  "  front_blocked=" + std::to_string(wall_state.front_blocked));
+    }
+    else
+    {
+        LOG_ERROR("no-path ToF unavailable");
+    }
+#else
+    (void)snap;
 #endif
 
-    if (api != nullptr)
-    {
-        LOG_ERROR("No-path API wallLeft=" + std::to_string(api->wallLeft()) +
-                  " wallFront=" + std::to_string(api->wallFront()) +
-                  " wallRight=" + std::to_string(api->wallRight()));
-    }
+    const std::string heading   = headingUpper(mouse->currentDirection());
+    const std::string api_walls = api != nullptr ? "L=" + std::to_string(api->wallLeft()) +
+                                                       " F=" + std::to_string(api->wallFront()) +
+                                                       " R=" + std::to_string(api->wallRight())
+                                                 : "L=? F=? R=?";
+    LOG_ERROR("no-path cell=" + cellName(cell) + " heading=" + heading + "  walls[" +
+              wallBits(cell) + "]  api[" + api_walls + "]");
 }
 
 bool readWallSample(API* api, int16_t& left_mm, int16_t& front_mm, int16_t& right_mm)
@@ -156,20 +260,25 @@ bool readWallSample(API* api, int16_t& left_mm, int16_t& front_mm, int16_t& righ
     return false;
 }
 
-void logSearchSense(API* api, Mouse* mouse, int step, bool at_wall_check)
+void captureSenseSnapshot(API* api, Mouse* mouse, SenseSnapshot& snap)
 {
-    if (mouse == nullptr)
-        return;
+    snap = {};
 
-    Cell* cell = mouse->currentCell();
-    if (cell == nullptr)
+    if (mouse == nullptr || mouse->currentCell() == nullptr)
         return;
 
 #ifndef SIMULATOR_BUILD
     int16_t left_mm  = 0;
     int16_t front_mm = 0;
     int16_t right_mm = 0;
-    readWallSample(api, left_mm, front_mm, right_mm);
+    if (!readWallSample(api, left_mm, front_mm, right_mm))
+        return;
+
+    snap.tof_l_mm  = left_mm;
+    snap.tof_f_mm  = front_mm;
+    snap.tof_r_mm  = right_mm;
+    snap.tof_valid = true;
+
     const tof_wall::WallState wall_state = tof_wall::evaluate(left_mm, front_mm, right_mm);
     const float               steering_preview =
         wall_state.steering_allowed
@@ -178,34 +287,26 @@ void logSearchSense(API* api, Mouse* mouse, int step, bool at_wall_check)
     Robot*      robot = api != nullptr ? api->robot() : nullptr;
     const float yaw   = robot != nullptr ? robot->angle() : 0.0f;
 
-    LOG_INFO("SEARCH STEP " + std::to_string(step) + " SENSE: cell=" + cellName(cell) +
-             " heading=" + mouse->currentDirection() + " pose=" + poseName(at_wall_check) +
-             " yaw=" + fixed1(yaw));
-    LOG_INFO("SEARCH STEP " + std::to_string(step) + " WALLS: tof_mm[L,F,R]=" +
-             std::to_string(left_mm) + "," + std::to_string(front_mm) + "," +
-             std::to_string(right_mm) + " inferred[L,F,R]=" + std::to_string(wall_state.left_wall) +
-             "," + std::to_string(wall_state.front_wall) + "," +
-             std::to_string(wall_state.right_wall) + " maze[" + wallBits(cell) + "]");
-    LOG_INFO("SEARCH STEP " + std::to_string(step) +
-             " SIDE: src=" + tof_wall::sourceName(wall_state.source) +
-             " err[L,R,chosen]=" + fixed1(wall_state.left_error_norm) + "," +
-             fixed1(wall_state.right_error_norm) + "," + fixed1(wall_state.side_error_norm) +
-             " steering_preview_degps=" + fixed1(steering_preview) +
-             " allowed=" + std::to_string(wall_state.steering_allowed) +
-             " front_blocked=" + std::to_string(wall_state.front_blocked));
+    // Wall-PD tuning data — hidden at INFO; visible when log priority is raised to DEBUG.
+    LOG_DEBUG("SEARCH side  yaw=" + fixed1(yaw) +
+              "  src=" + tof_wall::sourceName(wall_state.source) +
+              "  err[L,R,chosen]=" + fixed1(wall_state.left_error_norm) + "," +
+              fixed1(wall_state.right_error_norm) + "," + fixed1(wall_state.side_error_norm) +
+              "  steering_preview_degps=" + fixed1(steering_preview) +
+              "  allowed=" + std::to_string(wall_state.steering_allowed) +
+              "  front_blocked=" + std::to_string(wall_state.front_blocked));
 #else
-    LOG_INFO("SEARCH STEP " + std::to_string(step) + " SENSE: cell=" + cellName(cell) +
-             " heading=" + mouse->currentDirection() + " pose=" + poseName(at_wall_check));
+    (void)api;
 #endif
 }
 
-void detectWallsFromSample(API* api, Mouse* mouse, int step, bool at_wall_check)
+void detectWallsFromSample(API* api, Mouse* mouse, SenseSnapshot& snap)
 {
     if (api == nullptr || mouse == nullptr)
         return;
 
     detectWalls(*api, *mouse);
-    logSearchSense(api, mouse, step, at_wall_check);
+    captureSenseSnapshot(api, mouse, snap);
     api->clearWallSample();
 }
 
@@ -349,26 +450,34 @@ void setAllExplored(Mouse* mouse)
 bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>& goals,
                   bool diagonals, bool all_explored, bool avoid_goals, bool start_at_wall_check)
 {
-    Cell* current = mouse->currentCell();
-    AStar a_star(mouse);
-    bool  at_start_wall_check = start_at_wall_check;
-    int   search_step         = 1;
+    if (api == nullptr || mouse == nullptr)
+        return false;
+
+    MotionSequenceGuard motion_sequence(api);
+
+    Cell*         current = mouse->currentCell();
+    AStar         a_star(mouse);
+    bool          at_wall_check = start_at_wall_check;
+    int           search_step   = 1;
+    SenseSnapshot snap;
+
+    logSearchStartBanner(api, goals, at_wall_check, diagonals);
 
     if (all_explored)
     {
-        LOG_INFO("Marking all explored for debug run.");
+        LOG_INFO("=== Marking all cells explored (debug run) ===");
         setAllExplored(mouse);
     }
 
-    if (at_start_wall_check)
+    if (at_wall_check)
         api->captureWallSample();
 
     while (true)
     {
-        detectWallsFromSample(api, mouse, search_step, at_start_wall_check);
+        detectWallsFromSample(api, mouse, snap);
         current->markExplored();
 
-        // Check if we've reached a goal
+        // Goal check.
         bool reached_goal = false;
         for (const auto& goal : goals)
         {
@@ -380,66 +489,63 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
         }
         if (reached_goal)
         {
-            LOG_INFO("SEARCH STEP " + std::to_string(search_step) + " GOAL: reached goal at cell=" +
-                     cellName(current) + " heading=" + mouse->currentDirection());
-            if (at_start_wall_check)
+            LOG_INFO(senseSummary(search_step, mouse, snap) + "  GOAL reached");
+            if (at_wall_check)
             {
-                LOG_INFO("SEARCH STEP " + std::to_string(search_step) +
-                         " ACTION: stopAtCentre distance_mm=" + fixed1(WALL_CHECK_TO_CENTER_MM));
+                LOG_DEBUG("recentre from wall-check, distance_mm=" +
+                          fixed1(WALL_CHECK_TO_CENTER_MM));
                 if (!api->center_from_wall_check())
                 {
-                    LOG_ERROR("SEARCH failed moving from wall-check pose to cell center.");
+                    logSearchFailBanner("recentre at goal failed", search_step);
                     return false;
                 }
-                at_start_wall_check = false;
+                at_wall_check = false;
             }
             api->finish_search_move();
+            logSearchDoneBanner(search_step);
             break;
         }
 
-        // Get path from A*
+        // Plan.
         std::vector<Cell*> cell_path = a_star.cellPath(
             const_cast<std::vector<std::array<int, 2>>&>(goals), diagonals, !avoid_goals);
 
         if (cell_path.empty())
         {
-            LOG_ERROR("SEARCH STEP " + std::to_string(search_step) + " PLAN: no path found.");
-            logNoPathDiagnostics(api, mouse);
-            if (at_start_wall_check)
+            LOG_INFO(senseSummary(search_step, mouse, snap) + "  PLAN: no path");
+            logNoPathDiagnostics(api, mouse, snap);
+            if (at_wall_check)
             {
-                LOG_INFO("SEARCH STEP " + std::to_string(search_step) +
-                         " ACTION: stopAtCentre distance_mm=" + fixed1(WALL_CHECK_TO_CENTER_MM));
+                LOG_DEBUG("recentre from wall-check, distance_mm=" +
+                          fixed1(WALL_CHECK_TO_CENTER_MM));
                 if (!api->center_from_wall_check())
                 {
-                    LOG_ERROR("SEARCH failed moving from wall-check pose to cell center.");
+                    logSearchFailBanner("recentre after no-path failed", search_step);
                     return false;
                 }
-                at_start_wall_check = false;
+                at_wall_check = false;
             }
             api->finish_search_move();
+            logSearchFailBanner("no path found", search_step);
             return false;
         }
 
         colorPath(api, cell_path);
 
-        // Convert to LFR format
         std::string lfr = PathConverter::buildLFR(mouse->currentCell(),
                                                   mouse->currentDirectionArray(), cell_path);
 
-        LOG_INFO("SEARCH STEP " + std::to_string(search_step) +
-                 " PLAN: path_cells=" + std::to_string(cell_path.size()) + " lfr=" + lfr +
-                 " style=" + movementStyleName(api));
-
-        // Diagonalize and execute full path if maze is explored
+        // Fully-explored diagonal speed run: blast the whole sequence.
         if (all_explored && diagonals)
         {
             std::string diag = Diagonalizer::diagonalize(lfr);
-            LOG_INFO("Diagonalized Path: " + diag);
+            LOG_INFO(senseSummary(search_step, mouse, snap) + "  plan=" + diag + "  exec=ALL");
             api->executeSequence(diag);
+            logSearchDoneBanner(search_step);
             return true;
         }
 
-        // Execute step-by-step, re-planning on unexplored cells
+        // Step-by-step execution; replan on hitting unexplored territory.
         std::stringstream ss(lfr);
         std::string       move;
         while (std::getline(ss, move, '#'))
@@ -447,76 +553,62 @@ bool traversePath(API* api, Mouse* mouse, const std::vector<std::array<int, 2>>&
             if (move.empty())
                 continue;
 
+            const std::string sense_prefix = senseSummary(search_step, mouse, snap);
+
             if (move == "F")
             {
-                bool motion_started = false;
-                if (at_start_wall_check)
-                {
-                    LOG_INFO("SEARCH STEP " + std::to_string(search_step) + " ACTION: token=F " +
-                             actionDescription(move, at_start_wall_check, api) +
-                             " total_mm=" + fixed1(CELL_SIZE_MM + WALL_CHECK_TO_CENTER_MM) +
-                             " latch_at_mm=" + fixed1(CELL_SIZE_MM));
-                    motion_started      = api->search_start_from_wall_check();
-                    at_start_wall_check = false;
-                }
-                else
-                {
-                    LOG_INFO("SEARCH STEP " + std::to_string(search_step) + " ACTION: token=F " +
-                             actionDescription(move, at_start_wall_check, api) +
-                             " distance_mm=" + fixed1(CELL_SIZE_MM) +
-                             " latch_after_mm=" + fixed1(CENTER_TO_NEXT_WALL_CHECK_MM));
-                    motion_started = api->search_advance();
-                }
+                LOG_DEBUG(
+                    "token F  at_wall_check=" + std::to_string(at_wall_check) + "  total_mm=" +
+                    fixed1(at_wall_check ? CELL_SIZE_MM + WALL_CHECK_TO_CENTER_MM : CELL_SIZE_MM));
+                bool motion_started =
+                    at_wall_check ? api->search_start_from_wall_check() : api->search_advance();
+                at_wall_check = true;
 
                 if (!motion_started)
                 {
-                    LOG_ERROR("SEARCH motion command failed before wall-check sample.");
+                    logSearchFailBanner("motion start failed", search_step);
                     api->clear_search_move();
                     return false;
                 }
                 current = mouse->currentCell();
-                LOG_INFO("SEARCH STEP " + std::to_string(search_step) +
-                         " RESULT: arrived cell=" + cellName(current) +
-                         " heading=" + mouse->currentDirection() + " next=replan");
+                LOG_INFO(sense_prefix + "  plan=" + lfr + "  exec=F  ->" + cellName(current) + " " +
+                         headingUpper(mouse->currentDirection()));
                 ++search_step;
-                break;
+                break; // Re-plan after every forward move.
             }
 
-            if (at_start_wall_check)
+            // Non-F token (turn / arc). Centre first if currently at wall-check pose.
+            if (at_wall_check)
             {
-                LOG_INFO("SEARCH STEP " + std::to_string(search_step) +
-                         " ACTION: stopAtCentre before token=" + move +
-                         " distance_mm=" + fixed1(WALL_CHECK_TO_CENTER_MM));
+                LOG_DEBUG("recentre before token=" + move +
+                          ", distance_mm=" + fixed1(WALL_CHECK_TO_CENTER_MM));
                 if (!api->center_from_wall_check())
                 {
-                    LOG_ERROR("SEARCH failed moving from wall-check pose to cell center.");
+                    logSearchFailBanner("recentre before token failed", search_step);
                     return false;
                 }
-                at_start_wall_check = false;
+                at_wall_check = false;
             }
 
-            LOG_INFO("SEARCH STEP " + std::to_string(search_step) + " ACTION: token=" + move + " " +
-                     actionDescription(move, at_start_wall_check, api));
             api->executeSequence(move);
             api->clear_search_move();
-            current = mouse->currentCell();
-            LOG_INFO("SEARCH STEP " + std::to_string(search_step) + " RESULT: now cell=" +
-                     cellName(current) + " heading=" + mouse->currentDirection() +
-                     " explored=" + std::to_string(current->explored()));
+            current                   = mouse->currentCell();
+            const std::string new_tag = current->explored() ? "" : " (new)";
+            LOG_INFO(sense_prefix + "  plan=" + lfr + "  exec=" + move + "  ->" +
+                     cellName(current) + " " + headingUpper(mouse->currentDirection()) + new_tag);
 
             if (!current->explored())
             {
-                LOG_DEBUG("[RE-CALC] Hit unexplored cell at (" + std::to_string(current->x()) +
-                          "," + std::to_string(current->y()) + ")");
+                LOG_DEBUG("hit unexplored cell at " + cellName(current) + " - re-plan");
                 ++search_step;
                 break;
             }
 
-            LOG_DEBUG("[RE-USE] Continuing with path token: " + move);
+            LOG_DEBUG("re-using cached path token: " + move);
             ++search_step;
         }
 
-        LOG_DEBUG("Breaking to re-calc path");
+        LOG_DEBUG("breaking outer loop to re-plan");
     }
 
     return true;
@@ -533,6 +625,8 @@ bool traverseExploredPath(API* api, Mouse* mouse, const std::vector<std::array<i
 {
     if (api == nullptr || mouse == nullptr)
         return false;
+
+    MotionSequenceGuard motion_sequence(api);
 
     std::vector<Cell*> best_path = bestExploredPath(mouse, goals);
     if (best_path.empty())
@@ -555,6 +649,8 @@ bool traverseExploredDiagonalPath(API* api, Mouse* mouse,
 {
     if (api == nullptr || mouse == nullptr)
         return false;
+
+    MotionSequenceGuard motion_sequence(api);
 
     std::vector<Cell*> best_path = bestExploredPath(mouse, goals);
     if (best_path.empty())
