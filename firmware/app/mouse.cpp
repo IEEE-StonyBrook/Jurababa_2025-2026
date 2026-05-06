@@ -67,6 +67,38 @@ bool parsePositiveInt(const std::string& text, int& value)
 #endif
 }
 
+[[maybe_unused]] std::string signedFixed1(float value)
+{
+#ifdef SIMULATOR_BUILD
+    (void)value;
+    return {};
+#else
+    char buffer[24];
+    std::snprintf(buffer, sizeof(buffer), "%+.1f", static_cast<double>(value));
+    return buffer;
+#endif
+}
+
+float normalizeYawDelta(float degrees)
+{
+    while (degrees > 180.0f)
+        degrees -= 360.0f;
+    while (degrees <= -180.0f)
+        degrees += 360.0f;
+    return degrees;
+}
+
+float expectedYawForHeading(const std::string& heading)
+{
+    if (heading == "e" || heading == "E")
+        return -90.0f;
+    if (heading == "s" || heading == "S")
+        return 180.0f;
+    if (heading == "w" || heading == "W")
+        return 90.0f;
+    return 0.0f;
+}
+
 std::string headingUpper(const std::string& heading)
 {
     std::string out = heading;
@@ -646,6 +678,7 @@ bool Mouse::stopAtCentre()
     waitForMotion();
     if (haltRequested())
         return false;
+    motion_->reset_drive_control();
     motion_->set_position(HALF_CELL_MM);
 #endif
     return true;
@@ -703,12 +736,44 @@ void Mouse::update_map()
     cell->updateWallState(front[0], front_wall ? WALL : EXIT);
     cell->updateWallState(left[0], left_wall ? WALL : EXIT);
     cell->updateWallState(right[0], right_wall ? WALL : EXIT);
-    LOG_INFO("update_map: cell=(" + std::to_string(x) + "," + std::to_string(y) +
-             ") heading=" + headingUpper(maze_mouse_->currentDirection()) +
-             " ToF L/F/R=" + fixed1(motion_ != nullptr ? motion_->leftDistance() : 0.0f) + "/" +
-             fixed1(motion_ != nullptr ? motion_->frontDistance() : 0.0f) + "/" +
-             fixed1(motion_ != nullptr ? motion_->rightDistance() : 0.0f) + " walls=" +
-             (left_wall ? "L" : "-") + (front_wall ? "F" : "-") + (right_wall ? "R" : "-"));
+
+    std::ostringstream map_log;
+    map_log << "SEARCH MAP cell=(" << x << "," << y
+            << ") hdg=" << headingUpper(maze_mouse_->currentDirection());
+#ifndef SIMULATOR_BUILD
+    if (motion_ != nullptr)
+    {
+        const float left_mm  = motion_->leftDistance();
+        const float front_mm = motion_->frontDistance();
+        const float right_mm = motion_->rightDistance();
+        const float position = motion_->position();
+        const float yaw      = motion_->angle();
+        const float yaw_error =
+            normalizeYawDelta(expectedYawForHeading(maze_mouse_->currentDirection()) - yaw);
+        const float               left_norm  = left_mm * TOF_LEFT_SCALE;
+        const float               right_norm = right_mm * TOF_RIGHT_SCALE;
+        const tof_wall::WallState state =
+            tof_wall::evaluate(left_mm, front_mm, right_mm, tof_wall::SteeringMode::STEER_NORMAL);
+
+        map_log << " pos=" << fixed1(position)
+                << " pos_err=" << signedFixed1(position - SENSING_POSITION_MM)
+                << " yaw=" << fixed1(yaw) << " yaw_err=" << signedFixed1(yaw_error)
+                << " ToF=" << fixed1(left_mm) << "/" << fixed1(front_mm) << "/" << fixed1(right_mm)
+                << " norm=" << fixed1(left_norm) << "/" << fixed1(right_norm);
+        map_log << " walls=" << (left_wall ? "L" : "-") << (front_wall ? "F" : "-")
+                << (right_wall ? "R" : "-") << " side=" << tof_wall::sourceName(state.source)
+                << " err=" << signedFixed1(state.side_error_norm)
+                << " th=" << fixed1(TOF_LEFT_WALL_THRESHOLD_MM) << "/"
+                << fixed1(TOF_FRONT_WALL_THRESHOLD_MM) << "/"
+                << fixed1(TOF_RIGHT_WALL_THRESHOLD_MM);
+    }
+    else
+#endif
+    {
+        map_log << " pos=SIM pos_err=NA yaw=NA yaw_err=NA ToF=SIM walls=" << (left_wall ? "L" : "-")
+                << (front_wall ? "F" : "-") << (right_wall ? "R" : "-") << " side=NA err=NA th=NA";
+    }
+    LOG_INFO(map_log.str());
 
     if (run_on_simulator)
     {
@@ -843,6 +908,14 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
                  " entered=1 lfr=" + lfr + " action=" + action + " position_mm=" + position_text);
         log_action_status(action, current, position_text);
 
+        const int         from_x       = current->x();
+        const int         from_y       = current->y();
+        const std::string from_heading = headingUpper(maze_mouse_->currentDirection());
+#ifndef SIMULATOR_BUILD
+        const float yaw_before = motion_ != nullptr ? motion_->angle() : 0.0f;
+        const float pos_before = motion_ != nullptr ? motion_->position() : 0.0f;
+#endif
+
         if (action == "F")
             move_ahead();
         else if ((action == "L" && second == "L") || (action == "R" && second == "R") ||
@@ -857,6 +930,35 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
             LOG_ERROR("search_to: unsupported LFR action: " + action);
             return false;
         }
+
+        Cell*              after_cell    = maze_mouse_->currentCell();
+        const std::string  after_heading = headingUpper(maze_mouse_->currentDirection());
+        std::ostringstream action_log;
+        action_log << "SEARCH ACT " << action << " from=(" << from_x << "," << from_y << ","
+                   << from_heading << ") to=("
+                   << (after_cell != nullptr ? std::to_string(after_cell->x()) : std::string("NA"))
+                   << ","
+                   << (after_cell != nullptr ? std::to_string(after_cell->y()) : std::string("NA"))
+                   << "," << after_heading << ")";
+#ifndef SIMULATOR_BUILD
+        if (motion_ != nullptr)
+        {
+            const float yaw_after       = motion_->angle();
+            const float pos_after       = motion_->position();
+            const float yaw_delta       = normalizeYawDelta(yaw_after - yaw_before);
+            const float expected_yaw    = expectedYawForHeading(maze_mouse_->currentDirection());
+            const float final_yaw_error = normalizeYawDelta(expected_yaw - yaw_after);
+            action_log << " yaw=" << fixed1(yaw_before) << "->" << fixed1(yaw_after)
+                       << " delta=" << signedFixed1(yaw_delta)
+                       << " err=" << signedFixed1(final_yaw_error) << " pos=" << fixed1(pos_before)
+                       << "->" << fixed1(pos_after);
+        }
+        else
+#endif
+        {
+            action_log << " yaw=NA delta=NA err=NA pos=SIM";
+        }
+        LOG_INFO(action_log.str());
 
         if (haltRequested())
             return false;

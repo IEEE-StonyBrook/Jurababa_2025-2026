@@ -35,6 +35,15 @@ void Motion::reset_drive_system()
     steering_mode_ = tof_wall::SteeringMode::STEERING_OFF;
 }
 
+void Motion::reset_drive_control()
+{
+    drivetrain_->stop();
+    drivetrain_->reset();
+    forward_.reset();
+    rotation_.reset();
+    resetControlHistory();
+}
+
 void Motion::resetControlHistory()
 {
     forward_controller_.reset();

@@ -44,6 +44,7 @@ class Motion
 
     // === Mazerunner-core compatible motion names ===
     void    reset_drive_system();
+    void    reset_drive_control();
     void    stop();
     void    disable_drive();
     void    emergency_stop();
