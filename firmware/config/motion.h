@@ -26,19 +26,19 @@
 #define ENCODER_AVERAGER_LENGTH 8
 
 // ================ Forward Speed Limits ================= //
-#define ROBOT_MAX_SEARCH_SPEED_MMPS  300.0f // Search mode cruise speed
-#define ROBOT_MAX_FAST_SPEED_MMPS    500.0f // Stage 3+ explored-path cruise (Mouse::cruiseSpeed)
-#define ROBOT_SEARCH_TURN_SPEED_MMPS 250.0f // Constant speed through search smooth turns
+#define ROBOT_MAX_SEARCH_SPEED_MMPS  500.0f // Search mode cruise speed
+#define ROBOT_MAX_FAST_SPEED_MMPS    1500.0f // Stage 3+ explored-path cruise (Mouse::cruiseSpeed)
+#define ROBOT_SEARCH_TURN_SPEED_MMPS 300.0f // Constant speed through search smooth turns
 
 // ================ Forward Acceleration ================= //
-#define ROBOT_BASE_ACCEL_MMPS2 1500.0f
+#define ROBOT_BASE_ACCEL_MMPS2 2500.0f
 
 // ================= Rotation Limits ===================== //
 // Jurababa-validated IMU spin-turn defaults. These are deliberately gentler
 // than Orion-class UKMARS values because our rotation feedback comes from the
 // BNO085 RVC stream rather than 500 Hz encoder yaw.
-#define ROBOT_MAX_TURN_SPEED_DEGPS         240.0f  // Max angular velocity
-#define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2    800.0f  // Turn acceleration
+#define ROBOT_MAX_TURN_SPEED_DEGPS         300.0f  // Max angular velocity
+#define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2    1200.0f  // Turn acceleration
 #define ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS   250.0f  // Linear speed during smooth turns
 #define ROBOT_SMOOTH_TURN_OMEGA_DEGPS      287.0f  // UKMARS SS90E starting point
 #define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2     2866.0f // UKMARS SS90E starting point

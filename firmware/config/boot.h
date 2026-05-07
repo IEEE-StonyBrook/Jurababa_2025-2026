@@ -8,7 +8,8 @@
 enum class BootModeSelection
 {
     Prompt,
-    NormalCli,
+    Competition,
+    CLI,
     DriverLab
 };
 
@@ -20,7 +21,8 @@ enum class BootSensorSelection
 };
 
 // Set either value to Prompt to restore the boot-time keyboard picker.
-#define BOOT_MODE_SELECTION   BootModeSelection::NormalCli
+// Competition boots directly into the gesture-driven COMP loop.
+#define BOOT_MODE_SELECTION   BootModeSelection::Competition
 #define BOOT_SENSOR_SELECTION BootSensorSelection::ToF
 
 #define BOOT_MODE_PROMPT_TIMEOUT_MS   3000u

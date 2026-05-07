@@ -3,16 +3,20 @@
  *
  * Top-level operating modes:
  *
- *   1. DriverLab
- *        Single-core motor characterization CLI. Core 0 owns motors,
- *        encoders, IMU, and either ToFs or the line sensor.
+ *   1. Competition
+ *        Default boot path. ToF-only gesture-driven COMP loop, USB serial
+ *        diagnostics only, no Bluetooth.
  *
- *   2. Cli
+ *   2. Normal CLI
  *        UKMARS mazerunner-core-style command loop. ToF mode runs Motion from
  *        a 500 Hz timer callback; LineSensor mode hands motors to LineFollower.
  *
+ *   3. DriverLab
+ *        Single-core motor characterization CLI. Core 0 owns motors,
+ *        encoders, IMU, and either ToFs or the line sensor.
+ *
  * Boot choices are configured in config/boot.h:
- *   BOOT_MODE_SELECTION   -> DriverLab, Normal CLI, or Prompt
+ *   BOOT_MODE_SELECTION   -> Competition, Normal CLI, DriverLab, or Prompt
  *   BOOT_SENSOR_SELECTION -> ToF, LineSensor, or Prompt
  */
 
@@ -240,13 +244,20 @@ void resetDiagnostics()
 // ----------------------------------------------------------------------------
 // Boot-time selection
 // ----------------------------------------------------------------------------
-static bool selectDriverLabPrompt(uint32_t timeout_ms)
+enum class BootRunMode
+{
+    Competition,
+    NormalCli,
+    DriverLab
+};
+
+static BootRunMode selectBootRunModePrompt(uint32_t timeout_ms)
 {
     printf("\n==========================================\n");
     printf("  Jurababa -- boot\n");
     printf("==========================================\n");
-    printf("  Press 'M' within %lu s for DriverLab Mode.\n", timeout_ms / 1000);
-    printf("  Otherwise Normal CLI will start (default).\n");
+    printf("  Press 'M' for DriverLab, 'N' for Normal CLI.\n");
+    printf("  Otherwise Competition starts in %lu s (default).\n", timeout_ms / 1000);
     printf("==========================================\n\n");
 
     uint32_t start_ms        = to_ms_since_boot(get_absolute_time());
@@ -257,8 +268,8 @@ static bool selectDriverLabPrompt(uint32_t timeout_ms)
         uint32_t elapsed = to_ms_since_boot(get_absolute_time()) - start_ms;
         if (elapsed >= timeout_ms)
         {
-            printf("\n*** Normal CLI Mode selected (default) ***\n\n");
-            return false;
+            printf("\n*** Competition Mode selected (default) ***\n\n");
+            return BootRunMode::Competition;
         }
 
         int c = getchar_timeout_us(100000);
@@ -268,7 +279,12 @@ static bool selectDriverLabPrompt(uint32_t timeout_ms)
             if (ch == 'M' || ch == 'm')
             {
                 printf("\n*** DriverLab selected ***\n\n");
-                return true;
+                return BootRunMode::DriverLab;
+            }
+            if (ch == 'N' || ch == 'n')
+            {
+                printf("\n*** Normal CLI Mode selected ***\n\n");
+                return BootRunMode::NormalCli;
             }
         }
 
@@ -281,19 +297,22 @@ static bool selectDriverLabPrompt(uint32_t timeout_ms)
     }
 }
 
-static bool configuredDriverLabMode()
+static BootRunMode configuredBootRunMode()
 {
     switch (BOOT_MODE_SELECTION)
     {
+        case BootModeSelection::Competition:
+            printf("\n*** Competition Mode selected (config) ***\n\n");
+            return BootRunMode::Competition;
         case BootModeSelection::DriverLab:
             printf("\n*** DriverLab selected (config) ***\n\n");
-            return true;
-        case BootModeSelection::NormalCli:
+            return BootRunMode::DriverLab;
+        case BootModeSelection::CLI:
             printf("\n*** Normal CLI Mode selected (config) ***\n\n");
-            return false;
+            return BootRunMode::NormalCli;
         case BootModeSelection::Prompt:
         default:
-            return selectDriverLabPrompt(BOOT_MODE_PROMPT_TIMEOUT_MS);
+            return selectBootRunModePrompt(BOOT_MODE_PROMPT_TIMEOUT_MS);
     }
 }
 
@@ -425,17 +444,32 @@ static void runDriverLabMode(Battery* battery, SensorMode sensor_mode)
 }
 
 // ----------------------------------------------------------------------------
-// Unified CLI mode (ToF or LineSensor)
+// Mouse app mode (Competition or Normal CLI)
 // ----------------------------------------------------------------------------
-static void runCliMode(Battery* battery, SensorMode sensor_mode)
+static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool competition_mode)
 {
-    Bluetooth bluetooth(uart0, 115200, PIN_BT_TX, PIN_BT_RX);
-    bluetooth.init();
-    bluetooth.write("=== Jurababa CLI :) ===\r\n");
-    bluetooth.drain();
-    Log::setBluetoothInterface(&bluetooth);
-    Log::setBluetoothPriority(LogPriority::INFO);
-    Log::setBluetoothEnabled(true);
+    if (competition_mode)
+        sensor_mode = SensorMode::TOF;
+
+    Bluetooth* bluetooth_ptr = nullptr;
+    if (!competition_mode)
+    {
+        static Bluetooth bluetooth(uart0, 115200, PIN_BT_TX, PIN_BT_RX);
+        bluetooth.init();
+        bluetooth.write("=== Jurababa CLI :) ===\r\n");
+        bluetooth.drain();
+        bluetooth_ptr = &bluetooth;
+        Log::setBluetoothInterface(bluetooth_ptr);
+        Log::setBluetoothPriority(LogPriority::INFO);
+        Log::setBluetoothEnabled(true);
+    }
+    else
+    {
+        Log::setBluetoothInterface(nullptr);
+        Log::setBluetoothEnabled(false);
+        printf("\n=== Jurababa Competition ===\n");
+        printf("ToF stack forced. Bluetooth disabled; USB serial diagnostics remain available.\n");
+    }
 
     // Maze + virtual mouse + wall bridge live on Core 0 in both sub-modes.
     std::array<int, 2> start_cell = {0, 0};
@@ -527,7 +561,7 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
     }
 
     Cli::Deps deps;
-    deps.bluetooth     = &bluetooth;
+    deps.bluetooth     = bluetooth_ptr;
     deps.battery       = battery;
     deps.motion        = motion_ptr;
     deps.left_tof      = left_tof_ptr;
@@ -543,8 +577,28 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
     deps.goal_cells    = goal_cells;
 
     Cli cli(deps);
-    cli.greet();
-    cli.loop(); // never returns
+    if (competition_mode)
+    {
+        cli.runCompetitionMode();
+        stage_led::setIdle();
+        while (true)
+            sleep_ms(1000);
+    }
+    else
+    {
+        cli.greet();
+        cli.loop(); // never returns
+    }
+}
+
+static void runCliMode(Battery* battery, SensorMode sensor_mode)
+{
+    runMouseAppMode(battery, sensor_mode, /*competition_mode=*/false);
+}
+
+static void runCompetitionMode(Battery* battery)
+{
+    runMouseAppMode(battery, SensorMode::TOF, /*competition_mode=*/true);
 }
 
 // ----------------------------------------------------------------------------
@@ -558,7 +612,7 @@ int main()
 
     Battery battery(PIN_BATTERY_ADC, 10000.0f, 5100.0f);
     battery.begin();
-    // Quick pre-fill so the boot diagnostic printf in runDriverLabMode/runCliMode
+    // Quick pre-fill so the boot diagnostic printf in runDriverLabMode/runMouseAppMode
     // has a non-zero reading before the 500 Hz tick loop spins up. The per-tick
     // updater downstream takes over once the loop starts.
     for (int i = 0; i < 3; i++)
@@ -579,16 +633,20 @@ int main()
                battery.voltage());
     }
 
-    const bool       driver_lab_mode = configuredDriverLabMode();
-    const SensorMode sensor_mode     = configuredSensorMode();
+    const BootRunMode boot_mode = configuredBootRunMode();
 
-    if (driver_lab_mode)
+    switch (boot_mode)
     {
-        runDriverLabMode(battery_ptr, sensor_mode);
-    }
-    else
-    {
-        runCliMode(battery_ptr, sensor_mode);
+        case BootRunMode::Competition:
+            runCompetitionMode(battery_ptr);
+            break;
+        case BootRunMode::DriverLab:
+            runDriverLabMode(battery_ptr, configuredSensorMode());
+            break;
+        case BootRunMode::NormalCli:
+        default:
+            runCliMode(battery_ptr, configuredSensorMode());
+            break;
     }
 
     return 0;

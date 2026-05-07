@@ -166,6 +166,40 @@ bool CommandLineInterface::haltCheckThunk()
     return s_instance_->halted_;
 }
 
+StartTrigger CommandLineInterface::compServiceThunk(void* ctx)
+{
+    auto* self = static_cast<CommandLineInterface*>(ctx);
+    if (self == nullptr)
+        return StartTrigger::NONE;
+    return self->compServiceTick();
+}
+
+StartTrigger CommandLineInterface::compServiceTick()
+{
+    // Run the full CLI input pipeline so diagnostic commands (W/C/D/S/E/B,
+    // F<n>, etc.) work normally while COMP is gesture-armed. process_serial_data
+    // handles serial char accumulation, line-end dispatch into run_short_cmd /
+    // run_long_cmd, and Bluetooth command intake. Single-letter shortcuts
+    // G/H/J set comp_pending_trigger_ via run_short_cmd; Bluetooth START
+    // does the same via handleBluetoothCommand.
+    process_serial_data();
+
+    if (comp_pending_trigger_ != StartTrigger::NONE)
+    {
+        const StartTrigger t  = comp_pending_trigger_;
+        comp_pending_trigger_ = StartTrigger::NONE;
+        return t;
+    }
+
+    if (halted_)
+    {
+        halted_ = false;
+        return StartTrigger::CANCELLED;
+    }
+
+    return StartTrigger::NONE;
+}
+
 CommandLineInterface::CommandLineInterface(const Deps& deps) : deps_(deps)
 {
     s_instance_ = this;
@@ -386,6 +420,23 @@ void CommandLineInterface::run_short_cmd(const Args& args)
         case 'B':
             run_function(10);
             break;
+        case 'G':
+        case 'H':
+        case 'J':
+            // Gesture-shortcut letters (G=front, H=right, J=left). Only act
+            // on them while COMP is armed — outside COMP they're harmless
+            // no-ops to avoid surprising operators using diagnostic letters.
+            if (comp_armed_)
+            {
+                comp_pending_trigger_ = (c == 'G')   ? StartTrigger::FRONT_WAVE
+                                        : (c == 'H') ? StartTrigger::RIGHT_WAVE
+                                                     : StartTrigger::LEFT_WAVE;
+            }
+            else
+            {
+                printFormat("(%c is a COMP-mode gesture shortcut — type COMP first.)\n", c);
+            }
+            break;
         case 'S':
             if (deps_.mouse != nullptr)
                 deps_.mouse->print_wall_sensors();
@@ -562,6 +613,11 @@ void CommandLineInterface::handle_stage_command(const Args& args)
 void CommandLineInterface::handle_comp_command(const Args& args)
 {
     (void)args;
+    runCompetitionMode();
+}
+
+void CommandLineInterface::runCompetitionMode()
+{
     if (!needsTof("COMP"))
         return;
     if (deps_.mouse == nullptr || deps_.maze_mouse == nullptr)
@@ -571,19 +627,31 @@ void CommandLineInterface::handle_comp_command(const Args& args)
     }
 
     printFormat("COMP mode: front=Stage1+2, right=Stage3, left=Stage5. BOOTSEL aborts.\n");
+    if (deps_.bluetooth != nullptr)
+        printFormat(
+            "CLI commands (W/C/D/S/E/B/F<n>/...) remain available over USB/BT while armed.\n");
+    else
+        printFormat("USB CLI commands (W/C/D/S/E/B/F<n>/...) remain available while armed.\n");
 
     // Run forever until the operator cancels with HALT/BOOTSEL while armed.
     // Each iteration: arm, wait for a gesture, dispatch, return to arm.
     while (true)
     {
-        halted_ = false;
+        halted_               = false;
+        comp_pending_trigger_ = StartTrigger::NONE;
+        comp_armed_           = true;
         stage_led::setArmed();
         printFormat("COMP armed. Wave front=stage1+2, right=stage3, left=stage5.\n");
+        prompt(); // give the operator a CLI prompt so they can type diagnostics
 
-        // waitForCompetitionGesture polls BOOTSEL itself, so a press while
-        // armed returns CANCELLED and exits the loop here.
-        StartTrigger trigger = waitForCompetitionGesture(deps_.bluetooth, deps_.front_tof,
-                                                         deps_.right_tof, deps_.left_tof);
+        // The service callback runs the full CLI input pipeline (so W/C/D/E
+        // and any other commands work) and surfaces gesture shortcuts and
+        // BT START via comp_pending_trigger_. waitForCompetitionGesture
+        // also polls BOOTSEL directly so a press while armed cancels.
+        StartTrigger trigger = waitForCompetitionGesture(
+            deps_.bluetooth, deps_.front_tof, deps_.right_tof, deps_.left_tof, /*low_mm=*/80,
+            /*high_mm=*/110, &CommandLineInterface::compServiceThunk, this);
+        comp_armed_ = false;
 
         if (trigger == StartTrigger::CANCELLED)
         {
@@ -1240,7 +1308,16 @@ void CommandLineInterface::handleBluetoothCommand()
     switch (cmd)
     {
         case Bluetooth::Command::START:
-            if (last_function_ >= 0)
+            // While COMP is gesture-armed, BT START is the front-wave
+            // shortcut equivalent. Surface it through the same channel as
+            // the G/H/J letters so handle_comp_command sees it via its
+            // service tick.
+            if (comp_armed_)
+            {
+                LOG_INFO("BT START: COMP front gesture");
+                comp_pending_trigger_ = StartTrigger::FRONT_WAVE;
+            }
+            else if (last_function_ >= 0)
             {
                 LOG_INFO("BT START: running F " << last_function_);
                 run_function(last_function_);

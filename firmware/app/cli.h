@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "app/start_gesture.h"
+
 class Mouse;
 class Battery;
 class Bluetooth;
@@ -70,6 +72,7 @@ class CommandLineInterface
 
     void greet();
     void loop();
+    void runCompetitionMode();
     bool pollOnce() { return process_serial_data(); }
 
     bool process_serial_data();
@@ -152,6 +155,18 @@ class CommandLineInterface
 
     int  last_function_ = -1;
     bool halted_        = false;
+
+    // True while handle_comp_command is in its gesture-armed wait. Lets the
+    // single-letter parser route G/H/J into comp_pending_trigger_ instead of
+    // ignoring them, and Bluetooth START into the same channel.
+    bool         comp_armed_           = false;
+    StartTrigger comp_pending_trigger_ = StartTrigger::NONE;
+
+    // Service hook fed to waitForCompetitionGesture so the CLI can run
+    // diagnostic commands during COMP-armed wait. Static thunk forwards to
+    // s_instance_->compServiceTick().
+    static StartTrigger compServiceThunk(void* ctx);
+    StartTrigger        compServiceTick();
 
     static CommandLineInterface* s_instance_;
 };

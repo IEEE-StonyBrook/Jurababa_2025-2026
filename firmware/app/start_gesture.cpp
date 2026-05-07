@@ -170,7 +170,8 @@ StartTrigger waitForStartGesture(Bluetooth* bt, ToF* front_tof, uint32_t low_mm,
 }
 
 StartTrigger waitForCompetitionGesture(Bluetooth* bt, ToF* front_tof, ToF* right_tof, ToF* left_tof,
-                                       uint32_t low_mm, uint32_t high_mm)
+                                       uint32_t low_mm, uint32_t high_mm,
+                                       GestureServiceFn service_cb, void* service_ctx)
 {
     // Front uses caller-supplied raw-mm thresholds (defaults match
     // waitForStartGesture). Sides use nominal-unit thresholds with per-side
@@ -192,30 +193,46 @@ StartTrigger waitForCompetitionGesture(Bluetooth* bt, ToF* front_tof, ToF* right
 
     while (true)
     {
-        if (bt != nullptr)
+        // When a service callback is supplied, it owns all serial and
+        // Bluetooth char/command consumption — it routes diagnostic letters
+        // (W/C/D/etc.) into the existing CLI parser and surfaces gesture
+        // shortcuts (G/H/J) and BT START via its return value. We must NOT
+        // also call getchar_timeout_us / bt->command() here because both
+        // operations are destructive: a parallel reader would steal chars
+        // and break CLI command parsing while COMP is armed.
+        if (service_cb != nullptr)
         {
-            Log::drainBluetooth();
-            bt->drain();
+            const StartTrigger serviced = service_cb(service_ctx);
+            if (serviced != StartTrigger::NONE)
+                return serviced;
         }
-
-        int ch = 0;
-        if (peekSerialChar(ch))
+        else
         {
-            if (ch == 'G' || ch == 'g')
-                return StartTrigger::FRONT_WAVE;
-            if (ch == 'H' || ch == 'h')
-                return StartTrigger::RIGHT_WAVE;
-            if (ch == 'J' || ch == 'j')
-                return StartTrigger::LEFT_WAVE;
-        }
+            if (bt != nullptr)
+            {
+                Log::drainBluetooth();
+                bt->drain();
+            }
 
-        if (bt != nullptr && bt->hasCommand())
-        {
-            Bluetooth::Command cmd = bt->command();
-            if (cmd == Bluetooth::Command::START)
-                return StartTrigger::FRONT_WAVE;
-            if (cmd == Bluetooth::Command::HALT)
-                return StartTrigger::CANCELLED;
+            int ch = 0;
+            if (peekSerialChar(ch))
+            {
+                if (ch == 'G' || ch == 'g')
+                    return StartTrigger::FRONT_WAVE;
+                if (ch == 'H' || ch == 'h')
+                    return StartTrigger::RIGHT_WAVE;
+                if (ch == 'J' || ch == 'j')
+                    return StartTrigger::LEFT_WAVE;
+            }
+
+            if (bt != nullptr && bt->hasCommand())
+            {
+                Bluetooth::Command cmd = bt->command();
+                if (cmd == Bluetooth::Command::START)
+                    return StartTrigger::FRONT_WAVE;
+                if (cmd == Bluetooth::Command::HALT)
+                    return StartTrigger::CANCELLED;
+            }
         }
 
         // BOOTSEL while armed exits COMP mode without needing a phone or

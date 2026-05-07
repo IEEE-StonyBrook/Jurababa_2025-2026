@@ -22,6 +22,7 @@ class ToF;
  */
 enum class StartTrigger
 {
+    NONE, // sentinel: nothing fired this tick (used by service callbacks).
     TOF_WAVE,
     FRONT_WAVE = TOF_WAVE,
     RIGHT_WAVE,
@@ -32,6 +33,14 @@ enum class StartTrigger
     BT_START,
     CANCELLED
 };
+
+// Per-tick service hook for waitForCompetitionGesture. Lets the CLI keep
+// running diagnostic commands (W/C/D/S/E/etc.) and dispatch G/H/J shortcuts
+// while the gesture detector is armed. The callback owns serial-char
+// consumption while COMP is active so the gesture waiter does not race
+// process_serial_data() over getchar_timeout_us(). Returning anything other
+// than NONE causes the waiter to return that trigger immediately.
+using GestureServiceFn = StartTrigger (*)(void*);
 
 /**
  * @brief Block until the operator signals "go" via front-ToF wave or serial.
@@ -70,6 +79,8 @@ StartTrigger waitForStartGesture(Bluetooth* bt, ToF* front_tof, uint32_t low_mm 
  * The detector still functions on the remaining sensors.
  */
 StartTrigger waitForCompetitionGesture(Bluetooth* bt, ToF* front_tof, ToF* right_tof, ToF* left_tof,
-                                       uint32_t low_mm = 80, uint32_t high_mm = 110);
+                                       uint32_t low_mm = 80, uint32_t high_mm = 110,
+                                       GestureServiceFn service_cb  = nullptr,
+                                       void*            service_ctx = nullptr);
 
 #endif
