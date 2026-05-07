@@ -969,7 +969,7 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
     if (wait_for_start && !startWithGesture(true, preserve_yaw))
         return false;
 
-    if (stage == 3 || stage == 5)
+    if (stage == 1 || stage == 3 || stage == 5)
     {
         deps_.maze_mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
         deps_.mouse->set_heading("n");
