@@ -100,6 +100,7 @@ class CommandLineInterface
     void run_long_cmd(const Args& args);
     void handle_search_command(const Args& args);
     void handle_stage_command(const Args& args);
+    void handle_comp_command(const Args& args);
     void handle_style_command(const Args& args);
     void handle_path_command(const Args& args);
     void handle_center_command(const Args& args);

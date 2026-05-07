@@ -55,6 +55,11 @@ class Cell
     void set_wall_state(char direction, WallState state);
     void reset();
 
+    // Direct write of the cell's wall and explored fields used by
+    // Maze::restore(). Bypasses neighbor propagation because the snapshot
+    // already captured both sides of every shared wall.
+    void loadSnapshot(const WallInfo& walls, bool explored);
+
     static bool equal(Cell* c1, Cell* c2);
 
     // Pathfinding state (used by flood fill, A*)
@@ -76,6 +81,17 @@ class Cell
 };
 
 /**
+ * @brief Per-cell wall and explored state captured by Maze::snapshot.
+ */
+struct CellSnapshot
+{
+    WallInfo walls;
+    bool     explored = false;
+};
+
+using MazeSnapshot = std::vector<std::vector<CellSnapshot>>;
+
+/**
  * @brief Maze graph with wall tracking and neighbor queries
  */
 class Maze
@@ -93,6 +109,13 @@ class Maze
     void     printASCII();
     void     setMask(MazeMask mask);
     MazeMask mask() const;
+
+    // Capture every cell's walls and explored flag so a later restore() can
+    // discard wall data added between snapshot and restore — used when a
+    // competition run is aborted mid-flight (BOOTSEL) so unreliable walls
+    // logged with a corrupted pose don't poison data from earlier runs.
+    MazeSnapshot snapshot() const;
+    void         restore(const MazeSnapshot& snap);
 
   private:
     void createCells();

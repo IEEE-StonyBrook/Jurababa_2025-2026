@@ -173,12 +173,48 @@ void Cell::updateWallState(char direction, WallState state)
     if (!shouldUpdate(direction))
         return;
 
-    if (state == WALL)
-        setWall(direction);
-    else if (state == EXIT)
-        setExit(direction);
-    else
-        setWallStateLocal(direction, state);
+    Cell* neighbor           = nullptr;
+    char  opposite_direction = 0;
+    switch (direction)
+    {
+        case 'N':
+        case 'n':
+            neighbor           = north_;
+            opposite_direction = 'S';
+            break;
+        case 'E':
+        case 'e':
+            neighbor           = east_;
+            opposite_direction = 'W';
+            break;
+        case 'S':
+        case 's':
+            neighbor           = south_;
+            opposite_direction = 'N';
+            break;
+        case 'W':
+        case 'w':
+            neighbor           = west_;
+            opposite_direction = 'E';
+            break;
+        default:
+            break;
+    }
+
+    if (neighbor != nullptr)
+    {
+        const WallState neighbor_state = neighbor->wallState(opposite_direction);
+        if (neighbor_state != UNKNOWN)
+        {
+            setWallStateLocal(direction, neighbor_state);
+            return;
+        }
+    }
+
+    setWallStateLocal(direction, state);
+
+    if (neighbor != nullptr)
+        neighbor->setWallStateLocal(opposite_direction, state);
 }
 
 void Cell::update_wall_state(char direction, WallState state)
@@ -200,6 +236,13 @@ void Cell::reset()
 {
     walls_    = {};
     explored_ = false;
+    clearPathfindingState();
+}
+
+void Cell::loadSnapshot(const WallInfo& walls, bool explored)
+{
+    walls_    = walls;
+    explored_ = explored;
     clearPathfindingState();
 }
 
@@ -358,6 +401,43 @@ void Maze::reset()
         }
     }
     mask_ = MASK_OPEN;
+}
+
+MazeSnapshot Maze::snapshot() const
+{
+    const size_t cols = cells_.size();
+    const size_t rows = cols == 0 ? 0 : cells_[0].size();
+
+    MazeSnapshot snap(cols, std::vector<CellSnapshot>(rows));
+    for (size_t col = 0; col < cols; ++col)
+    {
+        for (size_t row = 0; row < rows; ++row)
+        {
+            const Cell* c           = cells_[col][row];
+            snap[col][row].walls    = c->walls();
+            snap[col][row].explored = c->explored();
+        }
+    }
+    return snap;
+}
+
+void Maze::restore(const MazeSnapshot& snap)
+{
+    const size_t cols      = cells_.size();
+    const size_t rows      = cols == 0 ? 0 : cells_[0].size();
+    const size_t snap_cols = snap.size();
+    const size_t snap_rows = snap_cols == 0 ? 0 : snap[0].size();
+
+    if (snap_cols != cols || snap_rows != rows)
+        return;
+
+    for (size_t col = 0; col < cols; ++col)
+    {
+        for (size_t row = 0; row < rows; ++row)
+        {
+            cells_[col][row]->loadSnapshot(snap[col][row].walls, snap[col][row].explored);
+        }
+    }
 }
 
 void Maze::setMask(MazeMask mask)

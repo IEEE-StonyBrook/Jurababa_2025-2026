@@ -14,6 +14,8 @@
 #include "pico/stdlib.h"
 
 #include "app/bluetooth.h"
+#include "app/bootsel_button.h"
+#include "app/leds.h"
 #include "app/mouse.h"
 #include "app/start_gesture.h"
 #include "common/log.h"
@@ -237,7 +239,7 @@ void CommandLineInterface::greet()
 {
     print("\n");
     print("==========================================\n");
-    print("  Jurababa Micromouse -- UKMARS CLI\n");
+    print("  Jurababa Micromouse -- UKMARS CLI :)\n");
     print("==========================================\n");
     help();
     prompt();
@@ -463,6 +465,11 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         run_competition_stage(5, /*wait_for_start=*/true);
         return;
     }
+    if (std::strcmp(args.argv[0], "COMP") == 0)
+    {
+        handle_comp_command(args);
+        return;
+    }
     if (std::strcmp(args.argv[0], "SIMRUN") == 0)
     {
         if (!run_competition_stage(1, /*wait_for_start=*/true))
@@ -550,6 +557,100 @@ void CommandLineInterface::handle_stage_command(const Args& args)
     }
 
     run_competition_stage(stage, /*wait_for_start=*/true);
+}
+
+void CommandLineInterface::handle_comp_command(const Args& args)
+{
+    (void)args;
+    if (!needsTof("COMP"))
+        return;
+    if (deps_.mouse == nullptr || deps_.maze_mouse == nullptr)
+    {
+        printFormat("COMP: Mouse not initialized.\n");
+        return;
+    }
+
+    printFormat("COMP mode: front=Stage1+2, right=Stage3, left=Stage5. BOOTSEL aborts.\n");
+
+    // Run forever until the operator cancels with HALT/BOOTSEL while armed.
+    // Each iteration: arm, wait for a gesture, dispatch, return to arm.
+    while (true)
+    {
+        halted_ = false;
+        stage_led::setArmed();
+        printFormat("COMP armed. Wave front=stage1+2, right=stage3, left=stage5.\n");
+
+        // waitForCompetitionGesture polls BOOTSEL itself, so a press while
+        // armed returns CANCELLED and exits the loop here.
+        StartTrigger trigger = waitForCompetitionGesture(deps_.bluetooth, deps_.front_tof,
+                                                         deps_.right_tof, deps_.left_tof);
+
+        if (trigger == StartTrigger::CANCELLED)
+        {
+            stage_led::setIdle();
+            printFormat("COMP exit.\n");
+            return;
+        }
+
+        // Snapshot the maze before the run starts. If BOOTSEL aborts mid-run
+        // the mouse's pose is unreliable, so any walls it logged this run
+        // can't be trusted — restore() rolls back to the pre-run state and
+        // preserves wall data from earlier successful runs. Stages 3 and 5
+        // do not write walls, so the restore is a no-op for them, but we
+        // take the snapshot uniformly so the abort path is identical.
+        MazeSnapshot pre_run_snapshot;
+        if (deps_.maze != nullptr)
+            pre_run_snapshot = deps_.maze->snapshot();
+
+        bool ok = false;
+        switch (trigger)
+        {
+            case StartTrigger::FRONT_WAVE:
+            case StartTrigger::SERIAL_G:
+            case StartTrigger::BT_START:
+                printFormat("COMP gesture: FRONT -> Stage 1+2.\n");
+                deps_.mouse->set_hand_start(true);
+                ok = run_competition_stage(1, /*wait_for_start=*/false);
+                if (ok)
+                {
+                    stage_led::setGoalReached();
+                    sleep_ms(1000);
+                    ok = run_competition_stage(2, /*wait_for_start=*/false);
+                }
+                break;
+
+            case StartTrigger::RIGHT_WAVE:
+            case StartTrigger::SERIAL_H:
+                printFormat("COMP gesture: RIGHT -> Stage 3.\n");
+                ok = run_competition_stage(3, /*wait_for_start=*/false);
+                break;
+
+            case StartTrigger::LEFT_WAVE:
+            case StartTrigger::SERIAL_J:
+                printFormat("COMP gesture: LEFT -> Stage 5.\n");
+                ok = run_competition_stage(5, /*wait_for_start=*/false);
+                break;
+
+            default:
+                ok = false;
+                break;
+        }
+
+        if (!ok)
+        {
+            // Roll back wall data and pose so the next gesture starts from a
+            // clean, trusted state. The operator picks up the mouse, places
+            // it back at start, and re-gestures.
+            if (deps_.maze != nullptr)
+                deps_.maze->restore(pre_run_snapshot);
+            if (deps_.maze_mouse != nullptr)
+                deps_.maze_mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
+            if (deps_.mouse != nullptr)
+                deps_.mouse->setUp(deps_.start_cell, deps_.goal_cells);
+            printFormat("COMP run aborted: wall data rolled back, pose reset to start.\n");
+            stage_led::flashAborted();
+        }
+    }
 }
 
 void CommandLineInterface::handle_style_command(const Args& args)
@@ -987,6 +1088,8 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
                 current_text.c_str(), heading_text.c_str(), start_text.c_str(), goal_text.c_str(),
                 mazeMaskName(deps_.maze_mouse->mazeMask()));
 
+    stage_led::setStage(stage);
+
     switch (stage)
     {
         case 1:
@@ -1102,8 +1205,17 @@ void CommandLineInterface::pollHaltOnly()
     {
         Bluetooth::Command cmd = bt->command();
         if (cmd == Bluetooth::Command::HALT)
+        {
             stop();
+            return;
+        }
     }
+
+    // BOOTSEL on the Waveshare RP2040-Zero acts as the panic-abort during a
+    // run. Reads the QSPI flash CS line via a brief XIP-suspend (~10 us with
+    // interrupts disabled). Cheap enough at the 2 ms pollHaltOnly cadence.
+    if (abortRequested())
+        stop();
 }
 
 void CommandLineInterface::run_function(int cmd)
@@ -1551,6 +1663,12 @@ void CommandLineInterface::help_debug()
     printFormat("STAGE 5 : explored diagonal fast goal\n");
     printFormat("SEARCHGOAL/RETURNSTART/FASTGOAL/FASTSTART/DIAGGOAL : stage aliases\n");
     printFormat("SIMRUN : STAGE 1 + STAGE 2 + STAGE 5\n");
+    printFormat("COMP : gesture-driven competition mode\n");
+    printFormat("       front wave -> Stage 1+2 (search and return)\n");
+    printFormat("       right wave -> Stage 3 (cardinal fast run)\n");
+    printFormat("       left  wave -> Stage 5 (diagonal fast run)\n");
+    printFormat("       BOOTSEL    -> abort current run / exit COMP\n");
+    printFormat("       (abort rolls back wall data added during the aborted run)\n");
     printFormat("RESET : reset search state without rebooting\n");
     printFormat("HALT : stop motion\n");
 }

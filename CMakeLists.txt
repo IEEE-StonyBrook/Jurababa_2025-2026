@@ -66,6 +66,8 @@ set(APP_SOURCES
     firmware/app/firmware_mouse.cpp
     firmware/app/start_gesture.cpp
     firmware/app/cli.cpp
+    firmware/app/bootsel_button.cpp
+    firmware/app/leds.cpp
 )
 
 set(DRIVER_LAB_SOURCES

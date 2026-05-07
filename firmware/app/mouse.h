@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "config/motion.h"
+#include "config/sensors.h"
 
 class MazeMouse;
 class Motion;
@@ -205,10 +206,17 @@ class Mouse
     void        apply_maze_heading_hold();
     void        apply_maze_heading_hold_for_heading(const std::string& heading);
     void        suspend_maze_heading_hold();
+    void        begin_search_front_latch();
+    void        finish_search_front_latch();
+    void        clear_search_front_latch();
+    void        sample_search_front_latch();
     std::string simulatorResponse(const std::string& cmd);
     bool        simulatorBool(const std::string& cmd);
     std::string printMazeRow(int row);
-    bool        maze_heading_hold_active_ = false;
+    bool        maze_heading_hold_active_   = false;
+    bool        search_front_latch_enabled_ = false;
+    bool        search_front_wall_latched_  = false;
+    float       search_front_latch_mm_      = TOF_OUT_OF_RANGE_MM;
 };
 
 #endif

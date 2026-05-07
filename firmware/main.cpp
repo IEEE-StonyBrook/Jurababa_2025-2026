@@ -22,7 +22,6 @@
 #include <vector>
 
 #include "hardware/clocks.h"
-#include "hardware/pio.h"
 #include "hardware/sync.h"
 #include "hardware/timer.h"
 #include "pico/stdio/driver.h"
@@ -31,6 +30,7 @@
 #include "app/bluetooth.h"
 #include "app/cli.h"
 #include "app/firmware_mouse.h"
+#include "app/leds.h"
 #include "common/bluetooth_stdio.h"
 #include "common/log.h"
 #include "config/config.h"
@@ -46,7 +46,6 @@
 #include "drivers/tof.h"
 #include "maze/maze.h"
 #include "maze/maze_mouse.h"
-#include "ws2812.pio.h"
 
 // ----------------------------------------------------------------------------
 // Bluetooth UART as a stdio driver (used in DriverLab mode for printf mirroring)
@@ -432,7 +431,7 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
 {
     Bluetooth bluetooth(uart0, 115200, PIN_BT_TX, PIN_BT_RX);
     bluetooth.init();
-    bluetooth.write("=== Jurababa CLI ===\r\n");
+    bluetooth.write("=== Jurababa CLI :) ===\r\n");
     bluetooth.drain();
     Log::setBluetoothInterface(&bluetooth);
     Log::setBluetoothPriority(LogPriority::INFO);
@@ -549,56 +548,12 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
 }
 
 // ----------------------------------------------------------------------------
-// Startup LED
-// ----------------------------------------------------------------------------
-static uint32_t grbPixel(uint8_t r, uint8_t g, uint8_t b)
-{
-    return (static_cast<uint32_t>(g) << 16u) | (static_cast<uint32_t>(r) << 8u) |
-           static_cast<uint32_t>(b);
-}
-
-static void putBootLedPixel(uint32_t grb)
-{
-#if WAVESHARE_ZERO_LED_ENABLE
-    static bool initialized = false;
-    static PIO  pio         = pio1;
-    static uint sm          = 0;
-
-    if (!initialized)
-    {
-        const uint offset = pio_add_program(pio, &ws2812_program);
-        ws2812_program_init(pio, sm, offset, PIN_WAVESHARE_WS2812, 800000.0f, false);
-        initialized = true;
-    }
-
-    pio_sm_put_blocking(pio, sm, grb << 8u);
-#else
-    (void)grb;
-#endif
-}
-
-static void flashBootLed()
-{
-#if WAVESHARE_ZERO_LED_ENABLE
-    const uint8_t level = static_cast<uint8_t>(BOOT_LED_BRIGHTNESS);
-    for (int i = 0; i < BOOT_LED_FLASH_COUNT; i++)
-    {
-        putBootLedPixel(grbPixel(0, level, 0));
-        sleep_ms(BOOT_LED_FLASH_ON_MS);
-        putBootLedPixel(0);
-        if (i < BOOT_LED_FLASH_COUNT - 1)
-            sleep_ms(BOOT_LED_FLASH_OFF_MS);
-    }
-#endif
-}
-
-// ----------------------------------------------------------------------------
 // Entry
 // ----------------------------------------------------------------------------
 int main()
 {
     stdio_init_all();
-    flashBootLed();
+    stage_led::flashBoot();
     sleep_ms(2000); // wait for USB-CDC enumeration
 
     Battery battery(PIN_BATTERY_ADC, 10000.0f, 5100.0f);

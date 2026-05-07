@@ -29,12 +29,22 @@
 #define PIN_IMU_RX 9 // IMU UART receive (TX from IMU)
 
 // ================= ToF Sensor Pins ================= //
-// VL53L0X Time-of-Flight sensors (I2C0: GP4=SDA, GP5=SCL)
-#define PIN_TOF_LEFT_XSHUT  8  // Left ToF shutdown (only sensor connected)
-#define PIN_TOF_FRONT_XSHUT 29 // Front ToF shutdown (not connected)
-#define PIN_TOF_RIGHT_XSHUT 15 // Right ToF shutdown (not connected)
+// VL53L0X Time-of-Flight sensors (I2C0: GP4=SDA, GP5=SCL).
+// All three sensors are wired and live; main.cpp instantiates each one and
+// the COMP-mode gesture detector reads all three. The `(not connected)`
+// comments that used to live here were stale.
+#define PIN_TOF_LEFT_XSHUT  8  // Left ToF shutdown
+#define PIN_TOF_FRONT_XSHUT 29 // Front ToF shutdown
+#define PIN_TOF_RIGHT_XSHUT 15 // Right ToF shutdown
 // We don't use the INTERRUPT PINS for the ToF yet.
 // They are wired to GP14, 26, 27 for future development.
+
+// ================= Panic-Abort Button ================= //
+// The Waveshare RP2040-Zero BOOTSEL button is reused at runtime as the
+// competition panic-abort. It is read via a brief XIP-suspend trick (see
+// firmware/app/bootsel_button.cpp) rather than via a GPIO pin. No GPIO is
+// reserved for it. If a larger external abort button is later added, GPIO
+// 14, 26, or 27 are the practical candidates (currently unused).
 
 // ================= Battery Monitor Pins ================= //
 #define PIN_BATTERY_ADC 28 // ADC0 for battery voltage divider

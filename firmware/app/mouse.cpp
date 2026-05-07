@@ -133,6 +133,23 @@ std::string headingUpper(const std::string& heading)
     return out;
 }
 
+const char* wallStateName(WallState state)
+{
+    switch (state)
+    {
+        case EXIT:
+            return "EXIT";
+        case WALL:
+            return "WALL";
+        case UNKNOWN:
+            return "UNKNOWN";
+        case VIRTUAL:
+            return "VIRTUAL";
+        default:
+            return "?";
+    }
+}
+
 std::string firstToken(const std::string& sequence, std::string* second = nullptr)
 {
     std::istringstream ss(sequence);
@@ -269,6 +286,7 @@ void Mouse::waitForMotion()
     while (!motion_->move_finished() || !motion_->turn_finished())
     {
         serviceSensors();
+        sample_search_front_latch();
         if (haltRequested())
         {
             motion_->emergency_stop();
@@ -276,6 +294,41 @@ void Mouse::waitForMotion()
         }
         sleep_ms(2);
     }
+#endif
+}
+
+void Mouse::begin_search_front_latch()
+{
+    search_front_wall_latched_  = false;
+    search_front_latch_mm_      = TOF_OUT_OF_RANGE_MM;
+    search_front_latch_enabled_ = !run_on_simulator && motion_ != nullptr;
+}
+
+void Mouse::finish_search_front_latch()
+{
+    search_front_latch_enabled_ = false;
+}
+
+void Mouse::clear_search_front_latch()
+{
+    search_front_latch_enabled_ = false;
+    search_front_wall_latched_  = false;
+    search_front_latch_mm_      = TOF_OUT_OF_RANGE_MM;
+}
+
+void Mouse::sample_search_front_latch()
+{
+#ifndef SIMULATOR_BUILD
+    if (!search_front_latch_enabled_ || run_on_simulator || motion_ == nullptr)
+        return;
+
+    const float front_mm = motion_->frontDistance();
+    if (!tof_wall::wallFront(front_mm))
+        return;
+
+    search_front_wall_latched_ = true;
+    if (front_mm < search_front_latch_mm_)
+        search_front_latch_mm_ = front_mm;
 #endif
 }
 
@@ -325,6 +378,7 @@ void Mouse::serviceSensors()
 
 void Mouse::begin_motion_sequence()
 {
+    clear_search_front_latch();
 #ifndef SIMULATOR_BUILD
     if (!run_on_simulator && motion_ != nullptr)
         motion_->begin_motion_sequence();
@@ -333,6 +387,7 @@ void Mouse::begin_motion_sequence()
 
 void Mouse::end_motion_sequence()
 {
+    clear_search_front_latch();
 #ifndef SIMULATOR_BUILD
     if (!run_on_simulator && motion_ != nullptr)
         motion_->end_motion_sequence();
@@ -578,9 +633,14 @@ void Mouse::move_ahead()
     LOG_INFO("move_ahead: adjust_forward_position=-" + fixed1(CELL_SIZE_MM) +
              " wait_until_position=" + fixed1(SENSING_POSITION_MM));
     apply_maze_heading_hold();
+    begin_search_front_latch();
     motion_->adjust_forward_position(-CELL_SIZE_MM);
     if (!wait_until_position(SENSING_POSITION_MM))
+    {
+        clear_search_front_latch();
         return;
+    }
+    finish_search_front_latch();
     motion_->set_position(SENSING_POSITION_MM);
 #endif
 }
@@ -663,9 +723,11 @@ void Mouse::turn_left()
         {
             motion_->set_position(HALF_CELL_MM);
             apply_maze_heading_hold_for_heading(target_heading);
+            begin_search_front_latch();
             motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_,
                           cruise_speed_mmps_, ROBOT_BASE_ACCEL_MMPS2);
             waitForMotion();
+            finish_search_front_latch();
             motion_->set_position(SENSING_POSITION_MM);
         }
 #endif
@@ -698,9 +760,11 @@ void Mouse::turn_right()
         {
             motion_->set_position(HALF_CELL_MM);
             apply_maze_heading_hold_for_heading(target_heading);
+            begin_search_front_latch();
             motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_,
                           cruise_speed_mmps_, ROBOT_BASE_ACCEL_MMPS2);
             waitForMotion();
+            finish_search_front_latch();
             motion_->set_position(SENSING_POSITION_MM);
         }
 #endif
@@ -723,9 +787,11 @@ void Mouse::turn_back()
     {
         motion_->set_position(HALF_CELL_MM);
         apply_maze_heading_hold_for_heading(target_heading);
+        begin_search_front_latch();
         motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_, cruise_speed_mmps_,
                       ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
+        finish_search_front_latch();
         motion_->set_position(SENSING_POSITION_MM);
     }
 #endif
@@ -809,6 +875,7 @@ bool Mouse::wait_until_position(float position_mm)
     while (motion_->position() < position_mm)
     {
         serviceSensors();
+        sample_search_front_latch();
         if (haltRequested())
         {
             motion_->emergency_stop();
@@ -890,17 +957,48 @@ void Mouse::update_map()
     const std::string front = maze_mouse_->directionAsString(maze_mouse_->currentDirectionArray());
     const std::string left  = maze_mouse_->directionLeft();
     const std::string right = maze_mouse_->directionRight();
-    const bool        left_wall  = wallLeft();
-    const bool        front_wall = wallFront();
-    const bool        right_wall = wallRight();
+    const bool        left_wall          = wallLeft();
+    const bool        instant_front_wall = wallFront();
+    const bool        front_wall         = instant_front_wall || search_front_wall_latched_;
+    const bool        right_wall         = wallRight();
+
+    auto log_known_conflict = [&](char direction, WallState observed_state)
+    {
+        const WallState known_state = cell->wallState(direction);
+        if (known_state == UNKNOWN || known_state == observed_state)
+            return;
+        LOG_ERROR("SEARCH MAP ignored conflicting wall observation cell=(" + std::to_string(x) +
+                  "," + std::to_string(y) + ") dir=" + std::string(1, direction) + " known=" +
+                  wallStateName(known_state) + " observed=" + wallStateName(observed_state));
+    };
+
+    log_known_conflict(front[0], front_wall ? WALL : EXIT);
+    log_known_conflict(left[0], left_wall ? WALL : EXIT);
+    log_known_conflict(right[0], right_wall ? WALL : EXIT);
 
     cell->updateWallState(front[0], front_wall ? WALL : EXIT);
     cell->updateWallState(left[0], left_wall ? WALL : EXIT);
     cell->updateWallState(right[0], right_wall ? WALL : EXIT);
 
-    LOG_INFO("SEARCH MAP cell=(" + std::to_string(x) + "," + std::to_string(y) + ") hdg=" +
-             headingUpper(maze_mouse_->currentDirection()) + " walls=" + (left_wall ? "L" : "-") +
-             (front_wall ? "F" : "-") + (right_wall ? "R" : "-"));
+    std::ostringstream map_log;
+    map_log << "SEARCH MAP cell=(" << x << "," << y
+            << ") hdg=" << headingUpper(maze_mouse_->currentDirection())
+            << " walls=" << (left_wall ? "L" : "-") << (front_wall ? "F" : "-")
+            << (right_wall ? "R" : "-");
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator && motion_ != nullptr)
+    {
+        map_log << " tof[L=" << fixed1(motion_->leftDistance())
+                << " F=" << fixed1(motion_->frontDistance())
+                << " R=" << fixed1(motion_->rightDistance())
+                << " instantF=" << (instant_front_wall ? 1 : 0)
+                << " latchF=" << (search_front_wall_latched_ ? 1 : 0);
+        if (search_front_wall_latched_)
+            map_log << " latch_mm=" << fixed1(search_front_latch_mm_);
+        map_log << "]";
+    }
+#endif
+    LOG_INFO(map_log.str());
 
     if (run_on_simulator)
     {
@@ -913,6 +1011,7 @@ void Mouse::update_map()
     }
 
     cell->markExplored();
+    clear_search_front_latch();
 }
 
 bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
@@ -958,6 +1057,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         if (motion_ == nullptr)
             return false;
         motion_->set_steering_mode(tof_wall::SteeringMode::STEERING_OFF);
+        begin_search_front_latch();
         if (m_handStart)
         {
             LOG_INFO("search_to: hand_start distance_mm=" + fixed1(START_CENTER_DISTANCE_MM) +
@@ -983,7 +1083,11 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         }
         motion_->set_position(HALF_CELL_MM);
         if (!wait_until_position(SENSING_POSITION_MM))
+        {
+            clear_search_front_latch();
             return false;
+        }
+        finish_search_front_latch();
         motion_->set_position(SENSING_POSITION_MM);
         motion_->set_steering_mode(tof_wall::SteeringMode::STEER_NORMAL);
     }
