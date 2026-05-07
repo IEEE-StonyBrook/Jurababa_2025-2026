@@ -23,8 +23,8 @@
 #define MOTOR_TM 0.080f  // seconds        (time constant)
 
 // Rotational motor model — from TURN-OL + TURN-STEP trials.
-#define ROT_KM 250.60f  // deg/s per volt of differential drive
-#define ROT_TM 0.10580f // seconds, rotational time constant
+#define ROT_KM 244.58f // deg/s per volt of differential drive
+#define ROT_TM 0.128f   // seconds, rotational time constant
 
 // ================ Feedforward (per motor) ============== //
 // V = kV * speed + kS + kA * accel (per wheel; characterized independently).
