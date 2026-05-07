@@ -32,7 +32,7 @@
 // becomes "100" after multiplication. We don't need accurate mm; we need
 // symmetric normalized units, which compile-time scaling delivers for free.
 #define TOF_SIDE_NOMINAL         100.0f
-#define TOF_LEFT_CALIBRATION_MM  120.0f // raw left ToF reading at center (re-measure!)
+#define TOF_LEFT_CALIBRATION_MM  118.0f // raw left ToF reading at center (re-measure!)
 #define TOF_RIGHT_CALIBRATION_MM 100.0f // raw right ToF reading at center (re-measure!)
 #define TOF_LEFT_SCALE           (TOF_SIDE_NOMINAL / TOF_LEFT_CALIBRATION_MM)
 #define TOF_RIGHT_SCALE          (TOF_SIDE_NOMINAL / TOF_RIGHT_CALIBRATION_MM)
@@ -48,14 +48,14 @@
 
 // UKMARS-style wall steering. Wall detection remains enabled regardless of
 // this switch; TOF_STEERING_ENABLE only controls whether side-wall error is
-// injected into the rotation PID. Keep disabled while search relies on pure
-// forward PID + IMU yaw hold.
+// injected into the rotation PID. Search also keeps IMU heading hold active,
+// so ToF steering should stay gentle and be treated as lateral trim.
 //
 // Jurababa yaw/omega convention: positive yaw = CCW (left), so a positive
 // side_error_norm (drifted right of center) commands a positive omega
 // (steer left). Sign matches the IMU's IMU_YAW_SIGN inversion done once
 // in the driver layer.
-#define TOF_STEERING_ENABLE                 0
+#define TOF_STEERING_ENABLE                 1
 #define TOF_STEERING_KP_DEGPS_PER_NOMINAL   0.33f
 #define TOF_STEERING_KD_DEG_PER_NOMINAL     0.0f
 #define TOF_STEERING_ADJUST_LIMIT_DEGPS     10.0f

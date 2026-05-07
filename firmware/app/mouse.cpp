@@ -977,6 +977,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         if (!wait_until_position(SENSING_POSITION_MM))
             return false;
         motion_->set_position(SENSING_POSITION_MM);
+        motion_->set_steering_mode(tof_wall::SteeringMode::STEER_NORMAL);
     }
 #endif
     if (run_on_simulator)
@@ -1079,10 +1080,20 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
             const float yaw_delta       = normalizeYawDelta(yaw_after - yaw_before);
             const float expected_yaw    = expectedYawForHeading(maze_mouse_->currentDirection());
             const float final_yaw_error = normalizeYawDelta(expected_yaw - yaw_after);
+            const tof_wall::WallState wall_state        = motion_->wallSteeringState();
+            const float               tof_steer_degps   = motion_->wallSteeringAdjustmentDegps();
+            const float               imu_steer_degps   = motion_->headingHoldAdjustmentDegps();
+            const float               total_steer_degps = tof_steer_degps + imu_steer_degps;
             action_log << " yaw=" << fixed1(yaw_before) << "->" << fixed1(yaw_after)
                        << " delta=" << signedFixed1(yaw_delta)
                        << " err=" << signedFixed1(final_yaw_error) << " pos=" << fixed1(pos_before)
-                       << "->" << fixed1(pos_after);
+                       << "->" << fixed1(pos_after)
+                       << " steer[tof=" << signedFixed1(tof_steer_degps)
+                       << " src=" << tof_wall::sourceName(wall_state.source)
+                       << " side=" << signedFixed1(wall_state.side_error_norm)
+                       << " imu=" << signedFixed1(imu_steer_degps)
+                       << " herr=" << signedFixed1(motion_->headingHoldErrorDeg())
+                       << " total=" << signedFixed1(total_steer_degps) << "]deg/s";
         }
         else
 #endif
