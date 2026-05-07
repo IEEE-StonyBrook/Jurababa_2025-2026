@@ -27,6 +27,7 @@
 
 // ================ Forward Speed Limits ================= //
 #define ROBOT_MAX_SEARCH_SPEED_MMPS  300.0f // Search mode cruise speed
+#define ROBOT_MAX_FAST_SPEED_MMPS    500.0f // Stage 3+ explored-path cruise (Mouse::cruiseSpeed)
 #define ROBOT_SEARCH_TURN_SPEED_MMPS 250.0f // Constant speed through search smooth turns
 
 // ================ Forward Acceleration ================= //

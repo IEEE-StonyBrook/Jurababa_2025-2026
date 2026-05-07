@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include "config/motion.h"
+
 class MazeMouse;
 class Motion;
 class Cell;
@@ -142,6 +144,13 @@ class Mouse
     void          setMovementStyle(MovementStyle style) { movement_style_ = style; }
     MovementStyle movementStyle() const { return movement_style_; }
 
+    // Forward cruise speed for straight-line cell traversal and post-turn
+    // sense-window legs. Defaults to ROBOT_MAX_SEARCH_SPEED_MMPS so search
+    // stages are unchanged. Stage 3+ explored-path runs override to a faster
+    // value (typically ROBOT_MAX_FAST_SPEED_MMPS) and restore on exit.
+    void  setCruiseSpeed(float mmps) { cruise_speed_mmps_ = mmps; }
+    float cruiseSpeed() const { return cruise_speed_mmps_; }
+
     // Maze wall state
     void setWall(int x, int y, const std::string& dir);
     void clearWall(int x, int y, const std::string& dir);
@@ -179,13 +188,14 @@ class Mouse
     // 2 ms sleep matches mazerunner-core's `delay(2)` cadence.
     void waitForMotion();
 
-    MazeMouse*    maze_mouse_     = nullptr;
-    Motion*       motion_         = nullptr;
-    HaltCheckFn   halt_check_     = nullptr;
-    char          phase_color_    = 'y';
-    MovementStyle movement_style_ = MovementStyle::Stationary;
-    State         state_          = State::FRESH_START;
-    bool          m_handStart     = false;
+    MazeMouse*    maze_mouse_        = nullptr;
+    Motion*       motion_            = nullptr;
+    HaltCheckFn   halt_check_        = nullptr;
+    char          phase_color_       = 'y';
+    MovementStyle movement_style_    = MovementStyle::Stationary;
+    State         state_             = State::FRESH_START;
+    bool          m_handStart        = false;
+    float         cruise_speed_mmps_ = ROBOT_MAX_SEARCH_SPEED_MMPS;
 
     std::array<int, 2>              start_cell_ = {0, 0};
     std::vector<std::array<int, 2>> goal_cells_ = {};

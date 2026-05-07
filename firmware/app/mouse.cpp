@@ -386,7 +386,7 @@ void Mouse::moveForwardHalf()
     else if (motion_ != nullptr)
     {
         apply_maze_heading_hold();
-        motion_->move(HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+        motion_->move(HALF_CELL_MM, cruise_speed_mmps_, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
     }
 #endif
@@ -401,11 +401,10 @@ bool Mouse::move_mm(float distance_mm)
 #ifndef SIMULATOR_BUILD
     if (motion_ == nullptr)
         return false;
-    LOG_INFO("MOTION move_mm: distance_mm=" + fixed1(distance_mm) +
-             " speed_mmps=" + fixed1(ROBOT_MAX_SEARCH_SPEED_MMPS) +
-             " accel_mmps2=" + fixed1(ROBOT_BASE_ACCEL_MMPS2));
+    LOG_INFO("MOTION move_mm: distance_mm=" + fixed1(distance_mm) + " speed_mmps=" +
+             fixed1(cruise_speed_mmps_) + " accel_mmps2=" + fixed1(ROBOT_BASE_ACCEL_MMPS2));
     apply_maze_heading_hold();
-    motion_->move(distance_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+    motion_->move(distance_mm, cruise_speed_mmps_, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
     waitForMotion();
     return !haltRequested();
 #else
@@ -448,7 +447,7 @@ void Mouse::moveForward()
     else if (motion_ != nullptr)
     {
         apply_maze_heading_hold();
-        motion_->move(CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+        motion_->move(CELL_SIZE_MM, cruise_speed_mmps_, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
     }
 #endif
@@ -471,8 +470,7 @@ void Mouse::moveForward(int steps)
     if (motion_ != nullptr)
     {
         apply_maze_heading_hold();
-        motion_->move(steps * CELL_SIZE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f,
-                      ROBOT_BASE_ACCEL_MMPS2);
+        motion_->move(steps * CELL_SIZE_MM, cruise_speed_mmps_, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
     }
 #endif
@@ -665,8 +663,8 @@ void Mouse::turn_left()
         {
             motion_->set_position(HALF_CELL_MM);
             apply_maze_heading_hold_for_heading(target_heading);
-            motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+            motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_,
+                          cruise_speed_mmps_, ROBOT_BASE_ACCEL_MMPS2);
             waitForMotion();
             motion_->set_position(SENSING_POSITION_MM);
         }
@@ -700,8 +698,8 @@ void Mouse::turn_right()
         {
             motion_->set_position(HALF_CELL_MM);
             apply_maze_heading_hold_for_heading(target_heading);
-            motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+            motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_,
+                          cruise_speed_mmps_, ROBOT_BASE_ACCEL_MMPS2);
             waitForMotion();
             motion_->set_position(SENSING_POSITION_MM);
         }
@@ -725,8 +723,8 @@ void Mouse::turn_back()
     {
         motion_->set_position(HALF_CELL_MM);
         apply_maze_heading_hold_for_heading(target_heading);
-        motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                      ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+        motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_, cruise_speed_mmps_,
+                      ROBOT_BASE_ACCEL_MMPS2);
         waitForMotion();
         motion_->set_position(SENSING_POSITION_MM);
     }

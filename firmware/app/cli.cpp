@@ -998,23 +998,40 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
         }
 
         case 3:
+        {
             printFormat("Stage 3: explored-only cardinal fast run to goal.\n");
             deps_.mouse->setPhaseColor('g');
-            return PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, deps_.goal_cells);
+            const float prev_cruise = deps_.mouse->cruiseSpeed();
+            deps_.mouse->setCruiseSpeed(ROBOT_MAX_FAST_SPEED_MMPS);
+            const bool ok =
+                PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, deps_.goal_cells);
+            deps_.mouse->setCruiseSpeed(prev_cruise);
+            return ok;
+        }
 
         case 4:
         {
             printFormat("Stage 4: explored-only cardinal fast return to start.\n");
             deps_.mouse->setPhaseColor('c');
-            std::vector<std::array<int, 2>> goals = {deps_.start_cell};
-            return PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, goals);
+            std::vector<std::array<int, 2>> goals       = {deps_.start_cell};
+            const float                     prev_cruise = deps_.mouse->cruiseSpeed();
+            deps_.mouse->setCruiseSpeed(ROBOT_MAX_FAST_SPEED_MMPS);
+            const bool ok = PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, goals);
+            deps_.mouse->setCruiseSpeed(prev_cruise);
+            return ok;
         }
 
         case 5:
+        {
             printFormat("Stage 5: explored-only diagonal fast run to goal.\n");
             deps_.mouse->setPhaseColor('G');
-            return PathUtils::traverseExploredDiagonalPath(deps_.mouse, deps_.maze_mouse,
-                                                           deps_.goal_cells);
+            const float prev_cruise = deps_.mouse->cruiseSpeed();
+            deps_.mouse->setCruiseSpeed(ROBOT_MAX_FAST_SPEED_MMPS);
+            const bool ok = PathUtils::traverseExploredDiagonalPath(deps_.mouse, deps_.maze_mouse,
+                                                                    deps_.goal_cells);
+            deps_.mouse->setCruiseSpeed(prev_cruise);
+            return ok;
+        }
     }
 
     return false;
