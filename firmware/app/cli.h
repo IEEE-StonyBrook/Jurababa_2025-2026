@@ -110,7 +110,7 @@ class CommandLineInterface
     void printMazeView(char mode);
     void printEncoderSnapshot();
     bool needsTof(const char* what);
-    bool startWithGesture(bool tof_available);
+    bool startWithGesture(bool tof_available, bool preserve_yaw = false);
     bool startCenter();
     enum class PathSegmentType
     {

@@ -1,6 +1,8 @@
 #include "navigation/path_utils.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <queue>
@@ -9,6 +11,8 @@
 
 #include "app/mouse.h"
 #include "common/log.h"
+#include "common/utils.h"
+#include "control/motion.h"
 #include "maze/maze.h"
 #include "maze/maze_mouse.h"
 #include "navigation/a_star.h"
@@ -19,6 +23,8 @@ namespace PathUtils
 {
 namespace
 {
+constexpr float kSpeedRunYawPreflightToleranceDeg = 20.0f;
+
 struct ExploredNode
 {
     Cell* cell;
@@ -53,6 +59,64 @@ class MotionSequenceGuard
 float manhattan(Cell* from, Cell* to)
 {
     return static_cast<float>(std::abs(from->x() - to->x()) + std::abs(from->y() - to->y()));
+}
+
+std::string fixed1(float value)
+{
+    char buffer[24];
+    std::snprintf(buffer, sizeof(buffer), "%.1f", static_cast<double>(value));
+    return buffer;
+}
+
+std::string signedFixed1(float value)
+{
+    char buffer[24];
+    std::snprintf(buffer, sizeof(buffer), "%+.1f", static_cast<double>(value));
+    return buffer;
+}
+
+float expectedYawForHeading(const std::string& heading)
+{
+    if (heading == "ne" || heading == "NE")
+        return -45.0f;
+    if (heading == "e" || heading == "E")
+        return -90.0f;
+    if (heading == "se" || heading == "SE")
+        return -135.0f;
+    if (heading == "s" || heading == "S")
+        return 180.0f;
+    if (heading == "sw" || heading == "SW")
+        return 135.0f;
+    if (heading == "w" || heading == "W")
+        return 90.0f;
+    if (heading == "nw" || heading == "NW")
+        return 45.0f;
+    return 0.0f;
+}
+
+bool speedRunYawPreflight(Mouse* mouse, MazeMouse* maze_mouse)
+{
+    if (mouse == nullptr || maze_mouse == nullptr || mouse->run_on_simulator)
+        return true;
+
+    Motion* motion = mouse->motion();
+    if (motion == nullptr)
+        return true;
+
+    const std::string heading      = maze_mouse->currentDirection();
+    const float       expected_yaw = expectedYawForHeading(heading);
+    const float       actual_yaw   = motion->yaw_deg();
+    const float       yaw_error    = utils::wrapAngle180(expected_yaw - actual_yaw);
+
+    LOG_INFO("Speed run yaw preflight: heading=" + heading +
+             " expected_yaw=" + fixed1(expected_yaw) + " actual_yaw=" + fixed1(actual_yaw) +
+             " err=" + signedFixed1(yaw_error));
+
+    if (std::fabs(yaw_error) <= kSpeedRunYawPreflightToleranceDeg)
+        return true;
+
+    LOG_ERROR("Speed run aborted: physical yaw does not match virtual heading.");
+    return false;
 }
 
 bool atAnyGoal(MazeMouse* maze_mouse, const std::vector<std::array<int, 2>>& goals)
@@ -214,6 +278,8 @@ bool traverseExploredPath(Mouse* mouse, MazeMouse* maze_mouse,
         LOG_INFO("Already at goal; no speed-run path needed.");
         return true;
     }
+    if (!speedRunYawPreflight(mouse, maze_mouse))
+        return false;
 
     MotionSequenceGuard motion_sequence(mouse);
     const MazeMask      previous_mask = maze_mouse->mazeMask();
@@ -248,6 +314,8 @@ bool traverseExploredDiagonalPath(Mouse* mouse, MazeMouse* maze_mouse,
         LOG_INFO("Already at goal; no speed-run path needed.");
         return true;
     }
+    if (!speedRunYawPreflight(mouse, maze_mouse))
+        return false;
 
     MotionSequenceGuard motion_sequence(mouse);
     const MazeMask      previous_mask = maze_mouse->mazeMask();

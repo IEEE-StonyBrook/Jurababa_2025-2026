@@ -221,7 +221,9 @@ void Motion::extend_move(float distance_mm)
 
 void Motion::begin_motion_sequence()
 {
-    reset_drive_system();
+    reset_drive_control();
+    clear_heading_hold();
+    set_steering_mode(tof_wall::SteeringMode::STEERING_OFF);
     motion_sequence_active_ = true;
 }
 

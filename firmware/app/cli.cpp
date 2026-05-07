@@ -965,8 +965,15 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
         return false;
     }
 
-    if (wait_for_start && !startWithGesture(true))
+    const bool preserve_yaw = (stage == 2 || stage == 4);
+    if (wait_for_start && !startWithGesture(true, preserve_yaw))
         return false;
+
+    if (stage == 3 || stage == 5)
+    {
+        deps_.maze_mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
+        deps_.mouse->set_heading("n");
+    }
 
     Cell*       current_cell = deps_.maze_mouse->currentCell();
     std::string current_text = current_cell != nullptr
@@ -1373,7 +1380,7 @@ bool CommandLineInterface::needsTof(const char* what)
     return false;
 }
 
-bool CommandLineInterface::startWithGesture(bool tof_available)
+bool CommandLineInterface::startWithGesture(bool tof_available, bool preserve_yaw)
 {
     halted_ = false;
     printFormat("Waiting for start gesture (wave hand / send G / BT START)...\n");
@@ -1403,8 +1410,12 @@ bool CommandLineInterface::startWithGesture(bool tof_available)
 
     if (deps_.sensor_mode == SensorMode::TOF && deps_.motion != nullptr)
     {
-        // UKMARS pattern: clear any prior motion before starting a new run.
-        deps_.motion->emergency_stop();
+        // Goal-bound stages and one-off commands start a fresh yaw frame.
+        // Return stages preserve the yaw frame learned during search.
+        if (preserve_yaw)
+            deps_.motion->reset_drive_control();
+        else
+            deps_.motion->emergency_stop();
     }
     return true;
 }
