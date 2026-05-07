@@ -103,18 +103,18 @@
 // ──────────────────────────────────────────────────────────────────────
 
 // Speed envelope (forward target velocity, mm/s)
-#define LINE_TARGET_SPEED_MMPS      400.0f
-#define LINE_MAX_SPEED_MMPS         600.0f
-#define LINE_MIN_SPEED_MMPS         200.0f
+#define LINE_TARGET_SPEED_MMPS      200.0f
+#define LINE_MAX_SPEED_MMPS         400.0f
+#define LINE_MIN_SPEED_MMPS         150.0f
 #define LINE_FOLLOW_RUN_DISTANCE_MM 100000.0f
 
 // PD steering — gain-scheduled vs current forward velocity so the
 // per-millimeter response stays consistent across the speed envelope.
 #define LINE_GAIN_REF_SPEED_MMPS    350.0f
 #define LINE_GAIN_SCHED_FLOOR_MMPS  200.0f
-#define LINE_KP_BASE_DEGPS_PER_SLOT 70.0f
-#define LINE_KD_BASE_DEG_PER_SLOT   4.5f
-#define LINE_OMEGA_LIMIT_DEGPS      500.0f
+#define LINE_KP_BASE_DEGPS_PER_SLOT 30.0f
+#define LINE_KD_BASE_DEG_PER_SLOT   2.5f
+#define LINE_OMEGA_LIMIT_DEGPS      240.0f
 
 // Error filter + predictive lookahead (substitutes for physical sensor
 // mounting offset ahead of the wheel axle).

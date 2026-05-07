@@ -102,6 +102,18 @@ class LineFollower
     char        lastRouteCommand() const;
     bool        lastRouteChoiceMatched() const;
 
+    // Run-statistics — accumulated from startFollowing() and frozen on stop().
+    // Modeled after PATH's per-segment + summary diagnostics so a single
+    // run can be debriefed end-to-end from the serial log.
+    uint32_t runDurationMs() const;
+    float    peakAbsErrorSlots() const;
+    float    peakAbsSteeringDegps() const;
+    float    peakVelocityMmps() const;
+    float    minVelocityMmps() const;
+    uint32_t intersectionCount() const;
+    uint32_t recoveryCount() const;
+    uint32_t saturationTicks() const; // ticks where |steer| == OMEGA_LIMIT
+
   private:
     enum class BranchDirection
     {
@@ -149,6 +161,18 @@ class LineFollower
     LineSensor::IntersectionEvent last_intersection_event_;
     char                          last_route_command_        = '-';
     bool                          last_route_choice_matched_ = true;
+
+    // Run statistics (accumulated while state == FollowingLine).
+    uint32_t run_start_ms_        = 0;
+    uint32_t run_end_ms_          = 0;
+    float    peak_abs_error_      = 0.0f;
+    float    peak_abs_steering_   = 0.0f;
+    float    peak_velocity_mmps_  = 0.0f;
+    float    min_velocity_mmps_   = 0.0f;
+    bool     min_velocity_seeded_ = false;
+    uint32_t intersection_count_  = 0;
+    uint32_t recovery_count_      = 0;
+    uint32_t saturation_ticks_    = 0;
 };
 
 #endif // CONTROL_LINE_FOLLOWER_H

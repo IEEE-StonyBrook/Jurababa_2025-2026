@@ -64,9 +64,19 @@ void Motion::resetControlHistory()
 
 void Motion::set_wall_distances(float left_mm, float front_mm, float right_mm)
 {
-    left_wall_mm_  = left_mm;
-    front_wall_mm_ = front_mm;
-    right_wall_mm_ = right_mm;
+    set_wall_distances(left_mm, front_mm, right_mm, left_mm, front_mm, right_mm);
+}
+
+void Motion::set_wall_distances(float left_raw_mm, float front_raw_mm, float right_raw_mm,
+                                float left_filtered_mm, float front_filtered_mm,
+                                float right_filtered_mm)
+{
+    left_raw_wall_mm_  = left_raw_mm;
+    front_raw_wall_mm_ = front_raw_mm;
+    right_raw_wall_mm_ = right_raw_mm;
+    left_wall_mm_      = left_filtered_mm;
+    front_wall_mm_     = front_filtered_mm;
+    right_wall_mm_     = right_filtered_mm;
 }
 
 void Motion::set_steering_mode(tof_wall::SteeringMode mode)
@@ -110,6 +120,21 @@ float Motion::frontDistance()
 float Motion::rightDistance()
 {
     return right_wall_mm_;
+}
+
+float Motion::leftRawDistance()
+{
+    return left_raw_wall_mm_;
+}
+
+float Motion::frontRawDistance()
+{
+    return front_raw_wall_mm_;
+}
+
+float Motion::rightRawDistance()
+{
+    return right_raw_wall_mm_;
 }
 
 tof_wall::WallState Motion::wallSteeringState() const

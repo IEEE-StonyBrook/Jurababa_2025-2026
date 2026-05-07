@@ -4,6 +4,11 @@
 #include <cstdint>
 
 #include "app/mouse.h"
+#include "config/sensors.h"
+
+#if TOF_FILTER_WINDOW != 3
+#error "FirmwareMouse ToF median filter expects TOF_FILTER_WINDOW == 3"
+#endif
 
 class ToF;
 
@@ -29,10 +34,25 @@ class FirmwareMouse : public Mouse
     void setTofSensors(ToF* left_tof, ToF* front_tof, ToF* right_tof);
 
   private:
-    ToF*     left_tof_         = nullptr;
-    ToF*     front_tof_        = nullptr;
-    ToF*     right_tof_        = nullptr;
-    uint32_t next_tof_poll_ms_ = 0;
+    class Median3Filter
+    {
+      public:
+        float update(float sample_mm);
+        void  reset();
+
+      private:
+        float   samples_[TOF_FILTER_WINDOW] = {};
+        uint8_t next_                       = 0;
+        uint8_t count_                      = 0;
+    };
+
+    ToF*          left_tof_  = nullptr;
+    ToF*          front_tof_ = nullptr;
+    ToF*          right_tof_ = nullptr;
+    Median3Filter left_filter_;
+    Median3Filter front_filter_;
+    Median3Filter right_filter_;
+    uint32_t      next_tof_poll_ms_ = 0;
 };
 
 #endif

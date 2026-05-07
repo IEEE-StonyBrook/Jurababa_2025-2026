@@ -366,6 +366,55 @@ void CommandLineInterface::loop()
             deps_.line_follower->update(LOOP_INTERVAL_S);
             if (deps_.motion != nullptr)
                 deps_.motion->update();
+
+            // LINE telemetry + button poll — only while actively following.
+            // The follower's other states (Idle/Stopping/Turning) are short or
+            // already loud enough on their own log lines, so we keep the
+            // periodic emission scoped to the running phase.
+            const bool line_running =
+                deps_.line_follower->state() == LineFollower::State::FollowingLine;
+            if (line_running)
+            {
+                if (!line_running_was_active_)
+                {
+                    // Edge: just entered running state from a turn or fresh
+                    // START. Reset pacing so the first telemetry line lands
+                    // ~kLineTelemetryTicks into the run, not immediately.
+                    line_telemetry_counter_   = 0;
+                    line_button_poll_counter_ = 0;
+                    line_running_was_active_  = true;
+                }
+                if (++line_telemetry_counter_ >= kLineTelemetryTicks)
+                {
+                    line_telemetry_counter_ = 0;
+                    printLineRunningTelemetry();
+                }
+                // BOOTSEL poll at ~10 Hz (50 ticks @ 500 Hz). Reading the
+                // BOOTSEL pin briefly suspends XIP, so we keep the cadence
+                // low. A 100 ms latency on a panic-stop press is fine.
+                if (++line_button_poll_counter_ >= 50)
+                {
+                    line_button_poll_counter_ = 0;
+                    if (abortRequested())
+                    {
+                        printFormat("LINE BOOTSEL pressed -> stopping run.\n");
+                        printLineRunSummary();
+                        deps_.line_follower->stop();
+                        // Wait for release so the next LINE START doesn't
+                        // immediately consume this still-held press.
+                        while (abortRequested())
+                            sleep_ms(20);
+                        sleep_ms(150);
+                    }
+                }
+            }
+            else if (line_running_was_active_)
+            {
+                // Edge: just left running state (turn, intersection, stop).
+                line_running_was_active_  = false;
+                line_telemetry_counter_   = 0;
+                line_button_poll_counter_ = 0;
+            }
         }
 
         sleep_until(next_tick);
@@ -1343,13 +1392,26 @@ void CommandLineInterface::handle_line_command(const Args& args)
 
     if (std::strcmp(args.argv[1], "START") == 0)
     {
+        // Arm-then-go pattern, mirroring COMP's BOOTSEL handshake. The
+        // banner prints the active config so a tail of the serial log
+        // unambiguously shows which tuning produced any given run.
+        printLineStartBanner();
+        if (!waitForLineStartButton())
+        {
+            printFormat("LINE START cancelled.\n");
+            return;
+        }
         deps_.line_follower->startFollowing();
-        printFormat("LINE START\n");
+        printFormat("LINE START -> FOLLOWING (target=%.0f mm/s, max=%.0f, min=%.0f)\n",
+                    static_cast<double>(LINE_TARGET_SPEED_MMPS),
+                    static_cast<double>(LINE_MAX_SPEED_MMPS),
+                    static_cast<double>(LINE_MIN_SPEED_MMPS));
         return;
     }
 
     if (std::strcmp(args.argv[1], "STOP") == 0)
     {
+        printLineRunSummary();
         deps_.line_follower->stop();
         printFormat("LINE STOP\n");
         return;
@@ -1718,7 +1780,10 @@ void CommandLineInterface::dumpSensorsOneShot()
     Motion* r = deps_.motion;
     if (r != nullptr)
     {
-        printFormat("ToF L=%d mm F=%d mm R=%d mm  yaw=%.1f deg\n",
+        printFormat("ToF raw  L=%d mm F=%d mm R=%d mm\n", static_cast<int>(r->leftRawDistance()),
+                    static_cast<int>(r->frontRawDistance()),
+                    static_cast<int>(r->rightRawDistance()));
+        printFormat("ToF filt L=%d mm F=%d mm R=%d mm  yaw=%.1f deg\n",
                     static_cast<int>(r->leftDistance()), static_cast<int>(r->frontDistance()),
                     static_cast<int>(r->rightDistance()), static_cast<double>(r->yaw_deg()));
     }
@@ -1805,6 +1870,153 @@ void CommandLineInterface::printLineSnapshot()
                 static_cast<double>(motion_steering), yesNo(motion_steering_valid), name);
     printFormat("  route: %s\n", route_status.c_str());
     printFormat("  %s\n", last_decision.c_str());
+}
+
+void CommandLineInterface::printLineStartBanner()
+{
+    if (deps_.line_follower == nullptr)
+        return;
+
+    // Tunable summary — captures the *parameters* of the run so a tail of
+    // the serial log can be matched back to a specific tuning.h commit.
+    // Mirrors the "PATH segments=N speed=X accel=Y..." entry line.
+    printFormat("LINE config: target=%.0f mm/s max=%.0f min=%.0f omega_limit=%.0f\n",
+                static_cast<double>(LINE_TARGET_SPEED_MMPS),
+                static_cast<double>(LINE_MAX_SPEED_MMPS), static_cast<double>(LINE_MIN_SPEED_MMPS),
+                static_cast<double>(LINE_OMEGA_LIMIT_DEGPS));
+    printFormat("LINE gains: Kp_base=%.1f Kd_base=%.2f ref_v=%.0f gain_floor_v=%.0f "
+                "alpha=%.2f lookahead=%.0f ms\n",
+                static_cast<double>(LINE_KP_BASE_DEGPS_PER_SLOT),
+                static_cast<double>(LINE_KD_BASE_DEG_PER_SLOT),
+                static_cast<double>(LINE_GAIN_REF_SPEED_MMPS),
+                static_cast<double>(LINE_GAIN_SCHED_FLOOR_MMPS),
+                static_cast<double>(LINE_ERROR_FILTER_ALPHA),
+                static_cast<double>(LINE_LOOKAHEAD_TIME_S * 1000.0f));
+    printFormat("LINE brake: gain=%.0f mm/s/slot lost_hold=%u ms lost_stop=%u ms recovery=%.2f\n",
+                static_cast<double>(LINE_BRAKE_GAIN_MMPS_PER_SLOT),
+                static_cast<unsigned>(LINE_LOST_HOLD_MS), static_cast<unsigned>(LINE_LOST_STOP_MS),
+                static_cast<double>(LINE_RECOVERY_AUTHORITY));
+    printFormat("LINE intersection: branch_bias=%.0f deg/s capture=%u ms lockout=%u ms\n",
+                static_cast<double>(LINE_BRANCH_STEER_BIAS_DEGPS),
+                static_cast<unsigned>(LINE_BRANCH_CAPTURE_MS),
+                static_cast<unsigned>(LINE_INTERSECTION_LOCKOUT_MS));
+
+    const char* route = deps_.line_follower->route();
+    if (route != nullptr && route[0] != '\0')
+        printFormat("LINE route: %s (%u steps)\n", route,
+                    static_cast<unsigned>(std::strlen(route)));
+    else
+        printFormat("LINE route: <empty> (intersections default to forward)\n");
+
+    if (deps_.battery != nullptr)
+        printFormat("LINE battery: %.2f V\n", static_cast<double>(deps_.battery->voltage()));
+
+    printFormat("LINE armed. Press BOOTSEL to start. Send 'X' / HALT to cancel.\n");
+}
+
+bool CommandLineInterface::waitForLineStartButton()
+{
+    halted_ = false;
+
+    // Wait for a fresh BOOTSEL transition: must see RELEASED first (in case
+    // the user is still holding from a prior press), then PRESSED. This is
+    // the same pattern used by COMP-resume in runCompetitionMode.
+    bool seen_released = !abortRequested();
+    while (true)
+    {
+        // Cancel paths — match the COMP idiom so users have one mental model.
+        Bluetooth* bt = deps_.bluetooth;
+        if (bt != nullptr)
+        {
+            Log::drainBluetooth();
+            bt->drain();
+            if (bt->hasCommand() && bt->command() == Bluetooth::Command::HALT)
+                return false;
+        }
+        int c = getchar_timeout_us(0);
+        if (c == 'X' || c == 'x')
+            return false;
+
+        const bool pressed = abortRequested();
+        if (!seen_released)
+        {
+            if (!pressed)
+                seen_released = true;
+        }
+        else if (pressed)
+        {
+            // Debounce + wait for release so the in-loop BOOTSEL stop poll
+            // doesn't immediately trigger from the same press.
+            sleep_ms(20);
+            while (abortRequested())
+                sleep_ms(20);
+            sleep_ms(100);
+            return true;
+        }
+
+        sleep_ms(20);
+    }
+}
+
+void CommandLineInterface::printLineRunningTelemetry()
+{
+    if (deps_.line_follower == nullptr)
+        return;
+
+    const float    velocity_now = deps_.motion != nullptr ? deps_.motion->velocity() : 0.0f;
+    const float    position_mm  = deps_.motion != nullptr ? deps_.motion->position() : 0.0f;
+    const uint32_t run_ms       = deps_.line_follower->runDurationMs();
+
+    // Compact one-liner — modeled on PATH's per-segment progress lines so a
+    // grep for "LINE run:" gives a clean time-series of the run.
+    printFormat("LINE run: t=%lu ms dist=%.0f mm v=%.0f/%.0f mm/s pos=%.2f err=%.2f filt=%.2f "
+                "steer=%+.0f deg/s sat_ticks=%lu lost=%s recov=%lu xings=%lu route=%u/%u\n",
+                static_cast<unsigned long>(run_ms), static_cast<double>(position_mm),
+                static_cast<double>(velocity_now),
+                static_cast<double>(deps_.line_follower->targetSpeedMmps()),
+                static_cast<double>(deps_.line_follower->linePosition()),
+                static_cast<double>(deps_.line_follower->lineError()),
+                static_cast<double>(deps_.line_follower->filteredLineError()),
+                static_cast<double>(deps_.line_follower->steeringAdjustmentDegps()),
+                static_cast<unsigned long>(deps_.line_follower->saturationTicks()),
+                yesNo(deps_.line_follower->lineLost()),
+                static_cast<unsigned long>(deps_.line_follower->recoveryCount()),
+                static_cast<unsigned long>(deps_.line_follower->intersectionCount()),
+                static_cast<unsigned>(deps_.line_follower->routeIndex()),
+                static_cast<unsigned>(std::strlen(deps_.line_follower->route())));
+}
+
+void CommandLineInterface::printLineRunSummary()
+{
+    if (deps_.line_follower == nullptr)
+        return;
+
+    const uint32_t run_ms = deps_.line_follower->runDurationMs();
+    if (run_ms == 0)
+        return; // never started — nothing meaningful to summarize.
+
+    const float distance_mm = deps_.motion != nullptr ? deps_.motion->position() : 0.0f;
+    const float avg_v_mmps  = (run_ms > 0) ? (distance_mm / (run_ms / 1000.0f)) : 0.0f;
+    const float sat_seconds = static_cast<float>(deps_.line_follower->saturationTicks()) *
+                              static_cast<float>(LOOP_INTERVAL_S);
+
+    // Modeled on PATH's "PATH done: ..." summary. Captures the peaks an
+    // operator would otherwise have to scrape from the running telemetry.
+    printFormat("LINE done: duration=%.2f s distance=%.0f mm avg_v=%.0f mm/s\n",
+                static_cast<double>(run_ms) / 1000.0, static_cast<double>(distance_mm),
+                static_cast<double>(avg_v_mmps));
+    printFormat("LINE peaks: |err|=%.2f slots |steer|=%.0f deg/s v=%.0f mm/s "
+                "v_min=%.0f mm/s sat=%.2f s\n",
+                static_cast<double>(deps_.line_follower->peakAbsErrorSlots()),
+                static_cast<double>(deps_.line_follower->peakAbsSteeringDegps()),
+                static_cast<double>(deps_.line_follower->peakVelocityMmps()),
+                static_cast<double>(deps_.line_follower->minVelocityMmps()),
+                static_cast<double>(sat_seconds));
+    printFormat("LINE counts: intersections=%lu recoveries=%lu route_index=%u/%u\n",
+                static_cast<unsigned long>(deps_.line_follower->intersectionCount()),
+                static_cast<unsigned long>(deps_.line_follower->recoveryCount()),
+                static_cast<unsigned>(deps_.line_follower->routeIndex()),
+                static_cast<unsigned>(std::strlen(deps_.line_follower->route())));
 }
 
 void CommandLineInterface::printMazeView(char mode)

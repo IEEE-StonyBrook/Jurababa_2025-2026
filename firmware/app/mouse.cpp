@@ -1050,9 +1050,12 @@ void Mouse::update_map()
 #ifndef SIMULATOR_BUILD
     if (!run_on_simulator && motion_ != nullptr)
     {
-        map_log << " tof[L=" << fixed1(motion_->leftDistance())
+        map_log << " tofRaw[L=" << fixed1(motion_->leftRawDistance())
+                << " F=" << fixed1(motion_->frontRawDistance())
+                << " R=" << fixed1(motion_->rightRawDistance())
+                << "] tofFilt[L=" << fixed1(motion_->leftDistance())
                 << " F=" << fixed1(motion_->frontDistance())
-                << " R=" << fixed1(motion_->rightDistance())
+                << " R=" << fixed1(motion_->rightDistance()) << "]"
                 << " instantF=" << (instant_front_wall ? 1 : 0)
                 << " latchF=" << (search_front_wall_latched_ ? 1 : 0);
         if (search_front_wall_latched_)

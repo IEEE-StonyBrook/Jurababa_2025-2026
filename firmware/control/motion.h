@@ -37,8 +37,11 @@ class Motion
     void reset();
 
     // === Wall sensing (ToF) ===
-    void                   set_wall_distances(float left_mm, float front_mm, float right_mm);
-    void                   set_steering_mode(tof_wall::SteeringMode mode);
+    void set_wall_distances(float left_mm, float front_mm, float right_mm);
+    void set_wall_distances(float left_raw_mm, float front_raw_mm, float right_raw_mm,
+                            float left_filtered_mm, float front_filtered_mm,
+                            float right_filtered_mm);
+    void set_steering_mode(tof_wall::SteeringMode mode);
     tof_wall::SteeringMode steeringMode() const;
     bool                   wallLeft();
     bool                   wallFront();
@@ -49,6 +52,9 @@ class Motion
     float                  leftDistance();
     float                  frontDistance();
     float                  rightDistance();
+    float                  leftRawDistance();
+    float                  frontRawDistance();
+    float                  rightRawDistance();
     tof_wall::WallState    wallSteeringState() const;
     float                  wallSteeringAdjustmentDegps() const;
     WallSteeringStats      wallSteeringStats() const;
@@ -140,13 +146,14 @@ class Motion
     float prev_right_cmd_vel_mmps_ = 0.0f;
     bool  motion_sequence_active_  = false;
 
-    // ToFs are physically read outside Motion, then cached here for wall
-    // detection and optional UKMARS-style steering diagnostics. Search
-    // straightness currently comes from IMU yaw hold unless
-    // TOF_STEERING_ENABLE is turned back on.
-    float left_wall_mm_  = 0.0f;
-    float front_wall_mm_ = 0.0f;
-    float right_wall_mm_ = 0.0f;
+    // ToFs are physically read and filtered outside Motion. Filtered values
+    // feed wall detection/steering; raw values are kept only for diagnostics.
+    float left_raw_wall_mm_  = 0.0f;
+    float front_raw_wall_mm_ = 0.0f;
+    float right_raw_wall_mm_ = 0.0f;
+    float left_wall_mm_      = 0.0f;
+    float front_wall_mm_     = 0.0f;
+    float right_wall_mm_     = 0.0f;
 
     tof_wall::WallState      latest_wall_state_{};
     tof_wall::SteeringMode   steering_mode_ = tof_wall::SteeringMode::STEERING_OFF;

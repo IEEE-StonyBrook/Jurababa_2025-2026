@@ -111,6 +111,10 @@ class CommandLineInterface
     void handle_path_command(const Args& args);
     void handle_center_command(const Args& args);
     void handle_line_command(const Args& args);
+    bool waitForLineStartButton();
+    void printLineStartBanner();
+    void printLineRunningTelemetry();
+    void printLineRunSummary();
     void clear_input_buffer();
     void handleBluetoothCommand();
     bool run_competition_stage(int stage, bool wait_for_start);
@@ -161,6 +165,14 @@ class CommandLineInterface
 
     int  last_function_ = -1;
     bool halted_        = false;
+
+    // LINE telemetry pacing — counts 500 Hz ticks while LineFollower is in
+    // FollowingLine state, prints a one-line PATH-style telemetry every
+    // kLineTelemetryTicks (250 = 500 ms). Reset on LINE START.
+    static constexpr uint32_t kLineTelemetryTicks       = 250;
+    uint32_t                  line_telemetry_counter_   = 0;
+    uint32_t                  line_button_poll_counter_ = 0;
+    bool                      line_running_was_active_  = false;
 
     // True while handle_comp_command is in its gesture-armed wait. Lets the
     // single-letter parser route G/H/J into comp_pending_trigger_ instead of

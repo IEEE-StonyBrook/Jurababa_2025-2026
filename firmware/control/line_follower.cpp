@@ -83,8 +83,22 @@ void LineFollower::startFollowing()
     turn_done_ = true;
     resetControlHistory();
     route_index_       = 0;
-    last_line_seen_ms_ = to_ms_since_boot(get_absolute_time());
+    const uint32_t now = to_ms_since_boot(get_absolute_time());
+    last_line_seen_ms_ = now;
     line_seen_         = true;
+
+    // Reset run statistics so each LINE START produces an independent debrief.
+    run_start_ms_        = now;
+    run_end_ms_          = 0;
+    peak_abs_error_      = 0.0f;
+    peak_abs_steering_   = 0.0f;
+    peak_velocity_mmps_  = 0.0f;
+    min_velocity_mmps_   = 0.0f;
+    min_velocity_seeded_ = false;
+    intersection_count_  = 0;
+    recovery_count_      = 0;
+    saturation_ticks_    = 0;
+
     motion_->reset_drive_system();
     // start_move sets up the forward profile with a generous accel so that
     // per-tick set_target_velocity() updates from the speed scheduler track
@@ -161,8 +175,10 @@ void LineFollower::followLine(float dt)
         latest_target_speed_mmps_ = LINE_MIN_SPEED_MMPS;
         if (!recovery_active_)
         {
+            ++recovery_count_;
             LOG_INFO("LineFollower: recovery start lost_ms=" << lost_ms << " steer="
-                                                             << latest_steering_degps_ << " deg/s");
+                                                             << latest_steering_degps_ << " deg/s"
+                                                             << " count=" << recovery_count_);
             recovery_active_ = true;
         }
         motion_->set_line_steering_adjustment_degps(latest_steering_degps_, true);
@@ -243,6 +259,23 @@ void LineFollower::followLine(float dt)
     latest_steering_degps_    = steering_degps;
     latest_target_speed_mmps_ = v_target;
 
+    // Run-statistics accumulation (PATH-style aggregates for debrief).
+    const float abs_err = fabsf(filtered_line_error_);
+    if (abs_err > peak_abs_error_)
+        peak_abs_error_ = abs_err;
+    const float abs_steer = fabsf(steering_degps);
+    if (abs_steer > peak_abs_steering_)
+        peak_abs_steering_ = abs_steer;
+    if (abs_steer >= LINE_OMEGA_LIMIT_DEGPS - 0.5f)
+        ++saturation_ticks_;
+    if (v_abs > peak_velocity_mmps_)
+        peak_velocity_mmps_ = v_abs;
+    if (!min_velocity_seeded_ || v_abs < min_velocity_mmps_)
+    {
+        min_velocity_mmps_   = v_abs;
+        min_velocity_seeded_ = true;
+    }
+
     motion_->set_line_steering_adjustment_degps(steering_degps, true);
     motion_->set_target_velocity(v_target);
 
@@ -316,6 +349,7 @@ void LineFollower::evaluateIntersectionCommand(uint32_t now_ms)
     last_intersection_ms_        = now_ms;
     intersection_lockout_end_ms_ = now_ms + LINE_INTERSECTION_LOCKOUT_MS;
     last_intersection_event_     = event;
+    ++intersection_count_;
 
     char    command       = 'F';
     uint8_t command_index = route_index_;
@@ -371,6 +405,11 @@ void LineFollower::evaluateIntersectionCommand(uint32_t now_ms)
 
 void LineFollower::stop()
 {
+    // Freeze run end before resetControlHistory wipes derived state, so the
+    // CLI can still print a debrief from runDurationMs() / peak* accessors.
+    if (run_start_ms_ != 0 && run_end_ms_ == 0)
+        run_end_ms_ = to_ms_since_boot(get_absolute_time());
+
     state_ = State::Stopping;
     motion_->clear_line_steering_adjustment();
     motion_->emergency_stop();
@@ -541,4 +580,47 @@ char LineFollower::lastRouteCommand() const
 bool LineFollower::lastRouteChoiceMatched() const
 {
     return last_route_choice_matched_;
+}
+
+uint32_t LineFollower::runDurationMs() const
+{
+    if (run_start_ms_ == 0)
+        return 0;
+    const uint32_t end = (run_end_ms_ != 0) ? run_end_ms_ : to_ms_since_boot(get_absolute_time());
+    return end - run_start_ms_;
+}
+
+float LineFollower::peakAbsErrorSlots() const
+{
+    return peak_abs_error_;
+}
+
+float LineFollower::peakAbsSteeringDegps() const
+{
+    return peak_abs_steering_;
+}
+
+float LineFollower::peakVelocityMmps() const
+{
+    return peak_velocity_mmps_;
+}
+
+float LineFollower::minVelocityMmps() const
+{
+    return min_velocity_seeded_ ? min_velocity_mmps_ : 0.0f;
+}
+
+uint32_t LineFollower::intersectionCount() const
+{
+    return intersection_count_;
+}
+
+uint32_t LineFollower::recoveryCount() const
+{
+    return recovery_count_;
+}
+
+uint32_t LineFollower::saturationTicks() const
+{
+    return saturation_ticks_;
 }
