@@ -30,11 +30,13 @@ bool traversePath(Mouse* mouse, MazeMouse* maze_mouse, const std::vector<std::ar
 
 // Execute one cardinal speed path using only cells already explored.
 bool traverseExploredPath(Mouse* mouse, MazeMouse* maze_mouse,
-                          const std::vector<std::array<int, 2>>& goals);
+                          const std::vector<std::array<int, 2>>& goals,
+                          bool                                   start_from_back_wall = false);
 
 // Execute one diagonalized speed path using only cells already explored.
 bool traverseExploredDiagonalPath(Mouse* mouse, MazeMouse* maze_mouse,
-                                  const std::vector<std::array<int, 2>>& goals);
+                                  const std::vector<std::array<int, 2>>& goals,
+                                  bool start_from_back_wall = false);
 
 /**
  * @brief Detect walls around current position and update maze

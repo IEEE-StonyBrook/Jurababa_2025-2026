@@ -38,6 +38,11 @@ void setGoalReached();
 // operator has already pressed BOOTSEL so spinning briefly is acceptable.
 void flashAborted();
 
+// Solid red — COMP is paused after an abort, waiting for the operator to
+// press BOOTSEL a second time to resume. Distinct from flashAborted (the
+// announcement) and from setArmed (white pulse, ready for gesture).
+void setPaused();
+
 // LED off.
 void setIdle();
 

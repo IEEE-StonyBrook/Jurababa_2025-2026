@@ -656,7 +656,7 @@ void CommandLineInterface::handle_comp_command(const Args& args)
 
         if (!ok)
         {
-            // Roll back wall data and pose so the next gesture starts from a
+            // Roll back wall data and pose so the next run starts from a
             // clean, trusted state. The operator picks up the mouse, places
             // it back at start, and re-gestures.
             if (deps_.maze != nullptr)
@@ -667,6 +667,67 @@ void CommandLineInterface::handle_comp_command(const Args& args)
                 deps_.mouse->setUp(deps_.start_cell, deps_.goal_cells);
             printFormat("COMP run aborted: wall data rolled back, pose reset to start.\n");
             stage_led::flashAborted();
+
+            // Enter PAUSED state. COMP does NOT auto-arm — the operator must
+            // press BOOTSEL a second time to resume. This gives time to
+            // inspect, reposition, and prep without the gesture detector
+            // firing on incidental hand motion. Bluetooth HALT or serial
+            // 'X'/'x' exit COMP entirely from the paused state.
+            stage_led::setPaused();
+            printFormat("COMP paused. BOOTSEL again to resume; HALT or X to exit.\n");
+
+            // Step 1: wait for the BOOTSEL press that triggered the abort to
+            // be released. Without this, the next loop iteration sees the
+            // line still low and would treat it as the resume press.
+            while (abortRequested())
+                sleep_ms(20);
+            sleep_ms(150); // settle / debounce
+
+            // Step 2: wait for a fresh press, while still honoring HALT/X.
+            bool exit_comp = false;
+            while (true)
+            {
+                if (abortRequested())
+                    break;
+
+                Bluetooth* bt = deps_.bluetooth;
+                if (bt != nullptr)
+                {
+                    Log::drainBluetooth();
+                    bt->drain();
+                    if (bt->hasCommand() && bt->command() == Bluetooth::Command::HALT)
+                    {
+                        exit_comp = true;
+                        break;
+                    }
+                }
+                int c = getchar_timeout_us(0);
+                if (c == 'X' || c == 'x')
+                {
+                    exit_comp = true;
+                    break;
+                }
+
+                sleep_ms(20);
+            }
+
+            if (exit_comp)
+            {
+                stage_led::setIdle();
+                printFormat("COMP exit (paused).\n");
+                return;
+            }
+
+            // Step 3: wait for the resume press to be released so the next
+            // call to waitForCompetitionGesture doesn't see a held BOOTSEL
+            // and immediately CANCEL into another exit.
+            while (abortRequested())
+                sleep_ms(20);
+            sleep_ms(150);
+
+            printFormat("COMP resume.\n");
+            // Falls through to the top of the while(true): setArmed() and
+            // wait for the next gesture against the rolled-back maze.
         }
     }
 }
@@ -1090,6 +1151,8 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
 
     if (stage == 1 || stage == 3 || stage == 5)
     {
+        if (!wait_for_start && deps_.sensor_mode == SensorMode::TOF && deps_.motion != nullptr)
+            deps_.motion->reset_drive_system();
         deps_.maze_mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
         deps_.mouse->set_heading("n");
     }
@@ -1131,8 +1194,8 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
             deps_.mouse->setPhaseColor('g');
             const float prev_cruise = deps_.mouse->cruiseSpeed();
             deps_.mouse->setCruiseSpeed(ROBOT_MAX_FAST_SPEED_MMPS);
-            const bool ok =
-                PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, deps_.goal_cells);
+            const bool ok = PathUtils::traverseExploredPath(
+                deps_.mouse, deps_.maze_mouse, deps_.goal_cells, /*start_from_back_wall=*/true);
             deps_.mouse->setCruiseSpeed(prev_cruise);
             return ok;
         }
@@ -1144,7 +1207,8 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
             std::vector<std::array<int, 2>> goals       = {deps_.start_cell};
             const float                     prev_cruise = deps_.mouse->cruiseSpeed();
             deps_.mouse->setCruiseSpeed(ROBOT_MAX_FAST_SPEED_MMPS);
-            const bool ok = PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, goals);
+            const bool ok = PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, goals,
+                                                            /*start_from_back_wall=*/false);
             deps_.mouse->setCruiseSpeed(prev_cruise);
             return ok;
         }
@@ -1156,7 +1220,8 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
             const float prev_cruise = deps_.mouse->cruiseSpeed();
             deps_.mouse->setCruiseSpeed(ROBOT_MAX_FAST_SPEED_MMPS);
             const bool ok = PathUtils::traverseExploredDiagonalPath(deps_.mouse, deps_.maze_mouse,
-                                                                    deps_.goal_cells);
+                                                                    deps_.goal_cells,
+                                                                    /*start_from_back_wall=*/true);
             deps_.mouse->setCruiseSpeed(prev_cruise);
             return ok;
         }
@@ -1685,8 +1750,9 @@ void CommandLineInterface::help_debug()
     printFormat("       front wave -> Stage 1+2 (search and return)\n");
     printFormat("       right wave -> Stage 3 (cardinal fast run)\n");
     printFormat("       left  wave -> Stage 5 (diagonal fast run)\n");
-    printFormat("       BOOTSEL    -> abort current run / exit COMP\n");
-    printFormat("       (abort rolls back wall data added during the aborted run)\n");
+    printFormat("       BOOTSEL    -> abort current run, then pause\n");
+    printFormat("       BOOTSEL    -> (while paused) resume to armed\n");
+    printFormat("       (abort rolls back wall data; HALT/X while paused exits COMP)\n");
     printFormat("RESET : reset search state without rebooting\n");
     printFormat("HALT : stop motion\n");
 }
