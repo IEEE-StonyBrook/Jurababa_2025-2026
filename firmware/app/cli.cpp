@@ -617,6 +617,24 @@ void CommandLineInterface::handle_comp_command(const Args& args)
                     sleep_ms(1000);
                     ok = run_competition_stage(2, /*wait_for_start=*/false);
                 }
+                if (ok)
+                {
+                    // After Stage 2 the mouse is parked at the start cell
+                    // centre, facing the direction it came from. Spin 180 so
+                    // it faces the canonical start orientation, then reverse
+                    // by HALF_CELL - WHEEL_RADIUS so the rear of the wheel
+                    // ends flush against the back wall — same physical pose
+                    // a hand-placed start would have. Hold for ~2.5 s so the
+                    // operator can readjust before the next gesture.
+                    constexpr float kBackToWallMm   = HALF_CELL_MM - (WHEEL_DIAMETER_MM / 2.0f);
+                    constexpr float kBackSpeedMmps  = 80.0f;
+                    constexpr float kBackAccelMmps2 = 1000.0f;
+                    printFormat("COMP: 180-turn + reverse %.1f mm to start wall.\n", kBackToWallMm);
+                    stage_led::setGoalReached();
+                    deps_.mouse->turn_IP180();
+                    deps_.mouse->move_physical(-kBackToWallMm, kBackSpeedMmps, kBackAccelMmps2);
+                    sleep_ms(2500);
+                }
                 break;
 
             case StartTrigger::RIGHT_WAVE:

@@ -12,7 +12,8 @@ enum class SteeringSource : uint8_t
 {
     None,
     Left,
-    Right
+    Right,
+    Both
 };
 
 enum class SteeringMode : uint8_t
@@ -59,6 +60,8 @@ inline const char* sourceName(SteeringSource source)
             return "LEFT";
         case SteeringSource::Right:
             return "RIGHT";
+        case SteeringSource::Both:
+            return "BOTH";
         case SteeringSource::None:
         default:
             return "NONE";
@@ -152,22 +155,13 @@ inline WallState evaluate(float left_mm, float front_mm, float right_mm,
             state.source           = SteeringSource::Right;
         }
     }
-    // Picker form lifted directly from mazerunner sensors.h. Closer wall
-    // wins, with the same 2× factor applied in single-wall and both-wall
-    // cases so the effective steering gain doesn't halve when one wall ends.
     else if (state.left_wall && state.right_wall)
     {
-        // Closer wall = smaller normalized reading (smaller mm × scale).
-        if (lss_norm < rss_norm)
-        {
-            state.side_error_norm = 2.0f * state.left_error_norm;
-            state.source          = SteeringSource::Left;
-        }
-        else
-        {
-            state.side_error_norm = 2.0f * state.right_error_norm;
-            state.source          = SteeringSource::Right;
-        }
+        // ToF mm readings are noisier than UKMARS IR counts. In a two-wall
+        // corridor, fusing both sides avoids LEFT/RIGHT source chatter from
+        // the old "closer wall wins" picker.
+        state.side_error_norm  = state.left_error_norm + state.right_error_norm;
+        state.source           = SteeringSource::Both;
         state.side_error_valid = true;
     }
     else if (state.left_wall)

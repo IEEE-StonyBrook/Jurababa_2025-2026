@@ -74,23 +74,45 @@ void writeDiagnostic(Bluetooth* bt, const char* text)
 }
 
 // Read a ToF and clamp invalid/open-space readings to "far" (high+1) so a
-// sensor dropout never looks like a hand-close transition. Returns the
-// interpreted distance for the state machine; the raw mm is returned via
-// out_raw_mm for diagnostics.
-uint32_t readToFDistance(ToF* tof, uint32_t high_mm, int16_t& out_raw_mm)
+// sensor dropout never looks like a hand-close transition. The optional
+// `scale` factor normalizes raw mm to the codebase's per-side nominal
+// units (TOF_LEFT_SCALE / TOF_RIGHT_SCALE for sides; 1.0f for front). The
+// state-machine threshold parameters live in whatever unit the caller
+// chose — raw mm or nominal — and `scale` makes the ToF reading match.
+//
+// out_raw_mm is the unscaled chip reading, kept for diagnostic logging.
+uint32_t readToFDistance(ToF* tof, uint32_t high_threshold, int16_t& out_raw_mm, float scale = 1.0f)
 {
     out_raw_mm = 0;
     if (tof == nullptr)
-        return high_mm + 1;
+        return high_threshold + 1;
 
     const float raw_f = tof->get_distance();
     const bool  valid = raw_f > 0.0f && raw_f < TOF_OUT_OF_RANGE_MM;
     if (!valid)
-        return high_mm + 1;
+        return high_threshold + 1;
 
-    out_raw_mm = static_cast<int16_t>(raw_f);
-    return static_cast<uint32_t>(out_raw_mm);
+    out_raw_mm           = static_cast<int16_t>(raw_f);
+    const float scaled_f = raw_f * scale;
+    return scaled_f <= 0.0f ? 0u : static_cast<uint32_t>(scaled_f);
 }
+
+// Per-axis hysteresis thresholds for waitForCompetitionGesture.
+//
+// Front uses raw chip mm because the start cell is normally open ahead of
+// the mouse, so a wave's "clear" reading rises to TOF_OUT_OF_RANGE and the
+// detector re-arms cleanly.
+//
+// Side ToFs use nominal units (TOF_LEFT_SCALE / TOF_RIGHT_SCALE applied)
+// so per-unit chip bias is removed and a side wall reads ~TOF_SIDE_NOMINAL
+// (100) regardless of which side. Side high-threshold sits *below* 100 so
+// the wall reading itself satisfies the "hand cleared" condition — without
+// this, the first gesture fires but the machine wedges in WAVE_LOW because
+// the wall keeps the reading from ever climbing past 110.
+constexpr uint32_t kFrontLowMm   = 80;
+constexpr uint32_t kFrontHighMm  = 110;
+constexpr uint32_t kSideLowNorm  = 50; // hand clearly closer than the wall
+constexpr uint32_t kSideHighNorm = 85; // wall reading (~100 norm) clears this
 } // namespace
 
 StartTrigger waitForStartGesture(Bluetooth* bt, ToF* front_tof, uint32_t low_mm, uint32_t high_mm)
@@ -150,6 +172,19 @@ StartTrigger waitForStartGesture(Bluetooth* bt, ToF* front_tof, uint32_t low_mm,
 StartTrigger waitForCompetitionGesture(Bluetooth* bt, ToF* front_tof, ToF* right_tof, ToF* left_tof,
                                        uint32_t low_mm, uint32_t high_mm)
 {
+    // Front uses caller-supplied raw-mm thresholds (defaults match
+    // waitForStartGesture). Sides use nominal-unit thresholds with per-side
+    // scale factors, matching the codebase's TOF_SIDE_NOMINAL convention so
+    // left and right behave symmetrically regardless of chip bias and so the
+    // wall reading clears the high threshold (otherwise the wave detector
+    // wedges in WAVE_LOW after the first gesture).
+    (void)low_mm;
+    (void)high_mm;
+    const uint32_t front_low  = kFrontLowMm;
+    const uint32_t front_high = kFrontHighMm;
+    const uint32_t side_low   = kSideLowNorm;
+    const uint32_t side_high  = kSideHighNorm;
+
     WaveMachine front;
     WaveMachine right;
     WaveMachine left;
@@ -189,22 +224,27 @@ StartTrigger waitForCompetitionGesture(Bluetooth* bt, ToF* front_tof, ToF* right
         if (abortRequested())
             return StartTrigger::CANCELLED;
 
-        int16_t  raw_front = 0;
-        int16_t  raw_right = 0;
-        int16_t  raw_left  = 0;
-        uint32_t front_d   = readToFDistance(front_tof, high_mm, raw_front);
-        uint32_t right_d   = readToFDistance(right_tof, high_mm, raw_right);
-        uint32_t left_d    = readToFDistance(left_tof, high_mm, raw_left);
+        int16_t        raw_front = 0;
+        int16_t        raw_right = 0;
+        int16_t        raw_left  = 0;
+        const uint32_t front_d   = readToFDistance(front_tof, front_high, raw_front, 1.0f);
+        const uint32_t right_d = readToFDistance(right_tof, side_high, raw_right, TOF_RIGHT_SCALE);
+        const uint32_t left_d  = readToFDistance(left_tof, side_high, raw_left, TOF_LEFT_SCALE);
 
         uint32_t now_ms = to_ms_since_boot(get_absolute_time());
         if (now_ms - last_report_ms >= 500)
         {
-            char report[200];
-            std::snprintf(report, sizeof(report),
-                          "COMP gesture front=%d(%s) right=%d(%s) left=%d(%s) low=%lu high=%lu\n",
-                          raw_front, stateName(front.state), raw_right, stateName(right.state),
-                          raw_left, stateName(left.state), static_cast<unsigned long>(low_mm),
-                          static_cast<unsigned long>(high_mm));
+            char report[220];
+            std::snprintf(
+                report, sizeof(report),
+                "COMP gesture front=%dmm(%s) right=%dmm->%lunorm(%s) "
+                "left=%dmm->%lunorm(%s) "
+                "front_thr=%lu/%lu side_thr=%lu/%lu\n",
+                raw_front, stateName(front.state), raw_right, static_cast<unsigned long>(right_d),
+                stateName(right.state), raw_left, static_cast<unsigned long>(left_d),
+                stateName(left.state), static_cast<unsigned long>(front_low),
+                static_cast<unsigned long>(front_high), static_cast<unsigned long>(side_low),
+                static_cast<unsigned long>(side_high));
             writeDiagnostic(bt, report);
             last_report_ms = now_ms;
         }
@@ -213,9 +253,9 @@ StartTrigger waitForCompetitionGesture(Bluetooth* bt, ToF* front_tof, ToF* right
         // front > right > left, but in practice only one machine fires per
         // gesture because each sensor's range covers a different region of
         // space relative to the robot.
-        const bool front_fired = front_tof != nullptr && front.tick(front_d, low_mm, high_mm);
-        const bool right_fired = right_tof != nullptr && right.tick(right_d, low_mm, high_mm);
-        const bool left_fired  = left_tof != nullptr && left.tick(left_d, low_mm, high_mm);
+        const bool front_fired = front_tof != nullptr && front.tick(front_d, front_low, front_high);
+        const bool right_fired = right_tof != nullptr && right.tick(right_d, side_low, side_high);
+        const bool left_fired  = left_tof != nullptr && left.tick(left_d, side_low, side_high);
 
         if (front_fired)
             return StartTrigger::FRONT_WAVE;

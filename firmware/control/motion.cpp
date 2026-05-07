@@ -57,6 +57,7 @@ void Motion::resetControlHistory()
     latest_wall_state_                    = {};
     latest_steering_adjustment_degps_     = 0.0f;
     latest_heading_hold_adjustment_degps_ = 0.0f;
+    resetWallSteeringStats();
 }
 
 void Motion::set_wall_distances(float left_mm, float front_mm, float right_mm)
@@ -117,6 +118,33 @@ tof_wall::WallState Motion::wallSteeringState() const
 float Motion::wallSteeringAdjustmentDegps() const
 {
     return latest_steering_adjustment_degps_;
+}
+
+Motion::WallSteeringStats Motion::wallSteeringStats() const
+{
+    WallSteeringStats stats;
+    stats.peak_degps = wall_steering_peak_degps_;
+    stats.average_degps =
+        wall_steering_samples_ > 0
+            ? wall_steering_sum_degps_ / static_cast<float>(wall_steering_samples_)
+            : 0.0f;
+    stats.samples        = wall_steering_samples_;
+    stats.source_changes = wall_steering_source_changes_;
+    stats.both_samples   = wall_steering_both_samples_;
+    stats.single_samples = wall_steering_single_samples_;
+    return stats;
+}
+
+void Motion::resetWallSteeringStats()
+{
+    wall_steering_peak_degps_        = 0.0f;
+    wall_steering_sum_degps_         = 0.0f;
+    wall_steering_samples_           = 0;
+    wall_steering_source_changes_    = 0;
+    wall_steering_both_samples_      = 0;
+    wall_steering_single_samples_    = 0;
+    wall_steering_prev_source_       = tof_wall::SteeringSource::None;
+    wall_steering_prev_source_valid_ = false;
 }
 
 void Motion::set_heading_hold(float target_yaw_deg)
@@ -465,7 +493,28 @@ float Motion::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity
     side_error_prev_valid_            = true;
     latest_steering_adjustment_degps_ = tof_wall::steeringAdjustmentDegps(
         latest_wall_state_.side_error_norm, side_error_delta_norm_per_s);
+    recordWallSteeringStats(latest_steering_adjustment_degps_, latest_wall_state_.source);
     return latest_steering_adjustment_degps_;
+}
+
+void Motion::recordWallSteeringStats(float adjustment_degps, tof_wall::SteeringSource source)
+{
+    if (wall_steering_samples_ == 0 ||
+        std::fabs(adjustment_degps) > std::fabs(wall_steering_peak_degps_))
+        wall_steering_peak_degps_ = adjustment_degps;
+
+    wall_steering_sum_degps_ += adjustment_degps;
+    ++wall_steering_samples_;
+
+    if (source == tof_wall::SteeringSource::Both)
+        ++wall_steering_both_samples_;
+    else if (source == tof_wall::SteeringSource::Left || source == tof_wall::SteeringSource::Right)
+        ++wall_steering_single_samples_;
+
+    if (wall_steering_prev_source_valid_ && source != wall_steering_prev_source_)
+        ++wall_steering_source_changes_;
+    wall_steering_prev_source_       = source;
+    wall_steering_prev_source_valid_ = true;
 }
 
 float Motion::headingHoldAdjustment(float fwd_velocity_mmps, float rot_velocity_degps)

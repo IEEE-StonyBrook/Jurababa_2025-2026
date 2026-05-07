@@ -22,6 +22,16 @@ class IMU;
 class Motion
 {
   public:
+    struct WallSteeringStats
+    {
+        float    peak_degps     = 0.0f;
+        float    average_degps  = 0.0f;
+        uint32_t samples        = 0;
+        uint32_t source_changes = 0;
+        uint32_t both_samples   = 0;
+        uint32_t single_samples = 0;
+    };
+
     Motion(Drivetrain* drivetrain, IMU* imu);
 
     void reset();
@@ -41,6 +51,8 @@ class Motion
     float                  rightDistance();
     tof_wall::WallState    wallSteeringState() const;
     float                  wallSteeringAdjustmentDegps() const;
+    WallSteeringStats      wallSteeringStats() const;
+    void                   resetWallSteeringStats();
     void                   set_heading_hold(float target_yaw_deg);
     void                   clear_heading_hold();
     bool                   headingHoldActive() const;
@@ -99,6 +111,7 @@ class Motion
     float wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps);
     float headingHoldAdjustment(float fwd_velocity_mmps, float rot_velocity_degps);
     void  resetControlHistory();
+    void  recordWallSteeringStats(float adjustment_degps, tof_wall::SteeringSource source);
 
     // Hardware
     Drivetrain* drivetrain_;
@@ -131,11 +144,19 @@ class Motion
     float front_wall_mm_ = 0.0f;
     float right_wall_mm_ = 0.0f;
 
-    tof_wall::WallState    latest_wall_state_{};
-    tof_wall::SteeringMode steering_mode_                    = tof_wall::SteeringMode::STEERING_OFF;
-    float                  latest_steering_adjustment_degps_ = 0.0f;
-    float                  side_error_prev_norm_             = 0.0f;
-    bool                   side_error_prev_valid_            = false;
+    tof_wall::WallState      latest_wall_state_{};
+    tof_wall::SteeringMode   steering_mode_ = tof_wall::SteeringMode::STEERING_OFF;
+    float                    latest_steering_adjustment_degps_ = 0.0f;
+    float                    side_error_prev_norm_             = 0.0f;
+    bool                     side_error_prev_valid_            = false;
+    float                    wall_steering_peak_degps_         = 0.0f;
+    float                    wall_steering_sum_degps_          = 0.0f;
+    uint32_t                 wall_steering_samples_            = 0;
+    uint32_t                 wall_steering_source_changes_     = 0;
+    uint32_t                 wall_steering_both_samples_       = 0;
+    uint32_t                 wall_steering_single_samples_     = 0;
+    tof_wall::SteeringSource wall_steering_prev_source_        = tof_wall::SteeringSource::None;
+    bool                     wall_steering_prev_source_valid_  = false;
 
     bool  heading_hold_enabled_                 = false;
     float heading_hold_target_yaw_deg_          = 0.0f;

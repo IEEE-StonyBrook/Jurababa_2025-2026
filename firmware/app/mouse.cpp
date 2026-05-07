@@ -633,6 +633,7 @@ void Mouse::move_ahead()
     LOG_INFO("move_ahead: adjust_forward_position=-" + fixed1(CELL_SIZE_MM) +
              " wait_until_position=" + fixed1(SENSING_POSITION_MM));
     apply_maze_heading_hold();
+    motion_->resetWallSteeringStats();
     begin_search_front_latch();
     motion_->adjust_forward_position(-CELL_SIZE_MM);
     if (!wait_until_position(SENSING_POSITION_MM))
@@ -723,6 +724,7 @@ void Mouse::turn_left()
         {
             motion_->set_position(HALF_CELL_MM);
             apply_maze_heading_hold_for_heading(target_heading);
+            motion_->resetWallSteeringStats();
             begin_search_front_latch();
             motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_,
                           cruise_speed_mmps_, ROBOT_BASE_ACCEL_MMPS2);
@@ -760,6 +762,7 @@ void Mouse::turn_right()
         {
             motion_->set_position(HALF_CELL_MM);
             apply_maze_heading_hold_for_heading(target_heading);
+            motion_->resetWallSteeringStats();
             begin_search_front_latch();
             motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_,
                           cruise_speed_mmps_, ROBOT_BASE_ACCEL_MMPS2);
@@ -787,6 +790,7 @@ void Mouse::turn_back()
     {
         motion_->set_position(HALF_CELL_MM);
         apply_maze_heading_hold_for_heading(target_heading);
+        motion_->resetWallSteeringStats();
         begin_search_front_latch();
         motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_, cruise_speed_mmps_,
                       ROBOT_BASE_ACCEL_MMPS2);
@@ -1057,6 +1061,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         if (motion_ == nullptr)
             return false;
         motion_->set_steering_mode(tof_wall::SteeringMode::STEERING_OFF);
+        motion_->resetWallSteeringStats();
         begin_search_front_latch();
         if (m_handStart)
         {
@@ -1196,6 +1201,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
             const float               tof_steer_degps   = motion_->wallSteeringAdjustmentDegps();
             const float               imu_steer_degps   = motion_->headingHoldAdjustmentDegps();
             const float               total_steer_degps = tof_steer_degps + imu_steer_degps;
+            const Motion::WallSteeringStats steer_stats = motion_->wallSteeringStats();
             action_log << " yaw=" << fixed1(yaw_before) << "->" << fixed1(yaw_after)
                        << " delta=" << signedFixed1(yaw_delta)
                        << " err=" << signedFixed1(final_yaw_error) << " pos=" << fixed1(pos_before)
@@ -1205,7 +1211,13 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
                        << " side=" << signedFixed1(wall_state.side_error_norm)
                        << " imu=" << signedFixed1(imu_steer_degps)
                        << " herr=" << signedFixed1(motion_->headingHoldErrorDeg())
-                       << " total=" << signedFixed1(total_steer_degps) << "]deg/s";
+                       << " total=" << signedFixed1(total_steer_degps)
+                       << " peak=" << signedFixed1(steer_stats.peak_degps)
+                       << " avg=" << signedFixed1(steer_stats.average_degps)
+                       << " samples=" << steer_stats.samples
+                       << " src_changes=" << steer_stats.source_changes
+                       << " both=" << steer_stats.both_samples
+                       << " single=" << steer_stats.single_samples << "]deg/s";
         }
         else
 #endif
