@@ -434,8 +434,8 @@ class Dashboard(QMainWindow):
         trials_layout.addWidget(self.btn_move)
 
         self.btn_turn = QPushButton('4. TURN  —  Tune rotation PD')
-        self.btn_turn.setToolTip("Turn-in-place trial → tune rotation kP and kD\nDefault: TURN 90 200 500")
-        self.btn_turn.clicked.connect(lambda: self.run_trial("TURN 90 200 500"))
+        self.btn_turn.setToolTip("Turn-in-place trial → tune rotation kP and kD\nDefault: TURN 90 240 800")
+        self.btn_turn.clicked.connect(lambda: self.run_trial("TURN 90 240 800"))
         trials_layout.addWidget(self.btn_turn)
 
         self.btn_turn_ol = QPushButton('5. TURN-OL  —  Measure rot_kM')

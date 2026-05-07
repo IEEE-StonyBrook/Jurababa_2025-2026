@@ -1761,7 +1761,7 @@ void DriverLab::cmdHelp()
     printf("  MOVE [mm mm/s mm/s^2 mode]      Forward motion   (default: 480 200 500 0)\n");
     printf("    mode: 0=FULL_CONTROL (FF+PD)  1=NO_FF (PD only, stress)  2=ONLY_FF\n");
     printf("       mode: 0=FF only, 1=PD only, 2=FF+PD\n");
-    printf("  TURN [deg deg/s deg/s^2]        Turn in place    (default: 90 360 720)\n");
+    printf("  TURN [deg deg/s deg/s^2]        Turn in place    (default: 90 240 800)\n");
     printf("       +deg=CCW(left), -deg=CW(right)\n");
     printf("  TURNOL  [max step settle_ms]    Rotation OL sweep  (default: 3 0.5 800)\n");
     printf("  TURNSTEP [diff_v duration_ms]   Rotation step      (default: 1.5 1000)\n");
