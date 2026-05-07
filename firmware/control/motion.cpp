@@ -57,6 +57,8 @@ void Motion::resetControlHistory()
     latest_wall_state_                    = {};
     latest_steering_adjustment_degps_     = 0.0f;
     latest_heading_hold_adjustment_degps_ = 0.0f;
+    line_steering_adjustment_degps_       = 0.0f;
+    line_steering_valid_                  = false;
     resetWallSteeringStats();
 }
 
@@ -145,6 +147,28 @@ void Motion::resetWallSteeringStats()
     wall_steering_single_samples_    = 0;
     wall_steering_prev_source_       = tof_wall::SteeringSource::None;
     wall_steering_prev_source_valid_ = false;
+}
+
+void Motion::set_line_steering_adjustment_degps(float adjustment_degps, bool valid)
+{
+    line_steering_adjustment_degps_ = valid ? adjustment_degps : 0.0f;
+    line_steering_valid_            = valid;
+}
+
+void Motion::clear_line_steering_adjustment()
+{
+    line_steering_adjustment_degps_ = 0.0f;
+    line_steering_valid_            = false;
+}
+
+float Motion::lineSteeringAdjustmentDegps() const
+{
+    return line_steering_adjustment_degps_;
+}
+
+bool Motion::lineSteeringValid() const
+{
+    return line_steering_valid_;
 }
 
 void Motion::set_heading_hold(float target_yaw_deg)
@@ -424,15 +448,27 @@ void Motion::runPositionControl()
     // step-input-driven oscillation on spin turns.
     const float forward_output =
         forward_commanded ? forward_controller_.update(fwd_velocity, fwd_change_mm) : 0.0f;
-    const float wall_adjustment =
-        (TOF_STEERING_ENABLE && steering_mode_ != tof_wall::SteeringMode::STEERING_OFF)
-            ? wallSteeringAdjustment(fwd_velocity, rot_velocity)
-            : 0.0f;
+    const bool straight_move       = forward_.active() && !rotation_.active();
+    float      wall_adjustment     = 0.0f;
+    float      heading_adjustment  = 0.0f;
+    float      steering_adjustment = 0.0f;
+    if (straight_move && line_steering_valid_)
+    {
+        steering_adjustment                   = line_steering_adjustment_degps_;
+        latest_heading_hold_adjustment_degps_ = 0.0f;
+    }
+    else
+    {
+        wall_adjustment =
+            (TOF_STEERING_ENABLE && steering_mode_ != tof_wall::SteeringMode::STEERING_OFF)
+                ? wallSteeringAdjustment(fwd_velocity, rot_velocity)
+                : 0.0f;
+        heading_adjustment  = headingHoldAdjustment(fwd_velocity, rot_velocity);
+        steering_adjustment = wall_adjustment + heading_adjustment;
+    }
 #if !TOF_STEERING_ENABLE
     wallSteeringAdjustment(fwd_velocity, rot_velocity); // diagnostics only
 #endif
-    const float heading_adjustment  = headingHoldAdjustment(fwd_velocity, rot_velocity);
-    const float steering_adjustment = wall_adjustment + heading_adjustment;
     const float rotation_output =
         rotation_controller_.update(rot_velocity, rot_change_deg, steering_adjustment);
 

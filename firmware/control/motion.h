@@ -53,6 +53,10 @@ class Motion
     float                  wallSteeringAdjustmentDegps() const;
     WallSteeringStats      wallSteeringStats() const;
     void                   resetWallSteeringStats();
+    void                   set_line_steering_adjustment_degps(float adjustment_degps, bool valid);
+    void                   clear_line_steering_adjustment();
+    float                  lineSteeringAdjustmentDegps() const;
+    bool                   lineSteeringValid() const;
     void                   set_heading_hold(float target_yaw_deg);
     void                   clear_heading_hold();
     bool                   headingHoldActive() const;
@@ -157,6 +161,8 @@ class Motion
     uint32_t                 wall_steering_single_samples_     = 0;
     tof_wall::SteeringSource wall_steering_prev_source_        = tof_wall::SteeringSource::None;
     bool                     wall_steering_prev_source_valid_  = false;
+    float                    line_steering_adjustment_degps_   = 0.0f;
+    bool                     line_steering_valid_              = false;
 
     bool  heading_hold_enabled_                 = false;
     float heading_hold_target_yaw_deg_          = 0.0f;

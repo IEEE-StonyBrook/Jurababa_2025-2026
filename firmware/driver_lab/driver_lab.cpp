@@ -52,6 +52,41 @@ inline float normalizeYawDelta(float delta)
     return delta;
 }
 
+const char* linePathsText(uint8_t paths_mask, char* buffer, size_t buffer_size)
+{
+    if (buffer_size == 0)
+        return "";
+
+    size_t index = 0;
+    if ((paths_mask & LineSensor::PATH_LEFT) != 0 && index + 1 < buffer_size)
+        buffer[index++] = 'L';
+    if ((paths_mask & LineSensor::PATH_FORWARD) != 0 && index + 1 < buffer_size)
+        buffer[index++] = 'F';
+    if ((paths_mask & LineSensor::PATH_RIGHT) != 0 && index + 1 < buffer_size)
+        buffer[index++] = 'R';
+    if (index == 0 && index + 1 < buffer_size)
+        buffer[index++] = '-';
+    buffer[index] = '\0';
+    return buffer;
+}
+
+const char* lineBitsText(uint8_t active_mask, char* buffer, size_t buffer_size)
+{
+    if (buffer_size == 0)
+        return "";
+
+    size_t index = 0;
+    for (int i = 0; i < LINE_SENSOR_COUNT && index + 1 < buffer_size; ++i)
+        buffer[index++] = ((active_mask & (1u << i)) != 0) ? '#' : '.';
+    buffer[index] = '\0';
+    return buffer;
+}
+
+const char* yesNo(bool value)
+{
+    return value ? "yes" : "no";
+}
+
 } // namespace
 
 // ============================================================================
@@ -1692,11 +1727,11 @@ void DriverLab::executeCommand(const DriverLabArgs& args)
         cmdGpioDiag(args);
     else if (strcmp(cmd, "DIRTEST") == 0)
         cmdDirTest(args);
-    else if (strcmp(cmd, "LINPOS") == 0)
+    else if (strcmp(cmd, "LINPOS") == 0 || strcmp(cmd, "LSPOS") == 0)
         cmdLinePosition();
-    else if (strcmp(cmd, "LININTER") == 0)
+    else if (strcmp(cmd, "LININTER") == 0 || strcmp(cmd, "LSINT") == 0)
         cmdLineIntersection();
-    else if (strcmp(cmd, "LINCON") == 0)
+    else if (strcmp(cmd, "LINCON") == 0 || strcmp(cmd, "LSCONT") == 0)
         cmdLineContinuous(args);
     else if (strcmp(cmd, "ECHO") == 0)
     {
@@ -1776,8 +1811,9 @@ void DriverLab::cmdHelp()
     printf("  BAT  ENC  LENC  RENC  ENCRESET\n");
     printf("  IMU  IMUVEL  IMURESET\n");
     printf("  LTOF  FTOF  RTOF\n");
-    printf("  LINPOS  LININTER\n");
-    printf("  Continuous: IMUCON/TOFCON/LINCON/ENCCON [ms] [interval]\n");
+    printf("  LSPOS/LINPOS       Line raw bits, paths, position, on-line state\n");
+    printf("  LSINT/LININTER     Current paths plus latest intersection event\n");
+    printf("  Continuous: IMUCON/TOFCON/LSCONT(LINCON)/ENCCON [ms] [interval]\n");
     printf("\n");
     printf("=== OTHER ===\n");
     printf("  V [volts]  X(stop)  GPIO  SETTINGS  INIT  EXPORT  ID\n");
@@ -2514,7 +2550,15 @@ void DriverLab::cmdLinePosition()
     line_sensor_->read();
     const float position = line_sensor_->get_position();
     const bool  on_line  = line_sensor_->on_line();
-    printf("Position: %.2f (%s)\n", position, on_line ? "on line" : "off line");
+    char        paths_buffer[4];
+    char        bits_buffer[LINE_SENSOR_COUNT + 1];
+    printf("Line sensor:\n");
+    printf("  raw=0x%02X active=0x%02X bits X8..X1 [%s] paths=%s position=%.2f "
+           "on_line=%s\n",
+           line_sensor_->rawByte(), line_sensor_->activeMask(),
+           lineBitsText(line_sensor_->activeMask(), bits_buffer, sizeof(bits_buffer)),
+           linePathsText(line_sensor_->currentPathsMask(), paths_buffer, sizeof(paths_buffer)),
+           position, yesNo(on_line));
 }
 
 void DriverLab::cmdLineIntersection()
@@ -2525,8 +2569,18 @@ void DriverLab::cmdLineIntersection()
         return;
     }
     line_sensor_->read();
-    const bool intersection = line_sensor_->detect_intersection();
-    printf("Intersection: %s\n", intersection ? "YES" : "NO");
+    const LineSensor::IntersectionEvent event = line_sensor_->intersectionEvent();
+    char                                current_paths[4];
+    char                                event_paths[4];
+    char                                bits_buffer[LINE_SENSOR_COUNT + 1];
+    printf("Line intersection:\n");
+    printf("  current: raw=0x%02X active=0x%02X bits X8..X1 [%s] paths=%s\n",
+           line_sensor_->rawByte(), line_sensor_->activeMask(),
+           lineBitsText(line_sensor_->activeMask(), bits_buffer, sizeof(bits_buffer)),
+           linePathsText(line_sensor_->currentPathsMask(), current_paths, sizeof(current_paths)));
+    printf("  event: valid=%s paths=%s peak=0x%02X dt=%lums\n", yesNo(event.valid),
+           linePathsText(event.paths_mask, event_paths, sizeof(event_paths)), event.raw_peak_mask,
+           static_cast<unsigned long>(event.elapsed_ms));
 }
 
 void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
@@ -2548,7 +2602,8 @@ void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
 
     printf("\n=== Continuous Line Sensor (duration: %lu ms, interval: %lu ms) ===\n",
            static_cast<unsigned long>(duration_ms), static_cast<unsigned long>(interval_ms));
-    printf("Time(ms)  Position  Intersect\n");
+    printf("Legend: Bits are active probes left-to-right X8..X1, #=line, .=background\n");
+    printf("Time(ms)  Raw   Active  Bits      Position  OnLine  Paths  Event  Peak   EventMs\n");
 
     const uint32_t start_time = to_ms_since_boot(get_absolute_time());
     uint32_t       elapsed    = 0;
@@ -2556,10 +2611,21 @@ void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
     {
         elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
         line_sensor_->read();
-        const float position     = line_sensor_->get_position();
-        const bool  intersection = line_sensor_->detect_intersection();
-        printf("%7lu  %8.2f  %9s\n", static_cast<unsigned long>(elapsed), position,
-               intersection ? "YES" : "NO");
+        const float                         position = line_sensor_->get_position();
+        const bool                          on_line  = line_sensor_->on_line();
+        const LineSensor::IntersectionEvent event    = line_sensor_->intersectionEvent();
+        char                                current_paths[4];
+        char                                event_paths[4];
+        char                                bits_buffer[LINE_SENSOR_COUNT + 1];
+        printf(
+            "%7lu  0x%02X  0x%02X  %-8s  %8.2f  %6s  %5s  %5s  0x%02X  %7lu\n",
+            static_cast<unsigned long>(elapsed), line_sensor_->rawByte(),
+            line_sensor_->activeMask(),
+            lineBitsText(line_sensor_->activeMask(), bits_buffer, sizeof(bits_buffer)), position,
+            on_line ? "YES" : "NO",
+            linePathsText(line_sensor_->currentPathsMask(), current_paths, sizeof(current_paths)),
+            linePathsText(event.paths_mask, event_paths, sizeof(event_paths)), event.raw_peak_mask,
+            static_cast<unsigned long>(event.elapsed_ms));
         sleep_ms(interval_ms);
     }
     printf("=== Done ===\n");

@@ -23,6 +23,7 @@
 #include "config/geometry.h"
 #include "config/motion.h"
 #include "config/smooth_turn.h"
+#include "control/line_follower.h"
 #include "control/motion.h"
 #include "drivers/battery.h"
 #include "drivers/tof.h"
@@ -54,6 +55,66 @@ std::string goalsText(const std::vector<std::array<int, 2>>& goals)
         text += coordinateText(goals[i]);
     }
     return text.empty() ? "(none)" : text;
+}
+
+std::string linePathsText(uint8_t paths_mask)
+{
+    std::string text;
+    if ((paths_mask & LineSensor::PATH_LEFT) != 0)
+        text += 'L';
+    if ((paths_mask & LineSensor::PATH_FORWARD) != 0)
+        text += 'F';
+    if ((paths_mask & LineSensor::PATH_RIGHT) != 0)
+        text += 'R';
+    return text.empty() ? "-" : text;
+}
+
+const char* yesNo(bool value)
+{
+    return value ? "yes" : "no";
+}
+
+std::string hexByteText(uint8_t value)
+{
+    char buffer[5];
+    std::snprintf(buffer, sizeof(buffer), "0x%02X", value);
+    return buffer;
+}
+
+std::string lineBitsText(uint8_t active_mask)
+{
+    std::string text;
+    text.reserve(LINE_SENSOR_COUNT);
+    for (int i = 0; i < LINE_SENSOR_COUNT; ++i)
+        text += ((active_mask & (1u << i)) != 0) ? '#' : '.';
+    return text;
+}
+
+std::string lineRouteProgressText(const LineFollower* follower)
+{
+    if (follower == nullptr)
+        return "route=- next=0/0 next_cmd=-";
+
+    const char*   route        = follower->route();
+    const size_t  route_length = route != nullptr ? std::strlen(route) : 0;
+    const uint8_t route_index  = follower->routeIndex();
+    const char    next_command = route_index < route_length ? route[route_index] : '-';
+
+    return std::string("route=") + (route_length > 0 ? route : "-") +
+           " next=" + std::to_string(static_cast<unsigned>(route_index)) + "/" +
+           std::to_string(route_length) + " next_cmd=" + next_command;
+}
+
+std::string lineLastDecisionText(const LineFollower* follower)
+{
+    if (follower == nullptr || !follower->lastIntersectionValid())
+        return "last: none";
+
+    return "last: paths=" + linePathsText(follower->lastIntersectionPathsMask()) +
+           " cmd=" + std::string(1, follower->lastRouteCommand()) +
+           " match=" + yesNo(follower->lastRouteChoiceMatched()) +
+           " peak=" + hexByteText(follower->lastIntersectionRawPeakMask()) +
+           " dt=" + std::to_string(follower->lastIntersectionElapsedMs()) + "ms";
 }
 
 const char* mazeMaskName(MazeMask mask)
@@ -287,7 +348,11 @@ void CommandLineInterface::loop()
     //   3. Battery filter update at 500 Hz (cheap; ADC is non-blocking)
     //
     // Motion::update() runs concurrently via the 500 Hz hardware timer
-    // alarm registered in main.cpp.
+    // alarm registered in main.cpp for ToF mode. LineSensor mode has no
+    // timer; the CLI loop advances LineFollower + Motion on this same 500 Hz
+    // cadence.
+    const uint32_t  loop_period_us = static_cast<uint32_t>(LOOP_INTERVAL_S * 1.0e6f);
+    absolute_time_t next_tick      = make_timeout_time_us(loop_period_us);
     while (true)
     {
         process_serial_data();
@@ -295,8 +360,15 @@ void CommandLineInterface::loop()
             deps_.battery->update();
         if (deps_.mouse != nullptr)
             deps_.mouse->serviceSensors();
+        if (deps_.sensor_mode == SensorMode::LINE_SENSOR && deps_.line_follower != nullptr)
+        {
+            deps_.line_follower->update(LOOP_INTERVAL_S);
+            if (deps_.motion != nullptr)
+                deps_.motion->update();
+        }
 
-        sleep_ms(2);
+        sleep_until(next_tick);
+        next_tick = delayed_by_us(next_tick, loop_period_us);
     }
 }
 
@@ -438,10 +510,7 @@ void CommandLineInterface::run_short_cmd(const Args& args)
             }
             break;
         case 'S':
-            if (deps_.mouse != nullptr)
-                deps_.mouse->print_wall_sensors();
-            else
-                printFormat("Mouse not initialized.\n");
+            dumpSensorsOneShot();
             break;
         case 'E':
             printEncoderSnapshot();
@@ -554,6 +623,11 @@ void CommandLineInterface::run_long_cmd(const Args& args)
     if (std::strcmp(args.argv[0], "CENTER") == 0 || std::strcmp(args.argv[0], "STARTCENTER") == 0)
     {
         handle_center_command(args);
+        return;
+    }
+    if (std::strcmp(args.argv[0], "LINE") == 0)
+    {
+        handle_line_command(args);
         return;
     }
     if (std::strcmp(args.argv[0], "HALT") == 0)
@@ -1197,6 +1271,82 @@ void CommandLineInterface::handle_center_command(const Args& args)
         printFormat("CENTER failed.\n");
 }
 
+void CommandLineInterface::handle_line_command(const Args& args)
+{
+    if (deps_.sensor_mode != SensorMode::LINE_SENSOR || deps_.line_follower == nullptr)
+    {
+        printFormat("LINE requires LineSensor mode. Reboot Normal CLI and select 'L'.\n");
+        return;
+    }
+
+    if (args.argc < 2 || std::strcmp(args.argv[1], "STATUS") == 0)
+    {
+        printLineSnapshot();
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "START") == 0)
+    {
+        deps_.line_follower->startFollowing();
+        printFormat("LINE START\n");
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "STOP") == 0)
+    {
+        deps_.line_follower->stop();
+        printFormat("LINE STOP\n");
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "LEFT") == 0 || std::strcmp(args.argv[1], "L") == 0)
+    {
+        deps_.line_follower->turnLeft90();
+        printFormat("LINE LEFT\n");
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "RIGHT") == 0 || std::strcmp(args.argv[1], "R") == 0)
+    {
+        deps_.line_follower->turnRight90();
+        printFormat("LINE RIGHT\n");
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "ROUTE") == 0)
+    {
+        if (args.argc < 3)
+        {
+            printFormat("LINE ROUTE usage: LINE ROUTE <LFR...|CLEAR|STATUS>\n");
+            return;
+        }
+
+        if (std::strcmp(args.argv[2], "STATUS") == 0)
+        {
+            printLineSnapshot();
+            return;
+        }
+
+        if (std::strcmp(args.argv[2], "CLEAR") == 0)
+        {
+            deps_.line_follower->clearRoute();
+            printFormat("LINE ROUTE cleared\n");
+            return;
+        }
+
+        if (!deps_.line_follower->setRoute(args.argv[2]))
+        {
+            printFormat("LINE ROUTE invalid. Use only L/F/R (optional spaces/commas), max 64.\n");
+            return;
+        }
+
+        printFormat("LINE ROUTE set: %s\n", deps_.line_follower->route());
+        return;
+    }
+
+    printFormat("LINE usage: LINE [STATUS|START|STOP|LEFT|RIGHT|ROUTE]\n");
+}
+
 bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
 {
     if (!needsTof("STAGE"))
@@ -1497,6 +1647,104 @@ void CommandLineInterface::run_function(int cmd)
     }
 }
 
+void CommandLineInterface::dumpSensorsOneShot()
+{
+    if (deps_.sensor_mode == SensorMode::LINE_SENSOR)
+    {
+        printLineSnapshot();
+        if (deps_.battery != nullptr)
+            printFormat("Battery: %.2f V\n", deps_.battery->voltage());
+        return;
+    }
+
+    Motion* r = deps_.motion;
+    if (r != nullptr)
+    {
+        printFormat("ToF L=%d mm F=%d mm R=%d mm  yaw=%.1f deg\n",
+                    static_cast<int>(r->leftDistance()), static_cast<int>(r->frontDistance()),
+                    static_cast<int>(r->rightDistance()), static_cast<double>(r->yaw_deg()));
+    }
+    else
+    {
+        printFormat("ToF: motion not initialized\n");
+    }
+    if (deps_.battery != nullptr)
+        printFormat("Battery: %.2f V\n", deps_.battery->voltage());
+    if (deps_.bluetooth != nullptr)
+    {
+        Log::BluetoothDiagnostics log = Log::bluetoothDiagnostics();
+        Bluetooth::Diagnostics    bt  = deps_.bluetooth->diagnostics();
+        printFormat("BT log queued=%u max=%u dropped=%lu truncated=%lu\n",
+                    static_cast<unsigned>(log.queued_messages),
+                    static_cast<unsigned>(log.max_queued_messages),
+                    static_cast<unsigned long>(log.dropped_messages),
+                    static_cast<unsigned long>(log.truncated_messages));
+        printFormat("BT tx depth=%u max=%u dropped=%lu\n", static_cast<unsigned>(bt.ring_depth),
+                    static_cast<unsigned>(bt.max_ring_depth),
+                    static_cast<unsigned long>(bt.dropped_bytes));
+        printFormat("BT rx lines=%u max=%u dropped_lines=%lu dropped_chars=%lu pending=%u\n",
+                    static_cast<unsigned>(bt.rx_line_depth),
+                    static_cast<unsigned>(bt.max_rx_line_depth),
+                    static_cast<unsigned long>(bt.dropped_rx_lines),
+                    static_cast<unsigned long>(bt.dropped_rx_chars),
+                    static_cast<unsigned>(bt.pending_shortcut));
+    }
+}
+
+void CommandLineInterface::printLineSnapshot()
+{
+    if (deps_.line_follower == nullptr)
+    {
+        printFormat("LineFollower not initialized.\n");
+        return;
+    }
+
+    const LineFollower::State state = deps_.line_follower->state();
+    const char*               name  = "UNKNOWN";
+    switch (state)
+    {
+        case LineFollower::State::Idle:
+            name = "IDLE";
+            break;
+        case LineFollower::State::FollowingLine:
+            name = "FOLLOWING";
+            break;
+        case LineFollower::State::TurningLeft:
+            name = "TURN_LEFT";
+            break;
+        case LineFollower::State::TurningRight:
+            name = "TURN_RIGHT";
+            break;
+        case LineFollower::State::Stopping:
+            name = "STOPPING";
+            break;
+    }
+
+    const float motion_steering =
+        deps_.motion != nullptr ? deps_.motion->lineSteeringAdjustmentDegps() : 0.0f;
+    const bool motion_steering_valid =
+        deps_.motion != nullptr ? deps_.motion->lineSteeringValid() : false;
+    const std::string current_paths = linePathsText(deps_.line_follower->currentPathsMask());
+    const std::string bits          = lineBitsText(deps_.line_follower->activeMask());
+    const std::string route_status  = lineRouteProgressText(deps_.line_follower);
+    const std::string last_decision = lineLastDecisionText(deps_.line_follower);
+
+    printFormat("Line sensor:\n");
+    printFormat("  raw=0x%02X active=0x%02X bits X8..X1 [%s] paths=%s present=%s lost=%s\n",
+                deps_.line_follower->rawByte(), deps_.line_follower->activeMask(), bits.c_str(),
+                current_paths.c_str(), yesNo(deps_.line_follower->linePresent()),
+                yesNo(deps_.line_follower->lineLost()));
+    printFormat("  line: position=%.2f error=%.2f filtered=%.2f steer=%.1f deg/s\n",
+                static_cast<double>(deps_.line_follower->linePosition()),
+                static_cast<double>(deps_.line_follower->lineError()),
+                static_cast<double>(deps_.line_follower->filteredLineError()),
+                static_cast<double>(deps_.line_follower->steeringAdjustmentDegps()));
+    printFormat("  motion: line_steer=%.1f deg/s valid=%s state=%s\n",
+                static_cast<double>(motion_steering), yesNo(motion_steering_valid), name);
+    printFormat("  route: %s\n", route_status.c_str());
+    printFormat("  %s\n", last_decision.c_str());
+}
+
 void CommandLineInterface::printMazeView(char mode)
 {
     if (deps_.mouse == nullptr)
@@ -1711,6 +1959,8 @@ void CommandLineInterface::stop()
     // 2 ms iteration and exit the busy-wait.
     if (deps_.motion != nullptr)
         deps_.motion->emergency_stop();
+    if (deps_.line_follower != nullptr)
+        deps_.line_follower->stop();
     halted_ = true;
     printFormat("STOP\n");
 }
@@ -1719,6 +1969,8 @@ void CommandLineInterface::reset()
 {
     if (deps_.sensor_mode == SensorMode::TOF && deps_.motion != nullptr)
         deps_.motion->emergency_stop();
+    if (deps_.line_follower != nullptr)
+        deps_.line_follower->reset();
 
     if (deps_.maze != nullptr)
         deps_.maze->reset();
@@ -1803,6 +2055,9 @@ void CommandLineInterface::help()
     printFormat(" 14 = \n");
     printFormat(" 15 = \n");
     printFormat("SEARCH x y : search to location (x,y)\n");
+    printFormat("S : sensor snapshot (ToF or LineSensor)\n");
+    printFormat("LINE STATUS : readable line sensor snapshot\n");
+    printFormat("LINE START/STOP/LEFT/RIGHT : LineSensor mode control\n");
     printFormat("HELP DEBUG : Jurababa extensions\n");
     printFormat("HELP : this text\n");
 }
@@ -1823,6 +2078,10 @@ void CommandLineInterface::help_debug()
     printFormat("STAGE 5 : explored diagonal fast goal\n");
     printFormat("SEARCHGOAL/RETURNSTART/FASTGOAL/FASTSTART/DIAGGOAL : stage aliases\n");
     printFormat("SIMRUN : STAGE 1 + STAGE 2 + STAGE 5\n");
+    printFormat("S : sensor snapshot (ToF or LineSensor)\n");
+    printFormat("LINE STATUS : readable line sensor snapshot\n");
+    printFormat("LINE ROUTE <LFR...|CLEAR|STATUS> : route override/progress\n");
+    printFormat("LINE START/STOP/LEFT/RIGHT : LineSensor mode control\n");
     printFormat("COMP : gesture-driven competition mode\n");
     printFormat("       front wave -> Stage 1+2 (search and return)\n");
     printFormat("       right wave -> Stage 3 (cardinal fast run)\n");

@@ -127,10 +127,27 @@
 #define IMU_DELTA_AVG_LENGTH 1
 
 // ================= Line Sensor Configuration ================= //
-#define LINE_SENSOR_COUNT             8
-#define LINE_SENSOR_I2C_ADDR          0x12 // YahBoom 8-channel sensor
-#define LINE_SENSOR_DATA_REG          0x30 // Sensor data register
-#define LINE_SENSOR_I2C_BAUD          100000
-#define LINE_INTERSECTION_DEBOUNCE_MS 50
+#define LINE_SENSOR_COUNT              8
+#define LINE_SENSOR_I2C_ADDR           0x12 // YahBoom 8-channel sensor
+#define LINE_SENSOR_DATA_REG           0x30 // Sensor data register
+#define LINE_SENSOR_I2C_BAUD           100000
+#define LINE_INTERSECTION_DEBOUNCE_MS  50
+#define LINE_INTERSECTION_WINDOW_MS    80
+#define LINE_INTERSECTION_LEFT_MASK    0x03
+#define LINE_INTERSECTION_FORWARD_MASK 0x18
+#define LINE_INTERSECTION_RIGHT_MASK   0xC0
+#define LINE_FOLLOW_ROUTE              "LFRFL"
+
+// Yahboom 8-channel I2C digital mode reports one bit per probe. Bench LINCON
+// testing with Jurababa's mounted sensor showed:
+//   bit 0 / X8 = leftmost probe  = position -3.5
+//   bit 7 / X1 = rightmost probe = position +3.5
+//
+// Current testing track: black line on white surface. In that setup the line
+// bit is active-high on our module, so LINE_SENSOR_ACTIVE_LOW remains 0.
+// Competition track: white line on black/darker surface. Repeat LINCON on the
+// competition material; if the dark background reports active and the white
+// line reports inactive, flip this to 1 before motor tests.
+#define LINE_SENSOR_ACTIVE_LOW 0
 
 #endif // CONFIG_SENSORS_H

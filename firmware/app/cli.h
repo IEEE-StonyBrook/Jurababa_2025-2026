@@ -22,9 +22,9 @@ class ToF;
  * @brief Sensor mode chosen at boot.
  *
  * I2C0 is shared between the front/left/right ToFs and the YahBoom line
- * sensor, so they're mutually exclusive. The boot prompt picks one. ToF
- * mode wires Motion directly into the Mouse; LineSensor mode hands motors
- * to LineFollower instead.
+ * sensor, so they're mutually exclusive. The boot prompt picks one. ToF mode
+ * wires Motion into the Mouse; LineSensor mode runs Motion with LineFollower
+ * steering injection.
  */
 enum class SensorMode
 {
@@ -54,7 +54,7 @@ class CommandLineInterface
     {
         Bluetooth*                      bluetooth     = nullptr;
         Battery*                        battery       = nullptr;
-        Motion*                         motion        = nullptr; // null in LineSensor mode
+        Motion*                         motion        = nullptr;
         ToF*                            left_tof      = nullptr; // null in LineSensor mode
         ToF*                            front_tof     = nullptr;
         ToF*                            right_tof     = nullptr;
@@ -107,10 +107,13 @@ class CommandLineInterface
     void handle_style_command(const Args& args);
     void handle_path_command(const Args& args);
     void handle_center_command(const Args& args);
+    void handle_line_command(const Args& args);
     void clear_input_buffer();
     void handleBluetoothCommand();
     bool run_competition_stage(int stage, bool wait_for_start);
 
+    void dumpSensorsOneShot();
+    void printLineSnapshot();
     void printMazeView(char mode);
     void printEncoderSnapshot();
     bool needsTof(const char* what);

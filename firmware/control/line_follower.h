@@ -1,23 +1,19 @@
 #ifndef CONTROL_LINE_FOLLOWER_H
 #define CONTROL_LINE_FOLLOWER_H
 
-#include <cmath>
-#include <string>
+#include <cstdint>
 
 #include "common/utils.h"
 #include "config/config.h"
-#include "control/drivetrain.h"
-#include "control/pid.h"
-#include "control/profile.h"
-#include "drivers/imu.h"
+#include "control/motion.h"
 #include "drivers/line_sensor.h"
 
 /**
  * @brief Line-following controller with PD steering and intersection handling
  *
- * Uses LineSensor position error to steer the robot along a line via
- * differential voltage to the drivetrain. Supports intersection detection
- * with debounce and 90-degree in-place turns using IMU heading.
+ * Uses LineSensor position error to command desired angular velocity. The
+ * existing Motion forward/rotation controllers own all motor feedback and
+ * voltage mixing.
  */
 class LineFollower
 {
@@ -33,12 +29,10 @@ class LineFollower
 
     /**
      * @brief Constructs line follower controller
-     * @param drivetrain Drivetrain for motor control
      * @param line_sensor I2C line sensor
-     * @param imu IMU for heading during turns
-     * @param battery Battery for voltage scaling (may be nullptr)
+     * @param motion Existing Motion controller that owns motor feedback
      */
-    LineFollower(Drivetrain* drivetrain, LineSensor* line_sensor, IMU* imu, Battery* battery);
+    LineFollower(LineSensor* line_sensor, Motion* motion);
 
     /**
      * @brief Resets controller state and PD internals
@@ -86,29 +80,74 @@ class LineFollower
      */
     State state() const;
 
-  private:
-    void followLine(float dt);
-    void updateTurn(float dt);
+    uint8_t     rawByte() const;
+    uint8_t     activeMask() const;
+    bool        linePresent() const;
+    bool        lineLost() const;
+    float       linePosition() const;
+    float       lineError() const;
+    float       filteredLineError() const;
+    float       steeringAdjustmentDegps() const;
+    bool        setRoute(const char* route);
+    void        clearRoute();
+    const char* route() const;
+    uint8_t     routeIndex() const;
+    bool        routeHasRemaining() const;
+    uint8_t     currentPathsMask() const;
+    bool        lastIntersectionValid() const;
+    uint8_t     lastIntersectionPathsMask() const;
+    uint8_t     lastIntersectionRawPeakMask() const;
+    uint32_t    lastIntersectionElapsedMs() const;
+    char        lastRouteCommand() const;
+    bool        lastRouteChoiceMatched() const;
 
-    Drivetrain* drivetrain_;
+  private:
+    enum class BranchDirection
+    {
+        None,
+        Left,
+        Right
+    };
+
+    void followLine(float dt);
+    void updateTurn();
+    void resetControlHistory();
+    void evaluateIntersectionCommand(uint32_t now_ms);
+
     LineSensor* line_sensor_;
-    IMU*        imu_;
-    Battery*    battery_;
+    Motion*     motion_;
 
     State state_ = State::Idle;
 
-    // PD steering
-    float prev_position_error_ = 0.0f;
+    // Line steering diagnostics/state.
+    float    prev_line_error_       = 0.0f;
+    float    filtered_line_error_   = 0.0f;
+    float    latest_line_position_  = 0.0f;
+    float    latest_line_error_     = 0.0f;
+    float    latest_steering_degps_ = 0.0f;
+    bool     filter_initialized_    = false;
+    bool     line_seen_             = false;
+    bool     line_lost_             = false;
+    uint32_t last_line_seen_ms_     = 0;
 
-    // Turn tracking
-    float target_yaw_       = 0.0f;
-    float turn_start_yaw_   = 0.0f;
-    float turn_degrees_     = 0.0f;
-    bool  turn_done_        = true;
+    bool turn_done_ = true;
 
     // Intersection debounce
-    bool     prev_intersection_  = false;
+    bool     prev_intersection_    = false;
     uint32_t last_intersection_ms_ = 0;
+
+    static constexpr uint8_t      kMaxRouteLength              = 64;
+    char                          route_[kMaxRouteLength + 1]  = {};
+    uint8_t                       route_length_                = 0;
+    uint8_t                       route_index_                 = 0;
+    BranchDirection               branch_direction_            = BranchDirection::None;
+    uint32_t                      branch_capture_end_ms_       = 0;
+    uint32_t                      intersection_lockout_end_ms_ = 0;
+    bool                          recovery_active_             = false;
+    bool                          major_correction_active_     = false;
+    LineSensor::IntersectionEvent last_intersection_event_;
+    char                          last_route_command_        = '-';
+    bool                          last_route_choice_matched_ = true;
 };
 
 #endif // CONTROL_LINE_FOLLOWER_H
