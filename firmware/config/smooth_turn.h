@@ -31,7 +31,7 @@ enum SmoothTurnId
 
 constexpr float SENSING_POSITION_MM = CELL_SIZE_MM - 10.0f; // Osmium SENSING_POSITION = 170
 constexpr float FRONT_REFERENCE_MM =
-    20.0f; // Measured on Jurababa: front ToF reads ~16-26 mm at true cell centre after stopAtCentre
+    23.0f; // Measured on Jurababa: front ToF reads ~16-26 mm at true cell centre after stopAtCentre
 constexpr float FRONT_CORRECTION_TOLERANCE_MM   = 5.0f;  // UKMARS adjustPosition tolerance = 50 raw
 constexpr float FRONT_CORRECTION_STEP_MM        = 25.0f; // UKMARS correction step = 10 mm
 constexpr float FRONT_CORRECTION_SPEED_MMPS     = 100.0f;  // UKMARS adj_speed = 100 mm/s

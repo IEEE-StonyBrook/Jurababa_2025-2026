@@ -55,6 +55,20 @@ float manhattan(Cell* from, Cell* to)
     return static_cast<float>(std::abs(from->x() - to->x()) + std::abs(from->y() - to->y()));
 }
 
+bool atAnyGoal(MazeMouse* maze_mouse, const std::vector<std::array<int, 2>>& goals)
+{
+    Cell* current = maze_mouse != nullptr ? maze_mouse->currentCell() : nullptr;
+    if (current == nullptr)
+        return false;
+
+    for (const auto& goal : goals)
+    {
+        if (current->x() == goal[0] && current->y() == goal[1])
+            return true;
+    }
+    return false;
+}
+
 std::vector<Cell*> reconstructExploredPath(const std::vector<std::vector<Cell*>>& parents,
                                            Cell* start, Cell* end)
 {
@@ -195,6 +209,12 @@ bool traverseExploredPath(Mouse* mouse, MazeMouse* maze_mouse,
     if (mouse == nullptr || maze_mouse == nullptr)
         return false;
 
+    if (atAnyGoal(maze_mouse, goals))
+    {
+        LOG_INFO("Already at goal; no speed-run path needed.");
+        return true;
+    }
+
     MotionSequenceGuard motion_sequence(mouse);
     const MazeMask      previous_mask = maze_mouse->mazeMask();
     maze_mouse->setMazeMask(MASK_CLOSED);
@@ -222,6 +242,12 @@ bool traverseExploredDiagonalPath(Mouse* mouse, MazeMouse* maze_mouse,
 {
     if (mouse == nullptr || maze_mouse == nullptr)
         return false;
+
+    if (atAnyGoal(maze_mouse, goals))
+    {
+        LOG_INFO("Already at goal; no speed-run path needed.");
+        return true;
+    }
 
     MotionSequenceGuard motion_sequence(mouse);
     const MazeMask      previous_mask = maze_mouse->mazeMask();

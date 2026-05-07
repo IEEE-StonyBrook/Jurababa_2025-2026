@@ -973,6 +973,16 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
                 return false;
             m_handStart = false;
         }
+        else
+        {
+            LOG_INFO("search_to: center_start distance_mm=" +
+                     fixed1(SENSING_POSITION_MM - HALF_CELL_MM) + " set_position_mm=" +
+                     fixed1(HALF_CELL_MM) + " sensing_position_mm=" + fixed1(SENSING_POSITION_MM));
+            apply_maze_heading_hold();
+            motion_->set_position(HALF_CELL_MM);
+            motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+        }
         motion_->set_position(HALF_CELL_MM);
         if (!wait_until_position(SENSING_POSITION_MM))
             return false;

@@ -37,6 +37,28 @@ const char* movementStyleName(Mouse::MovementStyle style)
     return style == Mouse::MovementStyle::Smooth ? "SMOOTH" : "STATIONARY";
 }
 
+std::string coordinateText(const std::array<int, 2>& cell)
+{
+    return "(" + std::to_string(cell[0]) + "," + std::to_string(cell[1]) + ")";
+}
+
+std::string goalsText(const std::vector<std::array<int, 2>>& goals)
+{
+    std::string text;
+    for (size_t i = 0; i < goals.size(); ++i)
+    {
+        if (i > 0)
+            text += ",";
+        text += coordinateText(goals[i]);
+    }
+    return text.empty() ? "(none)" : text;
+}
+
+const char* mazeMaskName(MazeMask mask)
+{
+    return mask == MASK_CLOSED ? "CLOSED" : "OPEN";
+}
+
 bool startsNumericArg(const char* text)
 {
     if (text == nullptr || *text == '\0')
@@ -945,6 +967,18 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
 
     if (wait_for_start && !startWithGesture(true))
         return false;
+
+    Cell*       current_cell = deps_.maze_mouse->currentCell();
+    std::string current_text = current_cell != nullptr
+                                   ? "(" + std::to_string(current_cell->x()) + "," +
+                                         std::to_string(current_cell->y()) + ")"
+                                   : "(none)";
+    std::string heading_text = deps_.maze_mouse->currentDirection();
+    std::string start_text   = coordinateText(deps_.start_cell);
+    std::string goal_text    = goalsText(deps_.goal_cells);
+    printFormat("STAGE config: current=%s heading=%s start=%s goals=%s mask=%s\n",
+                current_text.c_str(), heading_text.c_str(), start_text.c_str(), goal_text.c_str(),
+                mazeMaskName(deps_.maze_mouse->mazeMask()));
 
     switch (stage)
     {
