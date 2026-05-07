@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -std=c++17 -DSIMULATOR_BUILD -I../firmware -g -O0
+CXXFLAGS = -Wall -Wextra -std=c++17 -DSIMULATOR_BUILD -I../firmware -g -O0 -MMD -MP
 
 OUTDIR = bin
 OUT = $(OUTDIR)/Micromouse.out
@@ -22,6 +22,7 @@ SRCS = $(SIM_SRCS) $(MAZE_SRCS) $(NAV_SRCS) $(APP_SRCS) $(COMMON_SRCS)
 
 # Object files
 OBJS = $(patsubst %.cpp,$(OUTDIR)/%.o,$(notdir $(SRCS)))
+DEPS = $(OBJS:.o=.d)
 
 # VPATH for finding source files
 VPATH = .:../firmware/maze:../firmware/navigation:../firmware/app:../firmware/common
@@ -38,8 +39,10 @@ $(OUT): $(OBJS) | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) $^ -o $@
 
 # Compilation
-$(OUTDIR)/%.o: %.cpp | $(OUTDIR)
+$(OUTDIR)/%.o: %.cpp Makefile | $(OUTDIR)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+-include $(DEPS)
 
 # Clean
 clean:

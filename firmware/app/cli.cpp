@@ -1575,8 +1575,10 @@ void CommandLineInterface::run_function(int cmd)
                 break;
             if (deps_.mouse == nullptr)
                 break;
-            if (!startWithGesture(true))
-                break;
+            halted_ = false;
+            if (deps_.motion != nullptr)
+                deps_.motion->emergency_stop();
+            printFormat("Test SS90E Turn: starting immediately.\n");
             deps_.mouse->set_hand_start(true);
             printFormat(deps_.mouse->test_SS90E() ? "SS90E right done.\n" : "SS90E failed.\n");
             break;
@@ -1734,11 +1736,15 @@ void CommandLineInterface::printLineSnapshot()
                 deps_.line_follower->rawByte(), deps_.line_follower->activeMask(), bits.c_str(),
                 current_paths.c_str(), yesNo(deps_.line_follower->linePresent()),
                 yesNo(deps_.line_follower->lineLost()));
+    const float velocity_now = deps_.motion != nullptr ? deps_.motion->velocity() : 0.0f;
     printFormat("  line: position=%.2f error=%.2f filtered=%.2f steer=%.1f deg/s\n",
                 static_cast<double>(deps_.line_follower->linePosition()),
                 static_cast<double>(deps_.line_follower->lineError()),
                 static_cast<double>(deps_.line_follower->filteredLineError()),
                 static_cast<double>(deps_.line_follower->steeringAdjustmentDegps()));
+    printFormat("  speed: target=%.0f mm/s actual=%.0f mm/s\n",
+                static_cast<double>(deps_.line_follower->targetSpeedMmps()),
+                static_cast<double>(velocity_now));
     printFormat("  motion: line_steer=%.1f deg/s valid=%s state=%s\n",
                 static_cast<double>(motion_steering), yesNo(motion_steering_valid), name);
     printFormat("  route: %s\n", route_status.c_str());
@@ -2042,7 +2048,7 @@ void CommandLineInterface::help()
     printFormat(" 1 = Sensor Static Calibration\n");
     printFormat(" 2 = Search to the goal and back\n");
     printFormat(" 3 = Follow a wall to the goal\n");
-    printFormat(" 4 = Test SS90E Turn\n");
+    printFormat(" 4 = Test SS90E Turn (starts immediately)\n");
     printFormat(" 5 = Wander\n");
     printFormat(" 6 = Test Edge Detect Position\n");
     printFormat(" 7 = Sensor Spin Calibration\n");

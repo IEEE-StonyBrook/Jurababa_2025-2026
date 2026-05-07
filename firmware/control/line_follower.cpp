@@ -86,8 +86,14 @@ void LineFollower::startFollowing()
     last_line_seen_ms_ = to_ms_since_boot(get_absolute_time());
     line_seen_         = true;
     motion_->reset_drive_system();
-    motion_->start_move(LINE_FOLLOW_RUN_DISTANCE_MM, LINE_FOLLOW_BASE_SPEED_MMPS, 0.0f,
+    // start_move sets up the forward profile with a generous accel so that
+    // per-tick set_target_velocity() updates from the speed scheduler track
+    // smoothly rather than jolting. Top speed is the hard cap; the scheduler
+    // pushes the actual cruise speed down on |error| from there.
+    motion_->start_move(LINE_FOLLOW_RUN_DISTANCE_MM, LINE_MAX_SPEED_MMPS, 0.0f,
                         ROBOT_BASE_ACCEL_MMPS2);
+    motion_->set_target_velocity(LINE_TARGET_SPEED_MMPS);
+    latest_target_speed_mmps_ = LINE_TARGET_SPEED_MMPS;
 }
 
 void LineFollower::update(float dt)
@@ -116,11 +122,12 @@ void LineFollower::update(float dt)
 
 void LineFollower::followLine(float dt)
 {
-    static constexpr float kLineLostReacquireGain         = 0.6f;
-    static constexpr float kMajorCorrectionThresholdRatio = 0.8f;
-    const uint32_t         now_ms                         = to_ms_since_boot(get_absolute_time());
-    const bool             line_present                   = line_sensor_->on_line();
+    const uint32_t now_ms       = to_ms_since_boot(get_absolute_time());
+    const bool     line_present = line_sensor_->on_line();
 
+    // Position update — sensor's get_position() already holds last-known
+    // when the line is briefly invisible, so we only refresh the cached
+    // error when a real reading is in.
     if (line_present)
     {
         latest_line_position_ = line_sensor_->get_position();
@@ -139,6 +146,8 @@ void LineFollower::followLine(float dt)
         }
     }
 
+    // Lost-line state machine. Recovery steers full-authority toward the
+    // last side the line was on, while clamping forward speed to MIN.
     const uint32_t lost_ms = line_present ? 0 : now_ms - last_line_seen_ms_;
     if (lost_ms > LINE_LOST_STOP_MS)
     {
@@ -147,8 +156,9 @@ void LineFollower::followLine(float dt)
     }
     if (lost_ms > LINE_LOST_HOLD_MS)
     {
-        const float recovery_dir = (prev_line_error_ >= 0.0f) ? 1.0f : -1.0f;
-        latest_steering_degps_ = recovery_dir * LINE_STEERING_LIMIT_DEGPS * kLineLostReacquireGain;
+        const float recovery_dir  = (prev_line_error_ >= 0.0f) ? 1.0f : -1.0f;
+        latest_steering_degps_    = recovery_dir * LINE_OMEGA_LIMIT_DEGPS * LINE_RECOVERY_AUTHORITY;
+        latest_target_speed_mmps_ = LINE_MIN_SPEED_MMPS;
         if (!recovery_active_)
         {
             LOG_INFO("LineFollower: recovery start lost_ms=" << lost_ms << " steer="
@@ -156,6 +166,7 @@ void LineFollower::followLine(float dt)
             recovery_active_ = true;
         }
         motion_->set_line_steering_adjustment_degps(latest_steering_degps_, true);
+        motion_->set_target_velocity(latest_target_speed_mmps_);
         return;
     }
     if (recovery_active_)
@@ -164,6 +175,9 @@ void LineFollower::followLine(float dt)
         recovery_active_ = false;
     }
 
+    // Low-pass filter on the position error. Filter feeds both the P term
+    // (via the predictive lookahead) and the D term, so noise rejection
+    // and phase lag affect them coherently.
     if (!filter_initialized_)
     {
         filtered_line_error_ = latest_line_error_;
@@ -176,12 +190,29 @@ void LineFollower::followLine(float dt)
             LINE_ERROR_FILTER_ALPHA * (latest_line_error_ - filtered_line_error_);
     }
 
-    const float line_error_delta_per_s = (filtered_line_error_ - prev_line_error_) / dt;
-    prev_line_error_                   = filtered_line_error_;
+    const float de_dt = (filtered_line_error_ - prev_line_error_) / dt;
+    prev_line_error_  = filtered_line_error_;
 
-    float steering_degps = LINE_STEERING_KP_DEGPS_PER_SENSOR * filtered_line_error_ +
-                           LINE_STEERING_KD_DEG_PER_SENSOR * line_error_delta_per_s;
+    // Predictive (lookahead) error: e_pred = e + tau * de/dt. This
+    // substitutes for physically mounting the sensor bar ahead of the
+    // wheel axle, which would have given the same phase lead for free.
+    const float e_pred = filtered_line_error_ + LINE_LOOKAHEAD_TIME_S * de_dt;
 
+    // Gain scheduling vs current forward velocity. Higher v -> smaller
+    // Kp/Kd so the spatial response (deg of rotation per mm of travel)
+    // stays roughly constant across the speed envelope.
+    const float v_now   = motion_->velocity();
+    const float v_abs   = fabsf(v_now);
+    const float v_sched = (v_abs > LINE_GAIN_SCHED_FLOOR_MMPS) ? v_abs : LINE_GAIN_SCHED_FLOOR_MMPS;
+    const float scale   = LINE_GAIN_REF_SPEED_MMPS / v_sched;
+    const float kp_eff  = LINE_KP_BASE_DEGPS_PER_SLOT * scale;
+    const float kd_eff  = LINE_KD_BASE_DEG_PER_SLOT * scale;
+
+    float steering_degps = kp_eff * e_pred + kd_eff * de_dt;
+
+    // Branch bias during the post-intersection capture window. Adds a
+    // hard rotational kick so the robot commits to the chosen branch
+    // before the centroid catches up.
     if (branch_direction_ != BranchDirection::None)
     {
         if (now_ms < branch_capture_end_ms_)
@@ -197,25 +228,23 @@ void LineFollower::followLine(float dt)
         }
     }
 
-    steering_degps = utils::clampAbs(steering_degps, LINE_STEERING_LIMIT_DEGPS);
+    steering_degps = utils::clampAbs(steering_degps, LINE_OMEGA_LIMIT_DEGPS);
 
-    const float major_correction_threshold =
-        LINE_STEERING_LIMIT_DEGPS * kMajorCorrectionThresholdRatio;
-    const bool major_correction_now = fabsf(steering_degps) >= major_correction_threshold;
-    if (major_correction_now && !major_correction_active_)
-    {
-        LOG_INFO("LineFollower: major correction steer=" << steering_degps
-                                                         << " deg/s err=" << filtered_line_error_);
-        major_correction_active_ = true;
-    }
-    else if (!major_correction_now && major_correction_active_)
-    {
-        LOG_INFO("LineFollower: correction settled steer=" << steering_degps << " deg/s");
-        major_correction_active_ = false;
-    }
+    // Speed scheduling on |filtered error|. Brakes before corners by
+    // pulling the forward profile's target velocity down; clamped to
+    // [MIN, MAX] so the robot never crawls or exceeds the safe envelope.
+    float v_target =
+        LINE_TARGET_SPEED_MMPS - LINE_BRAKE_GAIN_MMPS_PER_SLOT * fabsf(filtered_line_error_);
+    if (v_target < LINE_MIN_SPEED_MMPS)
+        v_target = LINE_MIN_SPEED_MMPS;
+    if (v_target > LINE_MAX_SPEED_MMPS)
+        v_target = LINE_MAX_SPEED_MMPS;
 
-    latest_steering_degps_ = steering_degps;
+    latest_steering_degps_    = steering_degps;
+    latest_target_speed_mmps_ = v_target;
+
     motion_->set_line_steering_adjustment_degps(steering_degps, true);
+    motion_->set_target_velocity(v_target);
 
     evaluateIntersectionCommand(now_ms);
 }
@@ -368,6 +397,7 @@ void LineFollower::resetControlHistory()
     latest_line_position_        = 0.0f;
     latest_line_error_           = 0.0f;
     latest_steering_degps_       = 0.0f;
+    latest_target_speed_mmps_    = 0.0f;
     filter_initialized_          = false;
     line_seen_                   = false;
     line_lost_                   = false;
@@ -376,7 +406,6 @@ void LineFollower::resetControlHistory()
     branch_capture_end_ms_       = 0;
     intersection_lockout_end_ms_ = 0;
     recovery_active_             = false;
-    major_correction_active_     = false;
     last_intersection_event_     = {};
     last_route_command_          = '-';
     last_route_choice_matched_   = true;
@@ -421,6 +450,11 @@ float LineFollower::filteredLineError() const
 float LineFollower::steeringAdjustmentDegps() const
 {
     return latest_steering_degps_;
+}
+
+float LineFollower::targetSpeedMmps() const
+{
+    return latest_target_speed_mmps_;
 }
 
 bool LineFollower::setRoute(const char* route)

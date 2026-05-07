@@ -72,16 +72,69 @@
 // Line position units are sensor slots: -3.5 at X8/left, +3.5 at X1/right.
 // The controller negates line position so a line left of center commands
 // positive omega (CCW/left), matching Jurababa's rotation convention.
-#define LINE_STEERING_KP_DEGPS_PER_SENSOR 50.0f
-#define LINE_STEERING_KD_DEG_PER_SENSOR   2.0f
-#define LINE_STEERING_LIMIT_DEGPS         240.0f
-#define LINE_ERROR_FILTER_ALPHA           0.35f
-#define LINE_LOST_HOLD_MS                 150
-#define LINE_LOST_STOP_MS                 350
-#define LINE_BRANCH_STEER_BIAS_DEGPS      90.0f
-#define LINE_BRANCH_CAPTURE_MS            400
-#define LINE_INTERSECTION_LOCKOUT_MS      250
-#define LINE_FOLLOW_BASE_SPEED_MMPS       100.0f
-#define LINE_FOLLOW_RUN_DISTANCE_MM       100000.0f
+//
+// The line plant is geometric (sensor centroid → robot pose), NOT a 1st-
+// order motor. Gains are tuned empirically, not via the Tm/Td/zeta formula
+// used for FWD_*/ROT_*. The outer loop emits an omega offset consumed by
+// Motion::set_line_steering_adjustment_degps and a forward target speed
+// consumed by Motion::set_target_velocity.
+//
+// Defaults below are *reasonable working values* — target 400 mm/s with
+// speed scheduling and gain scheduling enabled. Verify behavior at this
+// point before walking the constants up to the competition profile shown
+// in the comment block. Ramp procedure is documented in line_follower.cpp.
+//
+// ───────────────── Competition profile (override after verifying) ─────
+//   LINE_TARGET_SPEED_MMPS         700.0f
+//   LINE_MAX_SPEED_MMPS            900.0f
+//   LINE_MIN_SPEED_MMPS            300.0f
+//   LINE_GAIN_REF_SPEED_MMPS       500.0f
+//   LINE_GAIN_SCHED_FLOOR_MMPS     250.0f
+//   LINE_KP_BASE_DEGPS_PER_SLOT    90.0f
+//   LINE_KD_BASE_DEG_PER_SLOT      6.5f
+//   LINE_OMEGA_LIMIT_DEGPS         800.0f
+//   LINE_BRAKE_GAIN_MMPS_PER_SLOT  160.0f
+//   LINE_LOST_HOLD_MS              60
+//   LINE_LOST_STOP_MS              200
+//   LINE_RECOVERY_AUTHORITY        0.7f
+//   LINE_BRANCH_STEER_BIAS_DEGPS   280.0f
+//   LINE_BRANCH_CAPTURE_MS         150
+//   LINE_INTERSECTION_LOCKOUT_MS   150
+// ──────────────────────────────────────────────────────────────────────
+
+// Speed envelope (forward target velocity, mm/s)
+#define LINE_TARGET_SPEED_MMPS      400.0f
+#define LINE_MAX_SPEED_MMPS         600.0f
+#define LINE_MIN_SPEED_MMPS         200.0f
+#define LINE_FOLLOW_RUN_DISTANCE_MM 100000.0f
+
+// PD steering — gain-scheduled vs current forward velocity so the
+// per-millimeter response stays consistent across the speed envelope.
+#define LINE_GAIN_REF_SPEED_MMPS    350.0f
+#define LINE_GAIN_SCHED_FLOOR_MMPS  200.0f
+#define LINE_KP_BASE_DEGPS_PER_SLOT 70.0f
+#define LINE_KD_BASE_DEG_PER_SLOT   4.5f
+#define LINE_OMEGA_LIMIT_DEGPS      500.0f
+
+// Error filter + predictive lookahead (substitutes for physical sensor
+// mounting offset ahead of the wheel axle).
+#define LINE_ERROR_FILTER_ALPHA 0.45f
+#define LINE_LOOKAHEAD_TIME_S   0.035f
+
+// Speed scheduling on |error|: target_v = TARGET - BRAKE * |e_filt|,
+// clamped to [MIN, MAX]. With BRAKE=130 and TARGET=400, |e|=1 drops
+// target to 270 mm/s, |e|=2 drops to MIN.
+#define LINE_BRAKE_GAIN_MMPS_PER_SLOT 130.0f
+
+// Line loss / recovery — slightly forgiving timings while you're
+// confirming the new control law tracks cleanly.
+#define LINE_LOST_HOLD_MS       100
+#define LINE_LOST_STOP_MS       300
+#define LINE_RECOVERY_AUTHORITY 0.6f
+
+// Intersection / route (kept from existing design).
+#define LINE_BRANCH_STEER_BIAS_DEGPS 200.0f
+#define LINE_BRANCH_CAPTURE_MS       200
+#define LINE_INTERSECTION_LOCKOUT_MS 200
 
 #endif // CONFIG_TUNING_H

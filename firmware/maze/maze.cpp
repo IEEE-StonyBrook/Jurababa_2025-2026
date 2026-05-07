@@ -7,8 +7,8 @@
 // ============================================================
 
 Cell::Cell(int x, int y)
-    : x_(x), y_(y), north_(nullptr), east_(nullptr), south_(nullptr), west_(nullptr),
-      explored_(false), parent(nullptr), processed(false)
+    : parent(nullptr), processed(false), x_(x), y_(y), north_(nullptr), east_(nullptr),
+      south_(nullptr), west_(nullptr), explored_(false)
 {
 }
 

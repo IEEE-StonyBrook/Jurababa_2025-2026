@@ -13,7 +13,9 @@
 #include "common/log.h"
 #include "common/utils.h"
 #include "config/geometry.h"
+#ifndef SIMULATOR_BUILD
 #include "control/motion.h"
+#endif
 #include "maze/maze.h"
 #include "maze/maze_mouse.h"
 #include "navigation/a_star.h"
@@ -24,7 +26,9 @@ namespace PathUtils
 {
 namespace
 {
+#ifndef SIMULATOR_BUILD
 constexpr float kSpeedRunYawPreflightToleranceDeg = 20.0f;
+#endif
 
 struct ExploredNode
 {
@@ -91,12 +95,14 @@ std::string fixed1(float value)
     return buffer;
 }
 
+#ifndef SIMULATOR_BUILD
 std::string signedFixed1(float value)
 {
     char buffer[24];
     std::snprintf(buffer, sizeof(buffer), "%+.1f", static_cast<double>(value));
     return buffer;
 }
+#endif
 
 bool parseForwardToken(const std::string& token, int& cells)
 {
@@ -196,6 +202,7 @@ bool executeStartCenter(Mouse* mouse)
     return mouse->move_mm(START_CENTER_DISTANCE_MM);
 }
 
+#ifndef SIMULATOR_BUILD
 float expectedYawForHeading(const std::string& heading)
 {
     if (heading == "ne" || heading == "NE")
@@ -214,9 +221,15 @@ float expectedYawForHeading(const std::string& heading)
         return 45.0f;
     return 0.0f;
 }
+#endif
 
 bool speedRunYawPreflight(Mouse* mouse, MazeMouse* maze_mouse)
 {
+#ifdef SIMULATOR_BUILD
+    (void)mouse;
+    (void)maze_mouse;
+    return true;
+#else
     if (mouse == nullptr || maze_mouse == nullptr || mouse->run_on_simulator)
         return true;
 
@@ -238,6 +251,7 @@ bool speedRunYawPreflight(Mouse* mouse, MazeMouse* maze_mouse)
 
     LOG_ERROR("Speed run aborted: physical yaw does not match virtual heading.");
     return false;
+#endif
 }
 
 bool atAnyGoal(MazeMouse* maze_mouse, const std::vector<std::array<int, 2>>& goals)
@@ -278,9 +292,16 @@ bool executeFastSequence(Mouse* mouse, const std::string& sequence, bool start_f
                      " start=" + (start_pending ? std::string("true") : std::string("false")) +
                      " distance_mm=" + fixed1(distance_mm) +
                      " cells=" + std::to_string(forward_cells));
+#ifdef SIMULATOR_BUILD
+            (void)distance_mm;
+            if (start_pending)
+                executeStartCenter(mouse);
+            mouse->moveForward(forward_cells);
+#else
             if (!mouse->move_mm(distance_mm))
                 return false;
             mouse->ghostMoveForward(forward_cells);
+#endif
             start_pending = false;
             continue;
         }

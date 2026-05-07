@@ -88,6 +88,7 @@ class LineFollower
     float       lineError() const;
     float       filteredLineError() const;
     float       steeringAdjustmentDegps() const;
+    float       targetSpeedMmps() const;
     bool        setRoute(const char* route);
     void        clearRoute();
     const char* route() const;
@@ -120,15 +121,16 @@ class LineFollower
     State state_ = State::Idle;
 
     // Line steering diagnostics/state.
-    float    prev_line_error_       = 0.0f;
-    float    filtered_line_error_   = 0.0f;
-    float    latest_line_position_  = 0.0f;
-    float    latest_line_error_     = 0.0f;
-    float    latest_steering_degps_ = 0.0f;
-    bool     filter_initialized_    = false;
-    bool     line_seen_             = false;
-    bool     line_lost_             = false;
-    uint32_t last_line_seen_ms_     = 0;
+    float    prev_line_error_          = 0.0f;
+    float    filtered_line_error_      = 0.0f;
+    float    latest_line_position_     = 0.0f;
+    float    latest_line_error_        = 0.0f;
+    float    latest_steering_degps_    = 0.0f;
+    float    latest_target_speed_mmps_ = 0.0f;
+    bool     filter_initialized_       = false;
+    bool     line_seen_                = false;
+    bool     line_lost_                = false;
+    uint32_t last_line_seen_ms_        = 0;
 
     bool turn_done_ = true;
 
@@ -144,7 +146,6 @@ class LineFollower
     uint32_t                      branch_capture_end_ms_       = 0;
     uint32_t                      intersection_lockout_end_ms_ = 0;
     bool                          recovery_active_             = false;
-    bool                          major_correction_active_     = false;
     LineSensor::IntersectionEvent last_intersection_event_;
     char                          last_route_command_        = '-';
     bool                          last_route_choice_matched_ = true;

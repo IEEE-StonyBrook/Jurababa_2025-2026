@@ -79,6 +79,7 @@ bool parsePositiveInt(const std::string& text, int& value)
 #endif
 }
 
+#ifndef SIMULATOR_BUILD
 float normalizeYawDelta(float degrees)
 {
     while (degrees > 180.0f)
@@ -106,6 +107,7 @@ float expectedYawForHeading(const std::string& heading)
         return 45.0f;
     return 0.0f;
 }
+#endif
 
 std::string cardinalAfterHalfSteps(const std::string& heading, int half_steps_right)
 {
@@ -420,6 +422,8 @@ void Mouse::apply_maze_heading_hold_for_heading(const std::string& heading)
 #ifndef SIMULATOR_BUILD
     if (motion_ != nullptr)
         motion_->set_heading_hold(expectedYawForHeading(heading));
+#else
+    (void)heading;
 #endif
 }
 
