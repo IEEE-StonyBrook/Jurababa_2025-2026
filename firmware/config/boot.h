@@ -9,6 +9,7 @@ enum class BootModeSelection
 {
     Prompt,
     Competition,
+    CheeseHunt,
     CLI,
     DriverLab
 };
@@ -21,7 +22,8 @@ enum class BootSensorSelection
 };
 
 // Set either value to Prompt to restore the boot-time keyboard picker.
-// Competition boots directly into the gesture-driven COMP loop.
+// Competition boots directly into the gesture-driven COMP loop. CheeseHunt
+// also forces ToF and disables Bluetooth because GP12/GP13 become IR pins.
 #define BOOT_MODE_SELECTION   BootModeSelection::CLI
 #define BOOT_SENSOR_SELECTION BootSensorSelection::ToF
 

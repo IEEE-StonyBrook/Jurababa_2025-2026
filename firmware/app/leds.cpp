@@ -111,6 +111,16 @@ void setPaused()
     putPixel(grbPixel(kAbortBrightness, 0, 0));
 }
 
+void setCheeseHunting()
+{
+    putPixel(grbPixel(kAbortBrightness, 0, 0));
+}
+
+void setBeaconFound()
+{
+    putPixel(grbPixel(0, kGoalBrightness, 0));
+}
+
 void setIdle()
 {
     putPixel(0);

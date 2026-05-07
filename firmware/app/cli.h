@@ -10,6 +10,7 @@
 
 class Mouse;
 class Battery;
+class BeaconIr;
 class Bluetooth;
 class DriverLab;
 class LineFollower;
@@ -58,6 +59,7 @@ class CommandLineInterface
         ToF*                            left_tof      = nullptr; // null in LineSensor mode
         ToF*                            front_tof     = nullptr;
         ToF*                            right_tof     = nullptr;
+        BeaconIr*                       beacon_ir     = nullptr; // null outside Cheese Hunt mode
         LineFollower*                   line_follower = nullptr; // null in ToF mode
         DriverLab*                      driver_lab    = nullptr;
         Maze*                           maze          = nullptr;
@@ -73,6 +75,7 @@ class CommandLineInterface
     void greet();
     void loop();
     void runCompetitionMode();
+    void runCheeseHuntMode();
     bool pollOnce() { return process_serial_data(); }
 
     bool process_serial_data();

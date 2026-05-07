@@ -54,6 +54,12 @@
 #define PIN_BT_TX 12 // Bluetooth transmit
 #define PIN_BT_RX 13 // Bluetooth receive
 
+// ================= Cheese Hunt IR Pins ================= //
+// Cheese Hunt disables Bluetooth and reuses GP12/GP13 for the beacon
+// handshake. Do not enable Bluetooth in that boot mode.
+#define PIN_IR_EMITTER  12 // IR LED output burst to deactivate beacon
+#define PIN_IR_RECEIVER 13 // Active-low IR receiver input from beacon
+
 // ================= Line Sensor Pins (I2C0) ================= //
 #define PIN_LINE_SDA 4 // I2C0 SDA
 #define PIN_LINE_SCL 5 // I2C0 SCL

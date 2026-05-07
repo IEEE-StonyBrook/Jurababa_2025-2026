@@ -43,6 +43,12 @@ void flashAborted();
 // announcement) and from setArmed (white pulse, ready for gesture).
 void setPaused();
 
+// Solid red while Cheese Hunt is armed/running and the beacon is still active.
+void setCheeseHunting();
+
+// Solid green once Cheese Hunt has deactivated the beacon.
+void setBeaconFound();
+
 // LED off.
 void setIdle();
 

@@ -12,6 +12,7 @@
 class MazeMouse;
 class Motion;
 class Cell;
+class BeaconIr;
 
 /**
  * @brief High-level maze navigation Mouse
@@ -108,6 +109,7 @@ class Mouse
     void update_map();
     bool search_to(const std::vector<std::array<int, 2>>& goals);
     bool search_maze();
+    bool cheese_hunt(const std::array<int, 2>& start_cell, BeaconIr* beacon_ir);
     bool turn_to_face(const std::string& heading);
     void log_action_status(const std::string& action, Cell* cell, const std::string& position_text);
     void panic();

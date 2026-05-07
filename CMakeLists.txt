@@ -37,6 +37,7 @@ set(DRIVER_SOURCES
     firmware/drivers/tof.cpp
     firmware/drivers/battery.cpp
     firmware/drivers/line_sensor.cpp
+    firmware/drivers/beacon_ir.cpp
 )
 
 set(CONTROL_SOURCES

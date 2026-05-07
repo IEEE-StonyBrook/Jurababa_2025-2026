@@ -7,16 +7,20 @@
  *        Default boot path. ToF-only gesture-driven COMP loop, USB serial
  *        diagnostics only, no Bluetooth.
  *
- *   2. Normal CLI
+ *   2. Cheese Hunt
+ *        ToF-only beacon search. GP12/GP13 are IR emitter/receiver, so
+ *        Bluetooth is disabled.
+ *
+ *   3. Normal CLI
  *        UKMARS mazerunner-core-style command loop. ToF mode runs Motion from
  *        a 500 Hz timer callback; LineSensor mode runs Motion + LineFollower.
  *
- *   3. DriverLab
+ *   4. DriverLab
  *        Single-core motor characterization CLI. Core 0 owns motors,
  *        encoders, IMU, and either ToFs or the line sensor.
  *
  * Boot choices are configured in config/boot.h:
- *   BOOT_MODE_SELECTION   -> Competition, Normal CLI, DriverLab, or Prompt
+ *   BOOT_MODE_SELECTION   -> Competition, CheeseHunt, Normal CLI, DriverLab, or Prompt
  *   BOOT_SENSOR_SELECTION -> ToF, LineSensor, or Prompt
  */
 
@@ -43,6 +47,7 @@
 #include "control/motion.h"
 #include "driver_lab/driver_lab.h"
 #include "drivers/battery.h"
+#include "drivers/beacon_ir.h"
 #include "drivers/encoder.h"
 #include "drivers/imu.h"
 #include "drivers/line_sensor.h"
@@ -247,6 +252,7 @@ void resetDiagnostics()
 enum class BootRunMode
 {
     Competition,
+    CheeseHunt,
     NormalCli,
     DriverLab
 };
@@ -256,7 +262,7 @@ static BootRunMode selectBootRunModePrompt(uint32_t timeout_ms)
     printf("\n==========================================\n");
     printf("  Jurababa -- boot\n");
     printf("==========================================\n");
-    printf("  Press 'M' for DriverLab, 'N' for Normal CLI.\n");
+    printf("  Press 'M' for DriverLab, 'N' for Normal CLI, 'C' for Cheese Hunt.\n");
     printf("  Otherwise Competition starts in %lu s (default).\n", timeout_ms / 1000);
     printf("==========================================\n\n");
 
@@ -286,6 +292,11 @@ static BootRunMode selectBootRunModePrompt(uint32_t timeout_ms)
                 printf("\n*** Normal CLI Mode selected ***\n\n");
                 return BootRunMode::NormalCli;
             }
+            if (ch == 'C' || ch == 'c')
+            {
+                printf("\n*** Cheese Hunt selected ***\n\n");
+                return BootRunMode::CheeseHunt;
+            }
         }
 
         int seconds_left = static_cast<int>((timeout_ms - elapsed) / 1000);
@@ -304,6 +315,9 @@ static BootRunMode configuredBootRunMode()
         case BootModeSelection::Competition:
             printf("\n*** Competition Mode selected (config) ***\n\n");
             return BootRunMode::Competition;
+        case BootModeSelection::CheeseHunt:
+            printf("\n*** Cheese Hunt selected (config) ***\n\n");
+            return BootRunMode::CheeseHunt;
         case BootModeSelection::DriverLab:
             printf("\n*** DriverLab selected (config) ***\n\n");
             return BootRunMode::DriverLab;
@@ -444,15 +458,16 @@ static void runDriverLabMode(Battery* battery, SensorMode sensor_mode)
 }
 
 // ----------------------------------------------------------------------------
-// Mouse app mode (Competition or Normal CLI)
+// Mouse app mode (Competition, Cheese Hunt, or Normal CLI)
 // ----------------------------------------------------------------------------
-static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool competition_mode)
+static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool competition_mode,
+                            bool cheese_hunt_mode = false)
 {
-    if (competition_mode)
+    if (competition_mode || cheese_hunt_mode)
         sensor_mode = SensorMode::TOF;
 
     Bluetooth* bluetooth_ptr = nullptr;
-    if (!competition_mode)
+    if (!competition_mode && !cheese_hunt_mode)
     {
         static Bluetooth bluetooth(uart0, 115200, PIN_BT_TX, PIN_BT_RX);
         bluetooth.init();
@@ -463,12 +478,19 @@ static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool compe
         Log::setBluetoothPriority(LogPriority::INFO);
         Log::setBluetoothEnabled(true);
     }
-    else
+    else if (competition_mode)
     {
         Log::setBluetoothInterface(nullptr);
         Log::setBluetoothEnabled(false);
         printf("\n=== Jurababa Competition ===\n");
         printf("ToF stack forced. Bluetooth disabled; USB serial diagnostics remain available.\n");
+    }
+    if (cheese_hunt_mode)
+    {
+        Log::setBluetoothInterface(nullptr);
+        Log::setBluetoothEnabled(false);
+        printf("\n=== Jurababa Cheese Hunt ===\n");
+        printf("ToF stack forced. GP12/GP13 reserved for IR; Bluetooth disabled.\n");
     }
 
     // Maze + virtual mouse + wall bridge live on Core 0 in both sub-modes.
@@ -489,6 +511,7 @@ static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool compe
     ToF*          left_tof_ptr      = nullptr;
     ToF*          front_tof_ptr     = nullptr;
     ToF*          right_tof_ptr     = nullptr;
+    BeaconIr*     beacon_ir_ptr     = nullptr;
 
     if (sensor_mode == SensorMode::LINE_SENSOR)
     {
@@ -535,6 +558,12 @@ static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool compe
         left_tof_ptr  = &left_tof;
         front_tof_ptr = &front_tof;
         right_tof_ptr = &right_tof;
+        if (cheese_hunt_mode)
+        {
+            static BeaconIr beacon_ir;
+            beacon_ir.begin();
+            beacon_ir_ptr = &beacon_ir;
+        }
 
         // Hand motion + ToFs to a 500 Hz timer alarm. Mirrors UKMARS
         // systick.h: encoders.update → motion.update → motors.update_controllers
@@ -570,6 +599,7 @@ static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool compe
     deps.left_tof      = left_tof_ptr;
     deps.front_tof     = front_tof_ptr;
     deps.right_tof     = right_tof_ptr;
+    deps.beacon_ir     = beacon_ir_ptr;
     deps.line_follower = line_follower_ptr;
     deps.driver_lab    = nullptr; // DriverLab requires direct motor access; not in Cli mode.
     deps.maze          = &maze;
@@ -580,7 +610,13 @@ static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool compe
     deps.goal_cells    = goal_cells;
 
     Cli cli(deps);
-    if (competition_mode)
+    if (cheese_hunt_mode)
+    {
+        cli.runCheeseHuntMode();
+        while (true)
+            sleep_ms(1000);
+    }
+    else if (competition_mode)
     {
         cli.runCompetitionMode();
         stage_led::setIdle();
@@ -602,6 +638,12 @@ static void runCliMode(Battery* battery, SensorMode sensor_mode)
 static void runCompetitionMode(Battery* battery)
 {
     runMouseAppMode(battery, SensorMode::TOF, /*competition_mode=*/true);
+}
+
+static void runCheeseHuntMode(Battery* battery)
+{
+    runMouseAppMode(battery, SensorMode::TOF, /*competition_mode=*/false,
+                    /*cheese_hunt_mode=*/true);
 }
 
 // ----------------------------------------------------------------------------
@@ -642,6 +684,9 @@ int main()
     {
         case BootRunMode::Competition:
             runCompetitionMode(battery_ptr);
+            break;
+        case BootRunMode::CheeseHunt:
+            runCheeseHuntMode(battery_ptr);
             break;
         case BootRunMode::DriverLab:
             runDriverLabMode(battery_ptr, configuredSensorMode());

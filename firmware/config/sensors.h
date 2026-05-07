@@ -150,4 +150,14 @@
 // line reports inactive, flip this to 1 before motor tests.
 #define LINE_SENSOR_ACTIVE_LOW 0
 
+// ================= Cheese Hunt IR Beacon ================= //
+// Matches the known-good Pico beacon test: the mouse listens for an active-low
+// 23-27 ms pulse, then sends a 1000-cycle ~40 kHz burst to deactivate it.
+#define BEACON_IR_BURST_CYCLES       1000
+#define BEACON_IR_BURST_HIGH_US      12
+#define BEACON_IR_BURST_LOW_US       12
+#define BEACON_IR_MIN_PULSE_US       23000
+#define BEACON_IR_MAX_PULSE_US       27000
+#define BEACON_IR_POST_DETECT_LOG_MS 10
+
 #endif // CONFIG_SENSORS_H

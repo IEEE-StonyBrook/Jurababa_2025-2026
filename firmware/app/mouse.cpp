@@ -1,10 +1,12 @@
 #include "app/mouse.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <queue>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -12,8 +14,10 @@
 #ifndef SIMULATOR_BUILD
 #include "pico/stdlib.h"
 
+#include "app/leds.h"
 #include "config/motion.h"
 #include "control/motion.h"
+#include "drivers/beacon_ir.h"
 #endif
 #include "common/log.h"
 #include "common/tof_wall_utils.h"
@@ -208,6 +212,56 @@ bool atAnyGoal(MazeMouse* maze_mouse, const std::vector<std::array<int, 2>>& goa
             return true;
     }
     return false;
+}
+
+std::vector<Cell*> pathToNearestUnexplored(MazeMouse* maze_mouse)
+{
+    Cell* start = maze_mouse != nullptr ? maze_mouse->currentCell() : nullptr;
+    if (start == nullptr)
+        return {};
+
+    const int width  = maze_mouse->mazeWidth();
+    const int height = maze_mouse->mazeHeight();
+
+    std::vector<std::vector<bool>>  seen(width, std::vector<bool>(height, false));
+    std::vector<std::vector<Cell*>> parent(width, std::vector<Cell*>(height, nullptr));
+    std::queue<Cell*>               queue;
+
+    seen[start->x()][start->y()] = true;
+    queue.push(start);
+
+    Cell* target = nullptr;
+    while (!queue.empty() && target == nullptr)
+    {
+        Cell* current = queue.front();
+        queue.pop();
+
+        for (Cell* neighbor : maze_mouse->cellNeighbors(current, /*include_diagonal=*/false))
+        {
+            if (neighbor == nullptr || seen[neighbor->x()][neighbor->y()])
+                continue;
+            if (!maze_mouse->canMoveBetween(current, neighbor, /*diagonals=*/false))
+                continue;
+
+            seen[neighbor->x()][neighbor->y()]   = true;
+            parent[neighbor->x()][neighbor->y()] = current;
+            if (!neighbor->explored())
+            {
+                target = neighbor;
+                break;
+            }
+            queue.push(neighbor);
+        }
+    }
+
+    if (target == nullptr)
+        return {};
+
+    std::vector<Cell*> path;
+    for (Cell* cell = target; cell != nullptr && cell != start; cell = parent[cell->x()][cell->y()])
+        path.push_back(cell);
+    std::reverse(path.begin(), path.end());
+    return path;
 }
 
 class MouseMotionSequenceGuard
@@ -1291,6 +1345,166 @@ bool Mouse::search_maze()
 #endif
     state_ = State::FINISHED;
     return true;
+}
+
+bool Mouse::cheese_hunt(const std::array<int, 2>& start_cell, BeaconIr* beacon_ir)
+{
+    if (maze_mouse_ == nullptr)
+        return false;
+
+    auto beacon_found = [&]() -> bool
+    {
+#ifndef SIMULATOR_BUILD
+        if (!run_on_simulator && beacon_ir != nullptr && beacon_ir->pollAndDeactivate())
+        {
+            stage_led::setBeaconFound();
+            return true;
+        }
+#else
+        (void)beacon_ir;
+#endif
+        return false;
+    };
+
+    auto return_to_start = [&]() -> bool
+    {
+        const std::vector<std::array<int, 2>> start_goal = {start_cell};
+        if (atAnyGoal(maze_mouse_, start_goal))
+            return turn_to_face("n");
+
+        AStar              a_star(maze_mouse_);
+        std::vector<Cell*> return_path =
+            a_star.cellPath(start_goal, /*diagonals=*/false, /*pass_goals=*/true);
+        if (return_path.empty())
+        {
+            LOG_ERROR("Cheese Hunt: no route back to start");
+            return false;
+        }
+
+        const std::string return_heading =
+            headingToNeighbor(maze_mouse_->currentCell(), return_path.front());
+        if (!return_heading.empty() && !turn_to_face(return_heading))
+            return false;
+
+        m_handStart = false;
+        if (!search_to(start_goal))
+            return false;
+        return turn_to_face("n");
+    };
+
+    MouseMotionSequenceGuard  motion_sequence(this);
+    MouseMazeHeadingHoldGuard heading_hold(this);
+    state_ = State::SEARCHING;
+    maze_mouse_->setMazeMask(MASK_OPEN);
+
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator)
+    {
+        if (motion_ == nullptr)
+            return false;
+        motion_->set_steering_mode(tof_wall::SteeringMode::STEERING_OFF);
+        motion_->resetWallSteeringStats();
+        begin_search_front_latch();
+        if (m_handStart)
+        {
+            LOG_INFO("Cheese Hunt: hand_start distance_mm=" + fixed1(START_CENTER_DISTANCE_MM) +
+                     " sensing_position_mm=" + fixed1(SENSING_POSITION_MM));
+            apply_maze_heading_hold();
+            motion_->move(START_CENTER_DISTANCE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+            waitForMotion();
+            if (haltRequested())
+                return false;
+            m_handStart = false;
+        }
+        else
+        {
+            LOG_INFO("Cheese Hunt: center_start distance_mm=" +
+                     fixed1(SENSING_POSITION_MM - HALF_CELL_MM));
+            apply_maze_heading_hold();
+            motion_->set_position(HALF_CELL_MM);
+            motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
+                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+        }
+        motion_->set_position(HALF_CELL_MM);
+        if (!wait_until_position(SENSING_POSITION_MM))
+        {
+            clear_search_front_latch();
+            return false;
+        }
+        finish_search_front_latch();
+        motion_->set_position(SENSING_POSITION_MM);
+        motion_->set_steering_mode(tof_wall::SteeringMode::STEER_NORMAL);
+    }
+#endif
+    if (run_on_simulator)
+        simulatorResponse("moveForward");
+
+    const int max_steps = mazeWidth() * mazeHeight() * 8;
+    for (int step = 1; step <= max_steps; ++step)
+    {
+        maze_mouse_->moveForward(1);
+        Cell* current = maze_mouse_->currentCell();
+        if (current == nullptr)
+            return false;
+
+        update_map();
+        LOG_INFO("Cheese Hunt step=" + std::to_string(step) + " cell=(" +
+                 std::to_string(current->x()) + "," + std::to_string(current->y()) +
+                 ") heading=" + headingUpper(maze_mouse_->currentDirection()));
+
+        if (beacon_found())
+        {
+            LOG_INFO("Cheese Hunt: beacon deactivated at (" + std::to_string(current->x()) + "," +
+                     std::to_string(current->y()) + ")");
+            if (!stopAtCentre())
+                return false;
+            if (!adjustPosition())
+                return false;
+            state_ = State::FINISHED;
+            return return_to_start();
+        }
+
+        std::vector<Cell*> cell_path = pathToNearestUnexplored(maze_mouse_);
+        if (cell_path.empty())
+        {
+            LOG_ERROR("Cheese Hunt: beacon not found");
+            if (!stopAtCentre())
+                return false;
+            if (!adjustPosition())
+                return false;
+            state_ = State::FINISHED;
+            return return_to_start();
+        }
+
+        std::string lfr =
+            PathConverter::buildLFR(current, maze_mouse_->currentDirectionArray(), cell_path);
+        std::string second;
+        std::string action = firstToken(lfr, &second);
+        LOG_INFO("Cheese Hunt action=" + action + " lfr=" + lfr);
+
+        if (action == "F")
+            move_ahead();
+        else if ((action == "L" && second == "L") || (action == "R" && second == "R") ||
+                 action == "B")
+            turn_back();
+        else if (action == "L")
+            turn_left();
+        else if (action == "R")
+            turn_right();
+        else
+        {
+            LOG_ERROR("Cheese Hunt: unsupported LFR action: " + action);
+            return false;
+        }
+
+        if (haltRequested())
+            return false;
+    }
+
+    LOG_ERROR("Cheese Hunt: step limit reached before beacon found");
+    state_ = State::FINISHED;
+    return return_to_start();
 }
 
 bool Mouse::turn_to_face(const std::string& heading)

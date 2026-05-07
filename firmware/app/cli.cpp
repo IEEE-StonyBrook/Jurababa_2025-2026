@@ -26,6 +26,7 @@
 #include "control/line_follower.h"
 #include "control/motion.h"
 #include "drivers/battery.h"
+#include "drivers/beacon_ir.h"
 #include "drivers/tof.h"
 #include "maze/maze.h"
 #include "maze/maze_mouse.h"
@@ -590,6 +591,11 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         handle_comp_command(args);
         return;
     }
+    if (std::strcmp(args.argv[0], "CHEESE") == 0)
+    {
+        runCheeseHuntMode();
+        return;
+    }
     if (std::strcmp(args.argv[0], "SIMRUN") == 0)
     {
         if (!run_competition_stage(1, /*wait_for_start=*/true))
@@ -871,6 +877,56 @@ void CommandLineInterface::runCompetitionMode()
             // Falls through to the top of the while(true): setArmed() and
             // wait for the next gesture against the rolled-back maze.
         }
+    }
+}
+
+void CommandLineInterface::runCheeseHuntMode()
+{
+    if (!needsTof("CHEESE"))
+        return;
+    if (deps_.mouse == nullptr || deps_.maze == nullptr || deps_.maze_mouse == nullptr ||
+        deps_.beacon_ir == nullptr)
+    {
+        printFormat("Cheese Hunt: missing mouse, maze, or beacon IR dependency.\n");
+        return;
+    }
+
+    printFormat("Cheese Hunt: front wave starts beacon search. Bluetooth is disabled.\n");
+    stage_led::setCheeseHunting();
+
+    StartTrigger trigger =
+        waitForStartGesture(/*bt=*/nullptr, deps_.front_tof, /*low_mm=*/80, /*high_mm=*/110);
+    if (trigger == StartTrigger::CANCELLED)
+    {
+        stage_led::setIdle();
+        printFormat("Cheese Hunt: cancelled before start.\n");
+        return;
+    }
+
+    deps_.maze->reset();
+    deps_.maze_mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
+    deps_.mouse->setUp(deps_.start_cell, deps_.goal_cells);
+    deps_.mouse->set_hand_start(true);
+    deps_.beacon_ir->reset();
+
+    printFormat("Cheese Hunt: hunting from start=%s.\n", coordinateText(deps_.start_cell).c_str());
+    const bool found = deps_.mouse->cheese_hunt(deps_.start_cell, deps_.beacon_ir);
+
+    if (found || deps_.beacon_ir->beaconOff())
+    {
+        stage_led::setBeaconFound();
+        printFormat("Cheese Hunt: beacon deactivated; returned to start if reachable.\n");
+    }
+    else
+    {
+        stage_led::setCheeseHunting();
+        printFormat("Cheese Hunt: beacon not found in reachable explored maze.\n");
+    }
+
+    if (deps_.motion != nullptr)
+    {
+        deps_.motion->stop();
+        deps_.motion->disable_drive();
     }
 }
 
@@ -2095,6 +2151,7 @@ void CommandLineInterface::help_debug()
     printFormat("       BOOTSEL    -> abort current run, then pause\n");
     printFormat("       BOOTSEL    -> (while paused) resume to armed\n");
     printFormat("       (abort rolls back wall data; HALT/X while paused exits COMP)\n");
+    printFormat("CHEESE : one-front-wave Cheese Hunt beacon search\n");
     printFormat("RESET : reset search state without rebooting\n");
     printFormat("HALT : stop motion\n");
 }
