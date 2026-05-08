@@ -87,6 +87,14 @@ void LineSensor::updateDerivedState()
 
     position_valid_ = true;
     position_       = weighted_sum / active_count;
+
+    // Mild center snap: when both center probes are on and no far-edge probes
+    // are on, bias toward centerline without sacrificing off-center response.
+    const bool center_pair_active = (active_mask_ & 0x18) == 0x18; // bits 3 and 4
+    const bool far_edges_active   = (active_mask_ & 0x81) != 0;    // bits 0 and 7
+    if (center_pair_active && !far_edges_active)
+        position_ *= 0.60f;
+
     last_position_  = position_;
 }
 

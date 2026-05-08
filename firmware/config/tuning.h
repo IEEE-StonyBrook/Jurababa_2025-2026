@@ -78,7 +78,7 @@
 #define LINE_ERROR_FILTER_ALPHA           0.35f
 #define LINE_LOST_HOLD_MS                 150
 #define LINE_LOST_STOP_MS                 350
-#define LINE_BRANCH_STEER_BIAS_DEGPS      90.0f
+#define LINE_BRANCH_STEER_BIAS_DEGPS      45.0f
 #define LINE_BRANCH_CAPTURE_MS            400
 #define LINE_INTERSECTION_LOCKOUT_MS      250
 #define LINE_FOLLOW_BASE_SPEED_MMPS       150.0f
