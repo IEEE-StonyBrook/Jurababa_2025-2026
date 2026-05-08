@@ -798,6 +798,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
                  std::to_string(current->x()) + "," + std::to_string(current->y()) +
                  ") heading=" + headingUpper(maze_mouse_->currentDirection()) + " lfr=" + lfr +
                  " action=" + action + " position_mm=" + position_text);
+                 //test
         log_action_status(action, current, position_text);
 
         if (action == "F")
