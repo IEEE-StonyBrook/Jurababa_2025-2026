@@ -95,7 +95,7 @@ void LineSensor::updateDerivedState()
     if (center_pair_active && !far_edges_active)
         position_ *= 0.60f;
 
-    last_position_  = position_;
+    last_position_ = position_;
 }
 
 float LineSensor::get_position() const
@@ -110,55 +110,12 @@ bool LineSensor::on_line() const
 
 bool LineSensor::detect_intersection()
 {
+    if (!read_valid_)
+        return false;
+
     const bool left_edge_active  = (active_mask_ & 0x03) == 0x03;
     const bool right_edge_active = (active_mask_ & 0xC0) == 0xC0;
-    const uint32_t now_ms        = to_ms_since_boot(get_absolute_time());
-
-    // UKMARS-style transition logic: don't require both sides to be active in
-    // the same instant. Angled crossings often light one side first.
-    if (!intersection_pending_)
-    {
-        if (!left_edge_active && !right_edge_active)
-            return false;
-
-        intersection_pending_         = true;
-        intersection_window_start_ms_ = now_ms;
-        intersection_left_seen_       = left_edge_active;
-        intersection_right_seen_      = right_edge_active;
-    }
-    else
-    {
-        intersection_left_seen_  = intersection_left_seen_ || left_edge_active;
-        intersection_right_seen_ = intersection_right_seen_ || right_edge_active;
-    }
-
-    if (intersection_left_seen_ && intersection_right_seen_)
-    {
-        intersection_pending_    = false;
-        intersection_left_seen_  = false;
-        intersection_right_seen_ = false;
-        return true;
-    }
-
-    if ((now_ms - intersection_window_start_ms_) > LINE_INTERSECTION_WINDOW_MS)
-    {
-        if (left_edge_active || right_edge_active)
-        {
-            // Keep tracking when still on a complex marker region.
-            intersection_window_start_ms_ = now_ms;
-            intersection_left_seen_       = left_edge_active;
-            intersection_right_seen_      = right_edge_active;
-            intersection_pending_         = true;
-        }
-        else
-        {
-            intersection_pending_    = false;
-            intersection_left_seen_  = false;
-            intersection_right_seen_ = false;
-        }
-    }
-
-    return false;
+    return left_edge_active || right_edge_active;
 }
 
 uint8_t LineSensor::rawByte() const

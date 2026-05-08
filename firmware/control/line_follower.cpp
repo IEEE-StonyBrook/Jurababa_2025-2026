@@ -59,10 +59,10 @@ void LineFollower::update(float dt)
 
 void LineFollower::followLine(float dt)
 {
-    static constexpr float kLineLostReacquireGain = 0.6f;
+    static constexpr float kLineLostReacquireGain         = 0.6f;
     static constexpr float kMajorCorrectionThresholdRatio = 0.8f;
-    const uint32_t now_ms       = to_ms_since_boot(get_absolute_time());
-    const bool     line_present = line_sensor_->on_line();
+    const uint32_t         now_ms                         = to_ms_since_boot(get_absolute_time());
+    const bool             line_present                   = line_sensor_->on_line();
 
     if (line_present)
     {
@@ -94,8 +94,7 @@ void LineFollower::followLine(float dt)
         latest_steering_degps_ = recovery_dir * LINE_STEERING_LIMIT_DEGPS * kLineLostReacquireGain;
         if (!recovery_active_)
         {
-            LOG_INFO("LineFollower: recovery start lost_ms=" << lost_ms
-                                                             << " steer="
+            LOG_INFO("LineFollower: recovery start lost_ms=" << lost_ms << " steer="
                                                              << latest_steering_degps_ << " deg/s");
             recovery_active_ = true;
         }
@@ -125,21 +124,6 @@ void LineFollower::followLine(float dt)
 
     float steering_degps = LINE_STEERING_KP_DEGPS_PER_SENSOR * filtered_line_error_ +
                            LINE_STEERING_KD_DEG_PER_SENSOR * line_error_delta_per_s;
-
-    if (branch_direction_ != BranchDirection::None)
-    {
-        if (now_ms < branch_capture_end_ms_)
-        {
-            const float branch_bias =
-                (branch_direction_ == BranchDirection::Left) ? LINE_BRANCH_STEER_BIAS_DEGPS
-                                                             : -LINE_BRANCH_STEER_BIAS_DEGPS;
-            steering_degps += branch_bias;
-        }
-        else
-        {
-            branch_direction_ = BranchDirection::None;
-        }
-    }
 
     steering_degps = utils::clampAbs(steering_degps, LINE_STEERING_LIMIT_DEGPS);
 
@@ -193,7 +177,7 @@ void LineFollower::turnLeft90()
     turn_done_ = false;
 
     motion_->clear_line_steering_adjustment();
-    motion_->spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    motion_->spin_turn(90.0f, LINE_TURN_SPEED_DEGPS, LINE_TURN_ACCEL_DEGPS2);
     LOG_DEBUG("LineFollower: Turning left 90°");
 }
 
@@ -203,7 +187,7 @@ void LineFollower::turnRight90()
     turn_done_ = false;
 
     motion_->clear_line_steering_adjustment();
-    motion_->spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    motion_->spin_turn(-90.0f, LINE_TURN_SPEED_DEGPS, LINE_TURN_ACCEL_DEGPS2);
     LOG_DEBUG("LineFollower: Turning right 90°");
 }
 
@@ -236,16 +220,14 @@ void LineFollower::evaluateIntersectionCommand(uint32_t now_ms)
     if (command == 'L')
     {
         LOG_INFO("LineFollower: intersection -> route L");
-        branch_direction_     = BranchDirection::Left;
-        branch_capture_end_ms_ = now_ms + LINE_BRANCH_CAPTURE_MS;
+        turnLeft90();
         return;
     }
 
     if (command == 'R')
     {
         LOG_INFO("LineFollower: intersection -> route R");
-        branch_direction_     = BranchDirection::Right;
-        branch_capture_end_ms_ = now_ms + LINE_BRANCH_CAPTURE_MS;
+        turnRight90();
         return;
     }
 
@@ -275,20 +257,18 @@ LineFollower::State LineFollower::state() const
 
 void LineFollower::resetControlHistory()
 {
-    prev_line_error_      = 0.0f;
-    filtered_line_error_  = 0.0f;
-    latest_line_position_ = 0.0f;
-    latest_line_error_    = 0.0f;
-    latest_steering_degps_ = 0.0f;
-    filter_initialized_   = false;
-    line_seen_            = false;
-    line_lost_            = false;
-    last_line_seen_ms_    = 0;
-    branch_direction_     = BranchDirection::None;
-    branch_capture_end_ms_ = 0;
+    prev_line_error_             = 0.0f;
+    filtered_line_error_         = 0.0f;
+    latest_line_position_        = 0.0f;
+    latest_line_error_           = 0.0f;
+    latest_steering_degps_       = 0.0f;
+    filter_initialized_          = false;
+    line_seen_                   = false;
+    line_lost_                   = false;
+    last_line_seen_ms_           = 0;
     intersection_lockout_end_ms_ = 0;
-    recovery_active_      = false;
-    major_correction_active_ = false;
+    recovery_active_             = false;
+    major_correction_active_     = false;
     motion_->clear_line_steering_adjustment();
 }
 
@@ -351,9 +331,9 @@ bool LineFollower::setRoute(const char* route)
         route_[write_index++] = c;
     }
 
-    route_length_      = write_index;
+    route_length_       = write_index;
     route_[write_index] = '\0';
-    route_index_       = 0;
+    route_index_        = 0;
     return true;
 }
 

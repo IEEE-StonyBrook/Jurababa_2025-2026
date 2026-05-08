@@ -80,28 +80,21 @@ class LineFollower
      */
     State state() const;
 
-    uint8_t rawByte() const;
-    uint8_t activeMask() const;
-    bool    linePresent() const;
-    bool    lineLost() const;
-    float   linePosition() const;
-    float   lineError() const;
-    float   filteredLineError() const;
-    float   steeringAdjustmentDegps() const;
-    bool    setRoute(const char* route);
-    void    clearRoute();
+    uint8_t     rawByte() const;
+    uint8_t     activeMask() const;
+    bool        linePresent() const;
+    bool        lineLost() const;
+    float       linePosition() const;
+    float       lineError() const;
+    float       filteredLineError() const;
+    float       steeringAdjustmentDegps() const;
+    bool        setRoute(const char* route);
+    void        clearRoute();
     const char* route() const;
-    uint8_t routeIndex() const;
-    bool    routeHasRemaining() const;
+    uint8_t     routeIndex() const;
+    bool        routeHasRemaining() const;
 
   private:
-    enum class BranchDirection
-    {
-        None,
-        Left,
-        Right
-    };
-
     void followLine(float dt);
     void updateTurn();
     void resetControlHistory();
@@ -113,28 +106,26 @@ class LineFollower
     State state_ = State::Idle;
 
     // Line steering diagnostics/state.
-    float    prev_line_error_      = 0.0f;
-    float    filtered_line_error_  = 0.0f;
-    float    latest_line_position_ = 0.0f;
-    float    latest_line_error_    = 0.0f;
+    float    prev_line_error_       = 0.0f;
+    float    filtered_line_error_   = 0.0f;
+    float    latest_line_position_  = 0.0f;
+    float    latest_line_error_     = 0.0f;
     float    latest_steering_degps_ = 0.0f;
-    bool     filter_initialized_   = false;
-    bool     line_seen_            = false;
-    bool     line_lost_            = false;
-    uint32_t last_line_seen_ms_    = 0;
+    bool     filter_initialized_    = false;
+    bool     line_seen_             = false;
+    bool     line_lost_             = false;
+    uint32_t last_line_seen_ms_     = 0;
 
     bool turn_done_ = true;
 
     // Intersection debounce
-    bool     prev_intersection_  = false;
+    bool     prev_intersection_    = false;
     uint32_t last_intersection_ms_ = 0;
 
-    static constexpr uint8_t kMaxRouteLength = 64;
-    char                     route_[kMaxRouteLength + 1] = {};
+    static constexpr uint8_t kMaxRouteLength              = 64;
+    char                     route_[kMaxRouteLength + 1]  = {};
     uint8_t                  route_length_                = 0;
     uint8_t                  route_index_                 = 0;
-    BranchDirection          branch_direction_            = BranchDirection::None;
-    uint32_t                 branch_capture_end_ms_       = 0;
     uint32_t                 intersection_lockout_end_ms_ = 0;
     bool                     recovery_active_             = false;
     bool                     major_correction_active_     = false;
