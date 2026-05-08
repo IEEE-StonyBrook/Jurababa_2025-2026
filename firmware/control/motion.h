@@ -92,6 +92,10 @@ class Motion
     void    set_target_velocity(float velocity_mmps);
     void    set_final_velocity(float velocity_mmps);
     void    extend_move(float distance_mm);
+    bool    move_settled(float velocity_tolerance_mmps = 1.0f) const;
+    bool    turn_settled(float velocity_tolerance_degps = 1.0f) const;
+    bool    stop_forward(float accel_mmps2, uint32_t timeout_ms);
+    bool    wait_until_forward_settled(uint32_t timeout_ms);
     void    begin_motion_sequence();
     void    end_motion_sequence();
     void    start_move(float distance_mm, float top_speed_mmps, float final_speed_mmps,
@@ -102,15 +106,17 @@ class Motion
                     float accel_degps2);
     bool turn_finished() const;
     void turn(float degrees, float top_speed_degps, float final_speed_degps, float accel_degps2);
-    void spin_turn(float degrees, float omega_degps, float alpha_degps2);
-    void turn_IP180();
-    void turn_IP90R();
-    void turn_IP90L();
+    bool spin_turn(float degrees, float omega_degps, float alpha_degps2);
+    bool turn_IP180();
+    bool turn_IP90R();
+    bool turn_IP90L();
     void stop_at(float position_mm);
     void stop_after(float distance_mm);
     void set_position(float position_mm);
     void adjust_forward_position(float delta_mm);
+    bool wait_until_position(float position_mm, uint32_t timeout_ms);
     void wait_until_position(float position_mm);
+    bool wait_until_distance(float distance_mm, uint32_t timeout_ms);
     void wait_until_distance(float distance_mm);
     void turn_smooth(int turn_id);
 

@@ -2,11 +2,26 @@
 
 #include <cmath>
 
+#include "common/log.h"
 #include "common/utils.h"
 #include "config/config.h"
 #include "control/drivetrain.h"
 #include "drivers/imu.h"
 #include "pico/stdlib.h"
+
+namespace
+{
+constexpr float    kPositionToleranceMm        = 0.125f;
+constexpr float    kForwardSettledVelocityMmps = 1.0f;
+constexpr uint32_t kDefaultMotionWaitTimeoutMs = 5000;
+constexpr uint32_t kSpinTurnPreStopTimeoutMs   = 1000;
+
+bool timedOut(uint32_t start_ms, uint32_t timeout_ms)
+{
+    return timeout_ms > 0 &&
+           static_cast<uint32_t>(to_ms_since_boot(get_absolute_time()) - start_ms) >= timeout_ms;
+}
+} // namespace
 
 Motion::Motion(Drivetrain* drivetrain, IMU* imu)
     : drivetrain_(drivetrain), imu_(imu), forward_controller_(FWD_KP, FWD_KD, LOOP_FREQUENCY_HZ),
@@ -349,6 +364,48 @@ void Motion::move(float distance_mm, float top_speed_mmps, float final_speed_mmp
     start_move(distance_mm, top_speed_mmps, final_speed_mmps, accel_mmps2);
 }
 
+bool Motion::move_settled(float velocity_tolerance_mmps) const
+{
+    return forward_.settled(velocity_tolerance_mmps);
+}
+
+bool Motion::turn_settled(float velocity_tolerance_degps) const
+{
+    return rotation_.settled(velocity_tolerance_degps);
+}
+
+bool Motion::stop_forward(float accel_mmps2, uint32_t timeout_ms)
+{
+    forward_.stop(accel_mmps2);
+    return wait_until_forward_settled(timeout_ms);
+}
+
+bool Motion::wait_until_forward_settled(uint32_t timeout_ms)
+{
+    const uint32_t start_ms = to_ms_since_boot(get_absolute_time());
+
+    while (!move_settled(kForwardSettledVelocityMmps))
+    {
+        if (timedOut(start_ms, timeout_ms))
+        {
+            LOG_ERROR("Motion: forward stop timeout position_mm=" << position() << " velocity_mmps="
+                                                                  << velocity());
+            drivetrain_->stop();
+            forward_.reset();
+            forward_controller_.reset();
+            prev_left_cmd_vel_mmps_  = 0.0f;
+            prev_right_cmd_vel_mmps_ = 0.0f;
+            return false;
+        }
+        sleep_ms(2);
+    }
+
+    forward_controller_.reset();
+    prev_left_cmd_vel_mmps_  = 0.0f;
+    prev_right_cmd_vel_mmps_ = 0.0f;
+    return true;
+}
+
 void Motion::start_turn(float degrees, float top_speed_degps, float final_speed_degps,
                         float accel_degps2)
 {
@@ -366,31 +423,40 @@ void Motion::turn(float degrees, float top_speed_degps, float final_speed_degps,
     start_turn(degrees, top_speed_degps, final_speed_degps, accel_degps2);
 }
 
-void Motion::spin_turn(float degrees, float omega_degps, float alpha_degps2)
+bool Motion::spin_turn(float degrees, float omega_degps, float alpha_degps2)
 {
-    forward_.setFinalSpeed(0.0f);
-    forward_.setTargetSpeed(0.0f);
-    while (std::fabs(forward_.velocity()) > 1e-3f)
-        sleep_ms(2);
+    if (!stop_forward(ROBOT_BASE_ACCEL_MMPS2, kSpinTurnPreStopTimeoutMs))
+    {
+        LOG_ERROR("Motion: spin_turn cancelled before turn degrees="
+                  << degrees << " forward_velocity_mmps=" << velocity());
+        rotation_.reset();
+        return false;
+    }
+
     rotation_.reset();
     rotation_.start(degrees, omega_degps, 0.0f, alpha_degps2);
+    return true;
 }
 
-void Motion::turn_IP180()
+bool Motion::turn_IP180()
 {
-    static int direction = 1;
-    direction *= -1;
-    spin_turn(direction * 180.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    static int direction      = 1;
+    const int  next_direction = -direction;
+    if (!spin_turn(next_direction * 180.0f, ROBOT_MAX_TURN_SPEED_DEGPS,
+                   ROBOT_BASE_ANGULAR_ACCEL_DEGPS2))
+        return false;
+    direction = next_direction;
+    return true;
 }
 
-void Motion::turn_IP90R()
+bool Motion::turn_IP90R()
 {
-    spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    return spin_turn(-90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
 
-void Motion::turn_IP90L()
+bool Motion::turn_IP90L()
 {
-    spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
+    return spin_turn(90.0f, ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2);
 }
 
 void Motion::stop_at(float position_mm)
@@ -424,8 +490,8 @@ void Motion::turn_smooth(int turn_id)
     const SmoothTurnParameters& params = SMOOTH_TURN_PARAMS[turn_id];
     const float                 radius_mm =
         (std::fabs(params.angle_deg) > 1e-3f)
-            ? ((params.speed_mmps / params.omega_degps) * (180.0f / static_cast<float>(M_PI)))
-            : 0.0f;
+                            ? ((params.speed_mmps / params.omega_degps) * (180.0f / static_cast<float>(M_PI)))
+                            : 0.0f;
 
     if (radius_mm <= 0.0f)
         return;
@@ -501,7 +567,7 @@ void Motion::runPositionControl()
     float      wall_adjustment     = 0.0f;
     float      heading_adjustment  = 0.0f;
     float      steering_adjustment = 0.0f;
-    const bool line_steering_used = straight_move && line_steering_valid_;
+    const bool line_steering_used  = straight_move && line_steering_valid_;
     if (line_steering_used)
     {
         steering_adjustment                   = line_steering_adjustment_degps_;
@@ -552,8 +618,8 @@ void Motion::runPositionControl()
     right_volts += drivetrain_->feedforward(WheelSide::RIGHT, right_vel, right_accel);
 
     // Clamp at hardware boundary — no slew limit (would blunt FF response).
-    left_volts  = utils::clampAbs(left_volts, MAX_VOLTAGE);
-    right_volts = utils::clampAbs(right_volts, MAX_VOLTAGE);
+    left_volts                       = utils::clampAbs(left_volts, MAX_VOLTAGE);
+    right_volts                      = utils::clampAbs(right_volts, MAX_VOLTAGE);
     latest_motor_differential_volts_ = right_volts - left_volts;
 
     drivetrain_->setVoltage(left_volts, right_volts);
@@ -654,14 +720,38 @@ void Motion::emergency_stop()
     disable_drive();
 }
 
+bool Motion::wait_until_position(float position_mm, uint32_t timeout_ms)
+{
+    const uint32_t start_ms = to_ms_since_boot(get_absolute_time());
+
+    while (position() < position_mm - kPositionToleranceMm)
+    {
+        if (timedOut(start_ms, timeout_ms))
+        {
+            LOG_ERROR("Motion: wait_until_position timeout target_mm="
+                      << position_mm << " position_mm=" << position()
+                      << " velocity_mmps=" << velocity());
+            drivetrain_->stop();
+            return false;
+        }
+        sleep_ms(2);
+    }
+
+    return true;
+}
+
 void Motion::wait_until_position(float position_mm)
 {
-    while (position() < position_mm)
-        sleep_ms(2);
+    (void)wait_until_position(position_mm, kDefaultMotionWaitTimeoutMs);
+}
+
+bool Motion::wait_until_distance(float distance_mm, uint32_t timeout_ms)
+{
+    const float target_mm = position() + distance_mm;
+    return wait_until_position(target_mm, timeout_ms);
 }
 
 void Motion::wait_until_distance(float distance_mm)
 {
-    const float target_mm = position() + distance_mm;
-    wait_until_position(target_mm);
+    (void)wait_until_distance(distance_mm, kDefaultMotionWaitTimeoutMs);
 }

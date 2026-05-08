@@ -44,7 +44,11 @@ class Profile
     float velocity() const { return current_velocity_; }
     float acceleration() const { return acceleration_; }
     float position() const { return current_position_; }
+    float target() const { return target_distance_; }
     float remaining() const;
+    bool  reached(float position_tolerance = 0.125f) const;
+    bool  carryingVelocity(float velocity_tolerance) const;
+    bool  settled(float velocity_tolerance) const;
     bool  finished() const { return state_ == State::Finished; }
     bool  active() const { return state_ != State::Idle && state_ != State::Finished; }
     State state() const { return state_; }
@@ -52,6 +56,7 @@ class Profile
     void reset();
     void setTargetSpeed(float speed);
     void setFinalSpeed(float speed);
+    void stop(float acceleration);
     void extendTarget(float distance);
     void setPosition(float position);
     void adjustPosition(float delta);

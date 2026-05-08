@@ -54,6 +54,21 @@ float Profile::remaining() const
     return std::fabs(target_distance_ - current_position_);
 }
 
+bool Profile::reached(float position_tolerance) const
+{
+    return finished() || remaining() <= std::fabs(position_tolerance);
+}
+
+bool Profile::carryingVelocity(float velocity_tolerance) const
+{
+    return std::fabs(current_velocity_) > std::fabs(velocity_tolerance);
+}
+
+bool Profile::settled(float velocity_tolerance) const
+{
+    return !active() && !carryingVelocity(velocity_tolerance);
+}
+
 void Profile::update()
 {
     if (state_ == State::Idle)
@@ -139,6 +154,27 @@ void Profile::setTargetSpeed(float speed)
 void Profile::setFinalSpeed(float speed)
 {
     final_speed_ = std::fabs(speed);
+}
+
+void Profile::stop(float acceleration)
+{
+    acceleration_ = std::fabs(acceleration);
+    final_speed_  = 0.0f;
+    top_speed_    = 0.0f;
+    target_speed_ = 0.0f;
+
+    if (!carryingVelocity(1e-3f) || acceleration_ <= 0.0f)
+    {
+        current_velocity_     = 0.0f;
+        current_acceleration_ = 0.0f;
+        target_distance_      = current_position_;
+        state_                = State::Finished;
+        return;
+    }
+
+    direction_       = (current_velocity_ >= 0.0f) ? 1 : -1;
+    target_distance_ = current_position_ + static_cast<float>(direction_) * brakingDistance();
+    state_           = State::Braking;
 }
 
 void Profile::extendTarget(float distance)

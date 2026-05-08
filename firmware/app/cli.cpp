@@ -777,6 +777,82 @@ void CommandLineInterface::runCompetitionMode()
     else
         printFormat("USB CLI commands (W/C/D/S/E/B/F<n>/...) remain available while armed.\n");
 
+    auto take_trusted_snapshot = [&]() -> MazeSnapshot
+    {
+        if (deps_.maze == nullptr)
+            return {};
+        return deps_.maze->snapshot();
+    };
+
+    auto cleanup_comp_abort = [&](int stage, const MazeSnapshot& trusted_snapshot)
+    {
+        if (deps_.motion != nullptr)
+            deps_.motion->emergency_stop();
+        if (deps_.maze != nullptr)
+            deps_.maze->restore(trusted_snapshot);
+        if (deps_.maze_mouse != nullptr)
+            deps_.maze_mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
+        if (deps_.mouse != nullptr)
+        {
+            deps_.mouse->setUp(deps_.start_cell, deps_.goal_cells);
+            deps_.mouse->set_hand_start(false);
+        }
+
+        halted_               = false;
+        comp_armed_           = false;
+        comp_pending_trigger_ = StartTrigger::NONE;
+
+        const char* detail = "run attempt deleted";
+        if (stage == 1)
+            detail = "partial exploration rolled back";
+        else if (stage == 2)
+            detail = "return attempt deleted; Stage 1 exploration preserved";
+        else if (stage == 3)
+            detail = "cardinal fast attempt deleted; learned maze preserved";
+        else if (stage == 5)
+            detail = "diagonal fast attempt deleted; learned maze preserved";
+
+        printFormat("COMP Stage %d aborted: %s.\n", stage, detail);
+        printFormat("COMP run aborted: pose reset to start.\n");
+    };
+
+    auto pause_after_abort = [&]() -> bool
+    {
+        stage_led::setPaused();
+        printFormat("COMP paused. BOOTSEL again to resume; HALT or X to exit.\n");
+
+        while (abortRequested())
+            sleep_ms(20);
+        sleep_ms(150);
+
+        while (true)
+        {
+            if (abortRequested())
+                break;
+
+            Bluetooth* bt = deps_.bluetooth;
+            if (bt != nullptr)
+            {
+                Log::drainBluetooth();
+                bt->drain();
+                if (bt->hasCommand() && bt->command() == Bluetooth::Command::HALT)
+                    return false;
+            }
+            int c = getchar_timeout_us(0);
+            if (c == 'X' || c == 'x')
+                return false;
+
+            sleep_ms(20);
+        }
+
+        while (abortRequested())
+            sleep_ms(20);
+        sleep_ms(150);
+
+        printFormat("COMP resume.\n");
+        return true;
+    };
+
     // Run forever until the operator cancels with HALT/BOOTSEL while armed.
     // Each iteration: arm, wait for a gesture, dispatch, return to arm.
     while (true)
@@ -804,61 +880,65 @@ void CommandLineInterface::runCompetitionMode()
             return;
         }
 
-        // Snapshot the maze before the run starts. If BOOTSEL aborts mid-run
-        // the mouse's pose is unreliable, so any walls it logged this run
-        // can't be trusted — restore() rolls back to the pre-run state and
-        // preserves wall data from earlier successful runs. Stages 3 and 5
-        // do not write walls, so the restore is a no-op for them, but we
-        // take the snapshot uniformly so the abort path is identical.
-        MazeSnapshot pre_run_snapshot;
-        if (deps_.maze != nullptr)
-            pre_run_snapshot = deps_.maze->snapshot();
-
-        bool ok = false;
+        // Snapshot each retryable stage so a failed later stage does not
+        // discard earlier trusted exploration.
+        MazeSnapshot trusted_snapshot = take_trusted_snapshot();
+        int          active_stage     = 0;
+        bool         ok               = false;
         switch (trigger)
         {
             case StartTrigger::FRONT_WAVE:
             case StartTrigger::SERIAL_G:
             case StartTrigger::BT_START:
                 printFormat("COMP gesture: FRONT -> Stage 1+2.\n");
+                active_stage     = 1;
+                trusted_snapshot = take_trusted_snapshot();
                 deps_.mouse->set_hand_start(true);
                 ok = run_competition_stage(1, /*wait_for_start=*/false);
                 if (ok)
                 {
+                    active_stage     = 2;
+                    trusted_snapshot = take_trusted_snapshot();
                     stage_led::setGoalReached();
                     sleep_ms(1000);
                     ok = run_competition_stage(2, /*wait_for_start=*/false);
                 }
                 if (ok)
                 {
+                    trusted_snapshot = take_trusted_snapshot();
                     // After Stage 2 the mouse is parked at the start cell
                     // centre, facing the direction it came from. Spin 180 so
                     // it faces the canonical start orientation, then reverse
                     // by HALF_CELL - WHEEL_RADIUS so the rear of the wheel
-                    // ends flush against the back wall — same physical pose
-                    // a hand-placed start would have. Hold for ~2.5 s so the
-                    // operator can readjust before the next gesture.
+                    // ends flush against the back wall, matching hand placement.
+                    // Hold for ~2.5 s so the operator can readjust before the next gesture.
                     constexpr float kBackToWallMm   = HALF_CELL_MM - (WHEEL_DIAMETER_MM / 2.0f);
                     constexpr float kBackSpeedMmps  = 80.0f;
                     constexpr float kBackAccelMmps2 = 1000.0f;
                     printFormat("COMP: 180-turn + reverse %.1f mm to start wall.\n", kBackToWallMm);
                     stage_led::setGoalReached();
-                    deps_.mouse->turn_IP180();
-                    deps_.mouse->move_physical(-kBackToWallMm, kBackSpeedMmps, kBackAccelMmps2);
-                    sleep_ms(2500);
+                    ok =
+                        deps_.mouse->turn_IP180() &&
+                        deps_.mouse->move_physical(-kBackToWallMm, kBackSpeedMmps, kBackAccelMmps2);
+                    if (ok)
+                        sleep_ms(2500);
                 }
                 break;
 
             case StartTrigger::RIGHT_WAVE:
             case StartTrigger::SERIAL_H:
                 printFormat("COMP gesture: RIGHT -> Stage 3.\n");
-                ok = run_competition_stage(3, /*wait_for_start=*/false);
+                active_stage     = 3;
+                trusted_snapshot = take_trusted_snapshot();
+                ok               = run_competition_stage(3, /*wait_for_start=*/false);
                 break;
 
             case StartTrigger::LEFT_WAVE:
             case StartTrigger::SERIAL_J:
                 printFormat("COMP gesture: LEFT -> Stage 5.\n");
-                ok = run_competition_stage(5, /*wait_for_start=*/false);
+                active_stage     = 5;
+                trusted_snapshot = take_trusted_snapshot();
+                ok               = run_competition_stage(5, /*wait_for_start=*/false);
                 break;
 
             default:
@@ -868,76 +948,16 @@ void CommandLineInterface::runCompetitionMode()
 
         if (!ok)
         {
-            // Roll back wall data and pose so the next run starts from a
-            // clean, trusted state. The operator picks up the mouse, places
-            // it back at start, and re-gestures.
-            if (deps_.maze != nullptr)
-                deps_.maze->restore(pre_run_snapshot);
-            if (deps_.maze_mouse != nullptr)
-                deps_.maze_mouse->reset(deps_.start_cell, "n", deps_.goal_cells);
-            if (deps_.mouse != nullptr)
-                deps_.mouse->setUp(deps_.start_cell, deps_.goal_cells);
-            printFormat("COMP run aborted: wall data rolled back, pose reset to start.\n");
+            cleanup_comp_abort(active_stage, trusted_snapshot);
             stage_led::flashAborted();
 
-            // Enter PAUSED state. COMP does NOT auto-arm — the operator must
-            // press BOOTSEL a second time to resume. This gives time to
-            // inspect, reposition, and prep without the gesture detector
-            // firing on incidental hand motion. Bluetooth HALT or serial
-            // 'X'/'x' exit COMP entirely from the paused state.
-            stage_led::setPaused();
-            printFormat("COMP paused. BOOTSEL again to resume; HALT or X to exit.\n");
-
-            // Step 1: wait for the BOOTSEL press that triggered the abort to
-            // be released. Without this, the next loop iteration sees the
-            // line still low and would treat it as the resume press.
-            while (abortRequested())
-                sleep_ms(20);
-            sleep_ms(150); // settle / debounce
-
-            // Step 2: wait for a fresh press, while still honoring HALT/X.
-            bool exit_comp = false;
-            while (true)
-            {
-                if (abortRequested())
-                    break;
-
-                Bluetooth* bt = deps_.bluetooth;
-                if (bt != nullptr)
-                {
-                    Log::drainBluetooth();
-                    bt->drain();
-                    if (bt->hasCommand() && bt->command() == Bluetooth::Command::HALT)
-                    {
-                        exit_comp = true;
-                        break;
-                    }
-                }
-                int c = getchar_timeout_us(0);
-                if (c == 'X' || c == 'x')
-                {
-                    exit_comp = true;
-                    break;
-                }
-
-                sleep_ms(20);
-            }
-
-            if (exit_comp)
+            // Pause before re-arming so the operator can inspect and reposition.
+            if (!pause_after_abort())
             {
                 stage_led::setIdle();
                 printFormat("COMP exit (paused).\n");
                 return;
             }
-
-            // Step 3: wait for the resume press to be released so the next
-            // call to waitForCompetitionGesture doesn't see a held BOOTSEL
-            // and immediately CANCEL into another exit.
-            while (abortRequested())
-                sleep_ms(20);
-            sleep_ms(150);
-
-            printFormat("COMP resume.\n");
             // Falls through to the top of the while(true): setArmed() and
             // wait for the next gesture against the rolled-back maze.
         }
@@ -1906,9 +1926,11 @@ void CommandLineInterface::printLineSnapshot()
         deps_.motion != nullptr ? deps_.motion->lineSteeringAdjustmentDegps() : 0.0f;
     const bool motion_steering_valid =
         deps_.motion != nullptr ? deps_.motion->lineSteeringValid() : false;
-    const float line_diff_v  = deps_.motion != nullptr ? deps_.motion->lineDifferentialVolts() : 0.0f;
-    const float line_rot_v   = deps_.motion != nullptr ? deps_.motion->lineRotationVolts() : 0.0f;
-    const float motor_diff_v = deps_.motion != nullptr ? deps_.motion->motorDifferentialVolts() : 0.0f;
+    const float line_diff_v =
+        deps_.motion != nullptr ? deps_.motion->lineDifferentialVolts() : 0.0f;
+    const float line_rot_v = deps_.motion != nullptr ? deps_.motion->lineRotationVolts() : 0.0f;
+    const float motor_diff_v =
+        deps_.motion != nullptr ? deps_.motion->motorDifferentialVolts() : 0.0f;
     const std::string current_paths = linePathsText(deps_.line_follower->currentPathsMask());
     const std::string bits          = lineBitsText(deps_.line_follower->activeMask());
     const std::string route_status  = lineRouteProgressText(deps_.line_follower);
@@ -1964,8 +1986,7 @@ void CommandLineInterface::printLineStartBanner()
     const LineFollower::RuntimeTuning& tune = deps_.line_follower->runtimeTuning();
     printFormat("LINE config: target=%.0f mm/s max=%.0f min=%.0f omega_limit=%.0f\n",
                 static_cast<double>(tune.target_speed_mmps),
-                static_cast<double>(tune.max_speed_mmps),
-                static_cast<double>(tune.min_speed_mmps),
+                static_cast<double>(tune.max_speed_mmps), static_cast<double>(tune.min_speed_mmps),
                 static_cast<double>(LINE_OMEGA_LIMIT_DEGPS));
     printFormat("LINE gains: Kp_base=%.1f Kd_base=%.2f ref_v=%.0f gain_floor_v=%.0f "
                 "alpha=%.2f lookahead=%.0f ms\n",

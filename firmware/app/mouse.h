@@ -100,9 +100,9 @@ class Mouse
     void turn_right();
     void turn_back();
     void turn_smooth(int turn_id);
-    void turn_IP180();
-    void turn_IP90R();
-    void turn_IP90L();
+    bool turn_IP180();
+    bool turn_IP90R();
+    bool turn_IP90L();
     bool stopAtCentre();
     bool adjustPosition();
     bool wait_until_position(float position_mm);
@@ -189,7 +189,7 @@ class Mouse
     // the 500 Hz timer ISR keeps Motion::update() advancing the controller.
     // Sensor service keeps ToF caches fresh during synchronous SEARCH waits.
     // 2 ms sleep matches mazerunner-core's `delay(2)` cadence.
-    void waitForMotion();
+    bool waitForMotion();
 
     MazeMouse*    maze_mouse_        = nullptr;
     Motion*       motion_            = nullptr;
@@ -204,7 +204,7 @@ class Mouse
     std::vector<std::array<int, 2>> goal_cells_ = {};
 
   private:
-    void        turn_to_cardinal_yaw(const std::string& target_heading);
+    bool        turn_to_cardinal_yaw(const std::string& target_heading);
     void        apply_maze_heading_hold();
     void        apply_maze_heading_hold_for_heading(const std::string& heading);
     void        suspend_maze_heading_hold();
