@@ -63,6 +63,9 @@ class Motion
     void                   clear_line_steering_adjustment();
     float                  lineSteeringAdjustmentDegps() const;
     bool                   lineSteeringValid() const;
+    float                  lineRotationVolts() const;
+    float                  lineDifferentialVolts() const;
+    float                  motorDifferentialVolts() const;
     void                   set_heading_hold(float target_yaw_deg);
     void                   clear_heading_hold();
     bool                   headingHoldActive() const;
@@ -170,6 +173,9 @@ class Motion
     bool                     wall_steering_prev_source_valid_  = false;
     float                    line_steering_adjustment_degps_   = 0.0f;
     bool                     line_steering_valid_              = false;
+    float                    latest_line_rotation_volts_       = 0.0f;
+    float                    latest_line_differential_volts_   = 0.0f;
+    float                    latest_motor_differential_volts_  = 0.0f;
 
     bool  heading_hold_enabled_                 = false;
     float heading_hold_target_yaw_deg_          = 0.0f;

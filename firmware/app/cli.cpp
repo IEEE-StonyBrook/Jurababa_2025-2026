@@ -118,6 +118,21 @@ std::string lineLastDecisionText(const LineFollower* follower)
            " dt=" + std::to_string(follower->lastIntersectionElapsedMs()) + "ms";
 }
 
+int lineRouteCommandCode(char command)
+{
+    switch (command)
+    {
+        case 'L':
+            return -1;
+        case 'F':
+            return 0;
+        case 'R':
+            return 1;
+        default:
+            return 9;
+    }
+}
+
 const char* mazeMaskName(MazeMask mask)
 {
     return mask == MASK_CLOSED ? "CLOSED" : "OPEN";
@@ -1390,6 +1405,48 @@ void CommandLineInterface::handle_line_command(const Args& args)
         return;
     }
 
+    if (std::strcmp(args.argv[1], "TUNE") == 0)
+    {
+        printLineTuning();
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "DEFAULTS") == 0)
+    {
+        deps_.line_follower->resetRuntimeTuning();
+        printFormat("LINE DEFAULTS restored from config/tuning.h\n");
+        printLineTuning();
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "SET") == 0)
+    {
+        if (args.argc < 4)
+        {
+            printFormat("LINE SET usage: LINE SET <name> <value>\n");
+            return;
+        }
+
+        float value = 0.0f;
+        if (!parseFloatArg(args, 3, -10000.0f, 10000.0f, value))
+        {
+            printFormat("LINE SET value must be numeric.\n");
+            return;
+        }
+
+        if (!deps_.line_follower->setRuntimeTuningValue(args.argv[2], value))
+        {
+            printFormat("LINE SET invalid name/range. Editable: LINE_KP_BASE_DEGPS_PER_SLOT, "
+                        "LINE_KD_BASE_DEG_PER_SLOT, LINE_TARGET_SPEED_MMPS, "
+                        "LINE_MAX_SPEED_MMPS, LINE_MIN_SPEED_MMPS.\n");
+            return;
+        }
+
+        printFormat("LINE SET OK %s=%.6f\n", args.argv[2], static_cast<double>(value));
+        printLineTuning();
+        return;
+    }
+
     if (std::strcmp(args.argv[1], "START") == 0)
     {
         // Arm-then-go pattern, mirroring COMP's BOOTSEL handshake. The
@@ -1402,10 +1459,12 @@ void CommandLineInterface::handle_line_command(const Args& args)
             return;
         }
         deps_.line_follower->startFollowing();
+        printLineTelemetryHeader();
+        const LineFollower::RuntimeTuning& tune = deps_.line_follower->runtimeTuning();
         printFormat("LINE START -> FOLLOWING (target=%.0f mm/s, max=%.0f, min=%.0f)\n",
-                    static_cast<double>(LINE_TARGET_SPEED_MMPS),
-                    static_cast<double>(LINE_MAX_SPEED_MMPS),
-                    static_cast<double>(LINE_MIN_SPEED_MMPS));
+                    static_cast<double>(tune.target_speed_mmps),
+                    static_cast<double>(tune.max_speed_mmps),
+                    static_cast<double>(tune.min_speed_mmps));
         return;
     }
 
@@ -1462,7 +1521,7 @@ void CommandLineInterface::handle_line_command(const Args& args)
         return;
     }
 
-    printFormat("LINE usage: LINE [STATUS|START|STOP|LEFT|RIGHT|ROUTE]\n");
+    printFormat("LINE usage: LINE [STATUS|TUNE|SET|DEFAULTS|START|STOP|LEFT|RIGHT|ROUTE]\n");
 }
 
 bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
@@ -1847,6 +1906,9 @@ void CommandLineInterface::printLineSnapshot()
         deps_.motion != nullptr ? deps_.motion->lineSteeringAdjustmentDegps() : 0.0f;
     const bool motion_steering_valid =
         deps_.motion != nullptr ? deps_.motion->lineSteeringValid() : false;
+    const float line_diff_v  = deps_.motion != nullptr ? deps_.motion->lineDifferentialVolts() : 0.0f;
+    const float line_rot_v   = deps_.motion != nullptr ? deps_.motion->lineRotationVolts() : 0.0f;
+    const float motor_diff_v = deps_.motion != nullptr ? deps_.motion->motorDifferentialVolts() : 0.0f;
     const std::string current_paths = linePathsText(deps_.line_follower->currentPathsMask());
     const std::string bits          = lineBitsText(deps_.line_follower->activeMask());
     const std::string route_status  = lineRouteProgressText(deps_.line_follower);
@@ -1868,8 +1930,27 @@ void CommandLineInterface::printLineSnapshot()
                 static_cast<double>(velocity_now));
     printFormat("  motion: line_steer=%.1f deg/s valid=%s state=%s\n",
                 static_cast<double>(motion_steering), yesNo(motion_steering_valid), name);
+    printFormat("  volts: line_diff=%+.3f line_rot=%+.3f motor_diff=%+.3f\n",
+                static_cast<double>(line_diff_v), static_cast<double>(line_rot_v),
+                static_cast<double>(motor_diff_v));
     printFormat("  route: %s\n", route_status.c_str());
     printFormat("  %s\n", last_decision.c_str());
+}
+
+void CommandLineInterface::printLineTuning()
+{
+    if (deps_.line_follower == nullptr)
+        return;
+
+    const LineFollower::RuntimeTuning& tune = deps_.line_follower->runtimeTuning();
+    printFormat("LINE_TUNE\n");
+    printFormat("LINE_KP_BASE_DEGPS_PER_SLOT = %.6f\n",
+                static_cast<double>(tune.kp_base_degps_per_slot));
+    printFormat("LINE_KD_BASE_DEG_PER_SLOT = %.6f\n",
+                static_cast<double>(tune.kd_base_deg_per_slot));
+    printFormat("LINE_TARGET_SPEED_MMPS = %.6f\n", static_cast<double>(tune.target_speed_mmps));
+    printFormat("LINE_MAX_SPEED_MMPS = %.6f\n", static_cast<double>(tune.max_speed_mmps));
+    printFormat("LINE_MIN_SPEED_MMPS = %.6f\n", static_cast<double>(tune.min_speed_mmps));
 }
 
 void CommandLineInterface::printLineStartBanner()
@@ -1880,14 +1961,16 @@ void CommandLineInterface::printLineStartBanner()
     // Tunable summary — captures the *parameters* of the run so a tail of
     // the serial log can be matched back to a specific tuning.h commit.
     // Mirrors the "PATH segments=N speed=X accel=Y..." entry line.
+    const LineFollower::RuntimeTuning& tune = deps_.line_follower->runtimeTuning();
     printFormat("LINE config: target=%.0f mm/s max=%.0f min=%.0f omega_limit=%.0f\n",
-                static_cast<double>(LINE_TARGET_SPEED_MMPS),
-                static_cast<double>(LINE_MAX_SPEED_MMPS), static_cast<double>(LINE_MIN_SPEED_MMPS),
+                static_cast<double>(tune.target_speed_mmps),
+                static_cast<double>(tune.max_speed_mmps),
+                static_cast<double>(tune.min_speed_mmps),
                 static_cast<double>(LINE_OMEGA_LIMIT_DEGPS));
     printFormat("LINE gains: Kp_base=%.1f Kd_base=%.2f ref_v=%.0f gain_floor_v=%.0f "
                 "alpha=%.2f lookahead=%.0f ms\n",
-                static_cast<double>(LINE_KP_BASE_DEGPS_PER_SLOT),
-                static_cast<double>(LINE_KD_BASE_DEG_PER_SLOT),
+                static_cast<double>(tune.kp_base_degps_per_slot),
+                static_cast<double>(tune.kd_base_deg_per_slot),
                 static_cast<double>(LINE_GAIN_REF_SPEED_MMPS),
                 static_cast<double>(LINE_GAIN_SCHED_FLOOR_MMPS),
                 static_cast<double>(LINE_ERROR_FILTER_ALPHA),
@@ -1958,32 +2041,42 @@ bool CommandLineInterface::waitForLineStartButton()
     }
 }
 
+void CommandLineInterface::printLineTelemetryHeader()
+{
+    printFormat("time_ms,line_pos,line_error,line_filt,line_steer_degps,line_diff_v,line_rot_v,"
+                "motor_diff_v,target_speed,actual_speed,raw,active,current_paths,event_valid,"
+                "event_paths,route_cmd,route_index,route_match\n");
+}
+
 void CommandLineInterface::printLineRunningTelemetry()
 {
     if (deps_.line_follower == nullptr)
         return;
 
     const float    velocity_now = deps_.motion != nullptr ? deps_.motion->velocity() : 0.0f;
-    const float    position_mm  = deps_.motion != nullptr ? deps_.motion->position() : 0.0f;
     const uint32_t run_ms       = deps_.line_follower->runDurationMs();
+    const float    line_diff_v =
+        deps_.motion != nullptr ? deps_.motion->lineDifferentialVolts() : 0.0f;
+    const float line_rot_v = deps_.motion != nullptr ? deps_.motion->lineRotationVolts() : 0.0f;
+    const float motor_diff_v =
+        deps_.motion != nullptr ? deps_.motion->motorDifferentialVolts() : 0.0f;
+    const int route_cmd = lineRouteCommandCode(deps_.line_follower->lastRouteCommand());
 
-    // Compact one-liner — modeled on PATH's per-segment progress lines so a
-    // grep for "LINE run:" gives a clean time-series of the run.
-    printFormat("LINE run: t=%lu ms dist=%.0f mm v=%.0f/%.0f mm/s pos=%.2f err=%.2f filt=%.2f "
-                "steer=%+.0f deg/s sat_ticks=%lu lost=%s recov=%lu xings=%lu route=%u/%u\n",
-                static_cast<unsigned long>(run_ms), static_cast<double>(position_mm),
-                static_cast<double>(velocity_now),
-                static_cast<double>(deps_.line_follower->targetSpeedMmps()),
+    printFormat("%lu,%.3f,%.3f,%.3f,%.3f,%.4f,%.4f,%.4f,%.3f,%.3f,%u,%u,%u,%u,%u,%d,%u,%u\n",
+                static_cast<unsigned long>(run_ms),
                 static_cast<double>(deps_.line_follower->linePosition()),
                 static_cast<double>(deps_.line_follower->lineError()),
                 static_cast<double>(deps_.line_follower->filteredLineError()),
                 static_cast<double>(deps_.line_follower->steeringAdjustmentDegps()),
-                static_cast<unsigned long>(deps_.line_follower->saturationTicks()),
-                yesNo(deps_.line_follower->lineLost()),
-                static_cast<unsigned long>(deps_.line_follower->recoveryCount()),
-                static_cast<unsigned long>(deps_.line_follower->intersectionCount()),
+                static_cast<double>(line_diff_v), static_cast<double>(line_rot_v),
+                static_cast<double>(motor_diff_v),
+                static_cast<double>(deps_.line_follower->targetSpeedMmps()),
+                static_cast<double>(velocity_now), deps_.line_follower->rawByte(),
+                deps_.line_follower->activeMask(), deps_.line_follower->currentPathsMask(),
+                deps_.line_follower->lastIntersectionValid() ? 1u : 0u,
+                deps_.line_follower->lastIntersectionPathsMask(), route_cmd,
                 static_cast<unsigned>(deps_.line_follower->routeIndex()),
-                static_cast<unsigned>(std::strlen(deps_.line_follower->route())));
+                deps_.line_follower->lastRouteChoiceMatched() ? 1u : 0u);
 }
 
 void CommandLineInterface::printLineRunSummary()
@@ -2332,6 +2425,7 @@ void CommandLineInterface::help()
     printFormat("S : sensor snapshot (ToF or LineSensor)\n");
     printFormat("LINE STATUS : readable line sensor snapshot\n");
     printFormat("LINE START/STOP/LEFT/RIGHT : LineSensor mode control\n");
+    printFormat("LINE TUNE/SET/DEFAULTS : runtime line tuning\n");
     printFormat("HELP DEBUG : Jurababa extensions\n");
     printFormat("HELP : this text\n");
 }
@@ -2354,6 +2448,9 @@ void CommandLineInterface::help_debug()
     printFormat("SIMRUN : STAGE 1 + STAGE 2 + STAGE 5\n");
     printFormat("S : sensor snapshot (ToF or LineSensor)\n");
     printFormat("LINE STATUS : readable line sensor snapshot\n");
+    printFormat("LINE TUNE : print line KP/KD and speed envelope\n");
+    printFormat("LINE SET <name> <value> : edit one runtime line tuning value\n");
+    printFormat("LINE DEFAULTS : restore line tuning values from config/tuning.h\n");
     printFormat("LINE ROUTE <LFR...|CLEAR|STATUS> : route override/progress\n");
     printFormat("LINE START/STOP/LEFT/RIGHT : LineSensor mode control\n");
     printFormat("COMP : gesture-driven competition mode\n");

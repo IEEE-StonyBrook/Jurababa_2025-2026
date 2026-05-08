@@ -54,10 +54,32 @@ const char* yesNo(bool value)
 {
     return value ? "yes" : "no";
 }
+
+bool equalsIgnoreCase(const char* lhs, const char* rhs)
+{
+    if (lhs == nullptr || rhs == nullptr)
+        return false;
+
+    while (*lhs != '\0' && *rhs != '\0')
+    {
+        const char l = static_cast<char>(toupper(static_cast<unsigned char>(*lhs)));
+        const char r = static_cast<char>(toupper(static_cast<unsigned char>(*rhs)));
+        if (l != r)
+            return false;
+        ++lhs;
+        ++rhs;
+    }
+    return *lhs == '\0' && *rhs == '\0';
+}
+
+bool validRuntimeValue(float value, float min_value, float max_value)
+{
+    return value >= min_value && value <= max_value;
+}
 } // namespace
 
 LineFollower::LineFollower(LineSensor* line_sensor, Motion* motion)
-    : line_sensor_(line_sensor), motion_(motion)
+    : line_sensor_(line_sensor), motion_(motion), tuning_(defaultRuntimeTuning())
 {
     if (!setRoute(LINE_FOLLOW_ROUTE))
     {
@@ -104,10 +126,10 @@ void LineFollower::startFollowing()
     // per-tick set_target_velocity() updates from the speed scheduler track
     // smoothly rather than jolting. Top speed is the hard cap; the scheduler
     // pushes the actual cruise speed down on |error| from there.
-    motion_->start_move(LINE_FOLLOW_RUN_DISTANCE_MM, LINE_MAX_SPEED_MMPS, 0.0f,
+    motion_->start_move(LINE_FOLLOW_RUN_DISTANCE_MM, tuning_.max_speed_mmps, 0.0f,
                         ROBOT_BASE_ACCEL_MMPS2);
-    motion_->set_target_velocity(LINE_TARGET_SPEED_MMPS);
-    latest_target_speed_mmps_ = LINE_TARGET_SPEED_MMPS;
+    motion_->set_target_velocity(tuning_.target_speed_mmps);
+    latest_target_speed_mmps_ = tuning_.target_speed_mmps;
 }
 
 void LineFollower::update(float dt)
@@ -172,7 +194,7 @@ void LineFollower::followLine(float dt)
     {
         const float recovery_dir  = (prev_line_error_ >= 0.0f) ? 1.0f : -1.0f;
         latest_steering_degps_    = recovery_dir * LINE_OMEGA_LIMIT_DEGPS * LINE_RECOVERY_AUTHORITY;
-        latest_target_speed_mmps_ = LINE_MIN_SPEED_MMPS;
+        latest_target_speed_mmps_ = tuning_.min_speed_mmps;
         if (!recovery_active_)
         {
             ++recovery_count_;
@@ -221,8 +243,8 @@ void LineFollower::followLine(float dt)
     const float v_abs   = fabsf(v_now);
     const float v_sched = (v_abs > LINE_GAIN_SCHED_FLOOR_MMPS) ? v_abs : LINE_GAIN_SCHED_FLOOR_MMPS;
     const float scale   = LINE_GAIN_REF_SPEED_MMPS / v_sched;
-    const float kp_eff  = LINE_KP_BASE_DEGPS_PER_SLOT * scale;
-    const float kd_eff  = LINE_KD_BASE_DEG_PER_SLOT * scale;
+    const float kp_eff  = tuning_.kp_base_degps_per_slot * scale;
+    const float kd_eff  = tuning_.kd_base_deg_per_slot * scale;
 
     float steering_degps = kp_eff * e_pred + kd_eff * de_dt;
 
@@ -249,12 +271,14 @@ void LineFollower::followLine(float dt)
     // Speed scheduling on |filtered error|. Brakes before corners by
     // pulling the forward profile's target velocity down; clamped to
     // [MIN, MAX] so the robot never crawls or exceeds the safe envelope.
-    float v_target =
-        LINE_TARGET_SPEED_MMPS - LINE_BRAKE_GAIN_MMPS_PER_SLOT * fabsf(filtered_line_error_);
-    if (v_target < LINE_MIN_SPEED_MMPS)
-        v_target = LINE_MIN_SPEED_MMPS;
-    if (v_target > LINE_MAX_SPEED_MMPS)
-        v_target = LINE_MAX_SPEED_MMPS;
+    const float min_speed = fminf(tuning_.min_speed_mmps, tuning_.max_speed_mmps);
+    const float max_speed = fmaxf(tuning_.min_speed_mmps, tuning_.max_speed_mmps);
+    float       v_target =
+        tuning_.target_speed_mmps - LINE_BRAKE_GAIN_MMPS_PER_SLOT * fabsf(filtered_line_error_);
+    if (v_target < min_speed)
+        v_target = min_speed;
+    if (v_target > max_speed)
+        v_target = max_speed;
 
     latest_steering_degps_    = steering_degps;
     latest_target_speed_mmps_ = v_target;
@@ -494,6 +518,77 @@ float LineFollower::steeringAdjustmentDegps() const
 float LineFollower::targetSpeedMmps() const
 {
     return latest_target_speed_mmps_;
+}
+
+LineFollower::RuntimeTuning LineFollower::defaultRuntimeTuning()
+{
+    RuntimeTuning defaults;
+    defaults.kp_base_degps_per_slot = LINE_KP_BASE_DEGPS_PER_SLOT;
+    defaults.kd_base_deg_per_slot   = LINE_KD_BASE_DEG_PER_SLOT;
+    defaults.target_speed_mmps      = LINE_TARGET_SPEED_MMPS;
+    defaults.max_speed_mmps         = LINE_MAX_SPEED_MMPS;
+    defaults.min_speed_mmps         = LINE_MIN_SPEED_MMPS;
+    return defaults;
+}
+
+const LineFollower::RuntimeTuning& LineFollower::runtimeTuning() const
+{
+    return tuning_;
+}
+
+void LineFollower::resetRuntimeTuning()
+{
+    tuning_ = defaultRuntimeTuning();
+}
+
+bool LineFollower::setRuntimeTuningValue(const char* name, float value)
+{
+    if (name == nullptr)
+        return false;
+
+    if (equalsIgnoreCase(name, "LINE_KP_BASE_DEGPS_PER_SLOT") || equalsIgnoreCase(name, "KP"))
+    {
+        if (!validRuntimeValue(value, 0.0f, 1000.0f))
+            return false;
+        tuning_.kp_base_degps_per_slot = value;
+        return true;
+    }
+
+    if (equalsIgnoreCase(name, "LINE_KD_BASE_DEG_PER_SLOT") || equalsIgnoreCase(name, "KD"))
+    {
+        if (!validRuntimeValue(value, 0.0f, 200.0f))
+            return false;
+        tuning_.kd_base_deg_per_slot = value;
+        return true;
+    }
+
+    if (equalsIgnoreCase(name, "LINE_TARGET_SPEED_MMPS") || equalsIgnoreCase(name, "TARGET"))
+    {
+        if (!validRuntimeValue(value, 0.0f, 2000.0f))
+            return false;
+        tuning_.target_speed_mmps = value;
+        if (state_ == State::FollowingLine)
+            motion_->set_target_velocity(value);
+        return true;
+    }
+
+    if (equalsIgnoreCase(name, "LINE_MAX_SPEED_MMPS") || equalsIgnoreCase(name, "MAX"))
+    {
+        if (!validRuntimeValue(value, 0.0f, 2000.0f))
+            return false;
+        tuning_.max_speed_mmps = value;
+        return true;
+    }
+
+    if (equalsIgnoreCase(name, "LINE_MIN_SPEED_MMPS") || equalsIgnoreCase(name, "MIN"))
+    {
+        if (!validRuntimeValue(value, 0.0f, 2000.0f))
+            return false;
+        tuning_.min_speed_mmps = value;
+        return true;
+    }
+
+    return false;
 }
 
 bool LineFollower::setRoute(const char* route)

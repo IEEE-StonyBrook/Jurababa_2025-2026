@@ -113,6 +113,8 @@ class CommandLineInterface
     void handle_line_command(const Args& args);
     bool waitForLineStartButton();
     void printLineStartBanner();
+    void printLineTuning();
+    void printLineTelemetryHeader();
     void printLineRunningTelemetry();
     void printLineRunSummary();
     void clear_input_buffer();

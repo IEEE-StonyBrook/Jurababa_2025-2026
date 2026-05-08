@@ -18,6 +18,15 @@
 class LineFollower
 {
   public:
+    struct RuntimeTuning
+    {
+        float kp_base_degps_per_slot = LINE_KP_BASE_DEGPS_PER_SLOT;
+        float kd_base_deg_per_slot   = LINE_KD_BASE_DEG_PER_SLOT;
+        float target_speed_mmps      = LINE_TARGET_SPEED_MMPS;
+        float max_speed_mmps         = LINE_MAX_SPEED_MMPS;
+        float min_speed_mmps         = LINE_MIN_SPEED_MMPS;
+    };
+
     enum class State
     {
         Idle,
@@ -89,6 +98,9 @@ class LineFollower
     float       filteredLineError() const;
     float       steeringAdjustmentDegps() const;
     float       targetSpeedMmps() const;
+    const RuntimeTuning& runtimeTuning() const;
+    void                 resetRuntimeTuning();
+    bool                 setRuntimeTuningValue(const char* name, float value);
     bool        setRoute(const char* route);
     void        clearRoute();
     const char* route() const;
@@ -126,6 +138,7 @@ class LineFollower
     void updateTurn();
     void resetControlHistory();
     void evaluateIntersectionCommand(uint32_t now_ms);
+    static RuntimeTuning defaultRuntimeTuning();
 
     LineSensor* line_sensor_;
     Motion*     motion_;
@@ -143,6 +156,7 @@ class LineFollower
     bool     line_seen_                = false;
     bool     line_lost_                = false;
     uint32_t last_line_seen_ms_        = 0;
+    RuntimeTuning tuning_;
 
     bool turn_done_ = true;
 

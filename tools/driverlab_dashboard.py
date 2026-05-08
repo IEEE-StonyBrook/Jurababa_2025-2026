@@ -86,16 +86,17 @@ class Dashboard(QMainWindow):
         self.serial = None
         self.data = []
         self.parameters = {}
+        self.line_parameters = {}
+        self.line_config_defaults = {}
         self.move_mode = ONLY_FF
         self.auto_connect = False
         self.monitor_thread = None
         self.monitoring = False
 
-        # Sized for the widest CSV row we emit: MOVE controller stream has 12
-        # columns (time + set_pos/actual_pos + set_speed/actual_speed +
-        # ff_v_left/right + ctrl_v + total_v_left/right + left/right_speed).
+        # Sized for the widest CSV row we emit: line-follow telemetry has 18
+        # columns. Narrower DriverLab trial streams use the same buffers.
         # Excess columns past nChannels are silently dropped at parse time.
-        self.nChannels = 12
+        self.nChannels = 18
         self.telemetry = [DataChannel() for i in range(self.nChannels)]
         self.csv_headings = []
         self.plot_curves = {'output': [], 'motion': []}
@@ -456,6 +457,85 @@ class Dashboard(QMainWindow):
 
         trials_group.setLayout(trials_layout)
 
+        # ========== LINE FOLLOWING ==========
+        line_group = QGroupBox("Line Following")
+        line_group.setStyleSheet(group_style.format(border="#0072c3", title="#7ec8ff"))
+        line_layout = QVBoxLayout()
+        line_layout.setContentsMargins(4, 10, 4, 4)
+        line_layout.setSpacing(4)
+
+        line_grid = QGridLayout()
+        line_grid.setContentsMargins(2, 2, 2, 2)
+        line_grid.setHorizontalSpacing(4)
+        self.spin_line_kp = self.double_spinbox("lineKP", 0.0, 1000.0, 1.0, 3)
+        self.spin_line_kd = self.double_spinbox("lineKD", 0.0, 200.0, 0.1, 3)
+        self.spin_line_target_speed = self.double_spinbox("lineTarget", 0.0, 2000.0, 10.0, 1)
+        self.spin_line_max_speed = self.double_spinbox("lineMax", 0.0, 2000.0, 10.0, 1)
+        self.spin_line_min_speed = self.double_spinbox("lineMin", 0.0, 2000.0, 10.0, 1)
+        self.spin_line_kp.setToolTip("Line offset P gain, deg/s per sensor slot.")
+        self.spin_line_kd.setToolTip("Line offset D gain, deg per sensor slot.")
+        self.spin_line_target_speed.setToolTip("Nominal line-follow target speed in mm/s.")
+        self.spin_line_max_speed.setToolTip("Runtime line-follow top-speed envelope in mm/s.")
+        self.spin_line_min_speed.setToolTip("Runtime line-follow minimum scheduled speed in mm/s.")
+
+        line_fields = [
+            ("KP:", self.spin_line_kp),
+            ("KD:", self.spin_line_kd),
+            ("Target:", self.spin_line_target_speed),
+            ("Max:", self.spin_line_max_speed),
+            ("Min:", self.spin_line_min_speed),
+        ]
+        for row, (label, widget) in enumerate(line_fields):
+            lbl = QLabel(label)
+            lbl.setAlignment(RA)
+            line_grid.addWidget(lbl, row, 0)
+            line_grid.addWidget(widget, row, 1)
+        line_layout.addLayout(line_grid)
+
+        line_button_grid = QGridLayout()
+        self.btn_line_start = QPushButton("LINE START")
+        self.btn_line_stop = QPushButton("LINE STOP")
+        self.btn_line_status = QPushButton("LINE STATUS")
+        self.btn_line_read = QPushButton("READ LINE")
+        self.btn_line_write = QPushButton("WRITE LINE")
+        self.btn_line_defaults = QPushButton("DEFAULT LINE")
+        self.btn_line_start.clicked.connect(lambda: self.send_line_command("LINE START", clear=True))
+        self.btn_line_stop.clicked.connect(lambda: self.send_line_command("LINE STOP"))
+        self.btn_line_status.clicked.connect(lambda: self.send_line_command("LINE STATUS"))
+        self.btn_line_read.clicked.connect(self.read_line_settings)
+        self.btn_line_write.clicked.connect(self.write_line_settings)
+        self.btn_line_defaults.clicked.connect(self.default_line_settings)
+        line_buttons = [
+            self.btn_line_start,
+            self.btn_line_stop,
+            self.btn_line_status,
+            self.btn_line_read,
+            self.btn_line_write,
+            self.btn_line_defaults,
+        ]
+        for index, button in enumerate(line_buttons):
+            line_button_grid.addWidget(button, index // 2, index % 2)
+        line_layout.addLayout(line_button_grid)
+
+        line_status_grid = QGridLayout()
+        self.lbl_line_current_paths = QLabel("-")
+        self.lbl_line_event_paths = QLabel("-")
+        self.lbl_line_route_cmd = QLabel("-")
+        self.lbl_line_route_match = QLabel("-")
+        status_fields = [
+            ("Current:", self.lbl_line_current_paths),
+            ("Event:", self.lbl_line_event_paths),
+            ("Route:", self.lbl_line_route_cmd),
+            ("Match:", self.lbl_line_route_match),
+        ]
+        for row, (label, widget) in enumerate(status_fields):
+            lbl = QLabel(label)
+            lbl.setAlignment(RA)
+            line_status_grid.addWidget(lbl, row, 0)
+            line_status_grid.addWidget(widget, row, 1)
+        line_layout.addLayout(line_status_grid)
+        line_group.setLayout(line_layout)
+
         # ========== MOVE CONTROL MODE ==========
         option_layout = QHBoxLayout()
         self.rb_full = QRadioButton("Full")
@@ -501,6 +581,7 @@ class Dashboard(QMainWindow):
         side_layout.addWidget(self.cmd_input)
         side_layout.addWidget(self.HLine())
         side_layout.addWidget(trials_group)
+        side_layout.addWidget(line_group)
         side_layout.addLayout(option_layout)
         side_layout.addWidget(settings_group)
         side_inner.setLayout(side_layout)
@@ -642,6 +723,16 @@ class Dashboard(QMainWindow):
         self.set_safely(self.spin_zeta, zeta)
         self.set_safely(self.spin_turn_kp, turnKP)
         self.set_safely(self.spin_turn_kd, turnKD)
+
+        self.line_config_defaults = {
+            'LINE_KP_BASE_DEGPS_PER_SLOT': defines.get('LINE_KP_BASE_DEGPS_PER_SLOT', 30.0),
+            'LINE_KD_BASE_DEG_PER_SLOT': defines.get('LINE_KD_BASE_DEG_PER_SLOT', 2.5),
+            'LINE_TARGET_SPEED_MMPS': defines.get('LINE_TARGET_SPEED_MMPS', 200.0),
+            'LINE_MAX_SPEED_MMPS': defines.get('LINE_MAX_SPEED_MMPS', 400.0),
+            'LINE_MIN_SPEED_MMPS': defines.get('LINE_MIN_SPEED_MMPS', 150.0),
+        }
+        self.line_parameters = dict(self.line_config_defaults)
+        self.update_line_parameters()
 
         # Store for zeta/td coupling math
         self.parameters['kM'] = kM
@@ -1013,6 +1104,79 @@ class Dashboard(QMainWindow):
         if 'turnKD' in self.parameters:
             self.set_safely(self.spin_turn_kd, self.parameters['turnKD'])
 
+    def update_line_parameters(self):
+        mapping = {
+            'LINE_KP_BASE_DEGPS_PER_SLOT': self.spin_line_kp,
+            'LINE_KD_BASE_DEG_PER_SLOT': self.spin_line_kd,
+            'LINE_TARGET_SPEED_MMPS': self.spin_line_target_speed,
+            'LINE_MAX_SPEED_MMPS': self.spin_line_max_speed,
+            'LINE_MIN_SPEED_MMPS': self.spin_line_min_speed,
+        }
+        for key, widget in mapping.items():
+            if key in self.line_parameters:
+                self.set_safely(widget, self.line_parameters[key])
+
+    def parse_line_tuning_lines(self, lines):
+        for line in lines:
+            if not line.startswith('LINE_') or '=' not in line:
+                continue
+            key, value_text = line.split('=', 1)
+            key = key.strip()
+            if key not in self.line_parameters and key not in self.line_config_defaults:
+                continue
+            try:
+                self.line_parameters[key] = float(value_text.strip().split()[0])
+            except (ValueError, IndexError):
+                pass
+        self.update_line_parameters()
+
+    def line_paths_text(self, value):
+        try:
+            mask = int(value)
+        except (TypeError, ValueError):
+            return "-"
+        text = ""
+        if mask & 0x01:
+            text += "L"
+        if mask & 0x02:
+            text += "F"
+        if mask & 0x04:
+            text += "R"
+        return text if text else "-"
+
+    def line_route_cmd_text(self, value):
+        try:
+            code = int(value)
+        except (TypeError, ValueError):
+            return "-"
+        if code < 0:
+            return "L"
+        if code == 0:
+            return "F"
+        if code == 1:
+            return "R"
+        return "-"
+
+    def update_line_intersection_display(self, values):
+        current_idx = self._heading_index('current_paths')
+        event_valid_idx = self._heading_index('event_valid')
+        event_idx = self._heading_index('event_paths')
+        route_cmd_idx = self._heading_index('route_cmd')
+        route_match_idx = self._heading_index('route_match')
+
+        if current_idx is not None and current_idx < len(values):
+            self.lbl_line_current_paths.setText(self.line_paths_text(values[current_idx]))
+        if event_idx is not None and event_idx < len(values):
+            event_text = self.line_paths_text(values[event_idx])
+            if event_valid_idx is not None and event_valid_idx < len(values) and values[event_valid_idx] < 0.5:
+                event_text = "-"
+            self.lbl_line_event_paths.setText(event_text)
+        if route_cmd_idx is not None and route_cmd_idx < len(values):
+            self.lbl_line_route_cmd.setText(self.line_route_cmd_text(values[route_cmd_idx]))
+        if route_match_idx is not None and route_match_idx < len(values):
+            match_text = "yes" if values[route_match_idx] >= 0.5 else "no"
+            self.lbl_line_route_match.setText(match_text)
+
     def write_parameters(self):
         """Send all parameter values to device.
 
@@ -1201,6 +1365,70 @@ class Dashboard(QMainWindow):
         self.log_message('----------------')
         self.read_settings()
 
+    def send_line_command(self, cmd, clear=False):
+        if not self.device or self.serial is None:
+            self.log_message("Not connected")
+            return
+        if clear:
+            self.clear_monitor()
+        self.text_box.appendPlainText(f"> {cmd}")
+        self.serial.write((cmd + '\n').encode('ascii'))
+
+    def read_line_settings(self):
+        if not self.device:
+            return
+        self.log_message('Read Line Settings')
+        self.data = self.query("LINE TUNE\n")
+        self.log_data()
+        self.parse_line_tuning_lines(self.data)
+        self.log_message('----------------')
+
+    def write_line_settings(self):
+        if not self.device or self.serial is None:
+            return
+
+        written = {
+            'LINE_KP_BASE_DEGPS_PER_SLOT': self.spin_line_kp.value(),
+            'LINE_KD_BASE_DEG_PER_SLOT': self.spin_line_kd.value(),
+            'LINE_TARGET_SPEED_MMPS': self.spin_line_target_speed.value(),
+            'LINE_MAX_SPEED_MMPS': self.spin_line_max_speed.value(),
+            'LINE_MIN_SPEED_MMPS': self.spin_line_min_speed.value(),
+        }
+        self.line_parameters.update(written)
+        self.update_line_parameters()
+        self.log_message('Writing line settings...')
+
+        was_monitoring = self.monitoring
+        if was_monitoring:
+            self.stop_monitoring()
+
+        ser = self.serial
+        ser.reset_input_buffer()
+        for key, value in written.items():
+            ser.write((f"LINE SET {key} {value}\n").encode('ascii'))
+            time.sleep(0.04)
+            if ser.in_waiting:
+                response = ser.read(ser.in_waiting).decode('ascii', errors='ignore').strip()
+                if response:
+                    self.log_message(response)
+
+        self.log_message('Line settings written OK')
+        if was_monitoring:
+            self.start_monitoring()
+
+    def default_line_settings(self):
+        if self.line_config_defaults:
+            self.line_parameters = dict(self.line_config_defaults)
+            self.update_line_parameters()
+        if not self.device or self.serial is None:
+            self.log_message('Line defaults loaded from config')
+            return
+        self.log_message('Default Line Settings')
+        self.data = self.query("LINE DEFAULTS\n")
+        self.log_data()
+        self.parse_line_tuning_lines(self.data)
+        self.log_message('----------------')
+
     def send_move(self):
         """Send MOVE command with selected control mode."""
         self.run_trial(f"MOVE 360 500 1000 {self.move_mode}")
@@ -1297,7 +1525,7 @@ class Dashboard(QMainWindow):
 
         # Clear graphs for trial commands (fresh plot for each trial)
         cmd_upper = cmd.split()[0].upper() if cmd.split() else ""
-        if cmd_upper in ('OL', 'MOVE', 'TURN', 'STEP'):
+        if cmd_upper in ('OL', 'MOVE', 'TURN', 'STEP', 'LINE'):
             self.clear_monitor()
 
         # Local echo
@@ -1338,6 +1566,9 @@ class Dashboard(QMainWindow):
         # Skip empty lines and comments
         if not line or line.startswith('#'):
             return
+
+        if line.startswith('LINE_') and '=' in line:
+            self.parse_line_tuning_lines([line])
 
         # Auto-populate settings from trial results
         # STEP trial: "Tm = 0.05000 s  (motor time constant)"
@@ -1499,6 +1730,9 @@ class Dashboard(QMainWindow):
             for i in range(min(len(values), self.nChannels)):
                 self.telemetry[i].add_new_value(values[i])
 
+            if 'line_pos' in [heading.strip().lower() for heading in self.csv_headings]:
+                self.update_line_intersection_display(values)
+
             self._last_value_count = len(values)
             self._plot_dirty = True
 
@@ -1525,7 +1759,52 @@ class Dashboard(QMainWindow):
         value_count = self._last_value_count
 
         try:
-            if 'cmd_v' in headings_str:
+            if 'line_pos' in headings_str and 'line_diff_v' in headings_str:
+                line_diff_idx = self._heading_index('line_diff_v')
+                line_rot_idx = self._heading_index('line_rot_v')
+                motor_diff_idx = self._heading_index('motor_diff_v')
+                pos_idx = self._heading_index('line_pos')
+                filt_idx = self._heading_index('line_filt')
+                target_idx = self._heading_index('target_speed')
+                actual_idx = self._heading_index('actual_speed')
+                steer_idx = self._heading_index('line_steer_degps')
+
+                if len(self.plot_curves['output']) == 0:
+                    self.plot_curves['output'].append(self.output_plot.plot(
+                        name='Line Diff V', pen=pg.mkPen(color=palette[4], width=2)))
+                    self.plot_curves['output'].append(self.output_plot.plot(
+                        name='Line Rot V', pen=pg.mkPen(color=palette[2], width=2)))
+                    self.plot_curves['output'].append(self.output_plot.plot(
+                        name='Motor Diff V', pen=pg.mkPen(color=palette[6], width=1)))
+
+                for curve_idx, data_idx in enumerate([line_diff_idx, line_rot_idx, motor_diff_idx]):
+                    if data_idx is not None and len(self.plot_curves['output']) > curve_idx:
+                        x, y = self._get_valid_data(0, data_idx)
+                        self.plot_curves['output'][curve_idx].setData(x, y)
+                self.output_plot.setLabel('left', 'Diff Volts')
+                self.output_plot.enableAutoRange()
+
+                if len(self.plot_curves['motion']) == 0:
+                    self.plot_curves['motion'].append(self.motion_plot.plot(
+                        name='Line Pos', pen=pg.mkPen(color=palette[7], width=2)))
+                    self.plot_curves['motion'].append(self.motion_plot.plot(
+                        name='Filt Error', pen=pg.mkPen(color=palette[2], width=2)))
+                    self.plot_curves['motion'].append(self.motion_plot.plot(
+                        name='Target Speed', pen=pg.mkPen(color=palette[4], width=2, style=Qt.PenStyle.DotLine)))
+                    self.plot_curves['motion'].append(self.motion_plot.plot(
+                        name='Actual Speed', pen=pg.mkPen(color=palette[5], width=2)))
+                    self.plot_curves['motion'].append(self.motion_plot.plot(
+                        name='Steer deg/s', pen=pg.mkPen(color=palette[3], width=1, style=Qt.PenStyle.DashLine)))
+
+                for curve_idx, data_idx in enumerate([pos_idx, filt_idx, target_idx, actual_idx, steer_idx]):
+                    if data_idx is not None and len(self.plot_curves['motion']) > curve_idx:
+                        x, y = self._get_valid_data(0, data_idx)
+                        self.plot_curves['motion'][curve_idx].setData(x, y)
+                self.motion_plot.setLabel('left', 'Slots / mm/s / deg/s')
+                self.motion_plot.enableAutoRange()
+                self.output_plot.setXLink(self.motion_plot)
+
+            elif 'cmd_v' in headings_str:
                 # Stereo OL: time_ms,cmd_v,left_v,right_v,left_speed,right_speed,yaw
                 if len(self.plot_curves['output']) == 0:
                     pen_left_v = pg.mkPen(color=palette[1], width=2)
@@ -1773,9 +2052,14 @@ class Dashboard(QMainWindow):
             channel.reset()
         self._plot_dirty = True
         self._last_value_count = 0
+        self.lbl_line_current_paths.setText("-")
+        self.lbl_line_event_paths.setText("-")
+        self.lbl_line_route_cmd.setText("-")
+        self.lbl_line_route_match.setText("-")
 
         # Reset to default ranges and labels
         styles = {'color': 'cyan', 'font-size': '13px', 'bottom_margin': '50px'}
+        self.output_plot.setLabel('left', 'Volts', **styles)
         self.motion_plot.setLabel('left', 'Speed (mm/s)', **styles)
         self.output_plot.setYRange(-1, 7)
         self.motion_plot.setYRange(-50, 500)

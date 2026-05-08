@@ -59,6 +59,9 @@ void Motion::resetControlHistory()
     latest_heading_hold_adjustment_degps_ = 0.0f;
     line_steering_adjustment_degps_       = 0.0f;
     line_steering_valid_                  = false;
+    latest_line_rotation_volts_           = 0.0f;
+    latest_line_differential_volts_       = 0.0f;
+    latest_motor_differential_volts_      = 0.0f;
     resetWallSteeringStats();
 }
 
@@ -194,6 +197,21 @@ float Motion::lineSteeringAdjustmentDegps() const
 bool Motion::lineSteeringValid() const
 {
     return line_steering_valid_;
+}
+
+float Motion::lineRotationVolts() const
+{
+    return latest_line_rotation_volts_;
+}
+
+float Motion::lineDifferentialVolts() const
+{
+    return latest_line_differential_volts_;
+}
+
+float Motion::motorDifferentialVolts() const
+{
+    return latest_motor_differential_volts_;
 }
 
 void Motion::set_heading_hold(float target_yaw_deg)
@@ -445,6 +463,9 @@ void Motion::runPositionControl()
                 tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_, steering_mode_);
             latest_steering_adjustment_degps_     = 0.0f;
             latest_heading_hold_adjustment_degps_ = 0.0f;
+            latest_line_rotation_volts_           = 0.0f;
+            latest_line_differential_volts_       = 0.0f;
+            latest_motor_differential_volts_      = 0.0f;
             if (heading_hold_enabled_)
                 latest_heading_hold_error_deg_ =
                     utils::wrapAngle180(heading_hold_target_yaw_deg_ - yaw_deg());
@@ -455,6 +476,9 @@ void Motion::runPositionControl()
             tof_wall::evaluate(left_wall_mm_, front_wall_mm_, right_wall_mm_, steering_mode_);
         latest_steering_adjustment_degps_     = 0.0f;
         latest_heading_hold_adjustment_degps_ = 0.0f;
+        latest_line_rotation_volts_           = 0.0f;
+        latest_line_differential_volts_       = 0.0f;
+        latest_motor_differential_volts_      = 0.0f;
         if (heading_hold_enabled_)
             latest_heading_hold_error_deg_ =
                 utils::wrapAngle180(heading_hold_target_yaw_deg_ - yaw_deg());
@@ -477,7 +501,8 @@ void Motion::runPositionControl()
     float      wall_adjustment     = 0.0f;
     float      heading_adjustment  = 0.0f;
     float      steering_adjustment = 0.0f;
-    if (straight_move && line_steering_valid_)
+    const bool line_steering_used = straight_move && line_steering_valid_;
+    if (line_steering_used)
     {
         steering_adjustment                   = line_steering_adjustment_degps_;
         latest_heading_hold_adjustment_degps_ = 0.0f;
@@ -496,6 +521,15 @@ void Motion::runPositionControl()
 #endif
     const float rotation_output =
         rotation_controller_.update(rot_velocity, rot_change_deg, steering_adjustment);
+    // Diagnostic only: the direct one-tick voltage contribution of the line
+    // steering term before the rotation controller's accumulated yaw error.
+    latest_line_rotation_volts_ =
+        line_steering_used
+            ? utils::clampAbs((ROT_KP * line_steering_adjustment_degps_ * LOOP_INTERVAL_S) +
+                                  (ROT_KD * line_steering_adjustment_degps_),
+                              MAX_VOLTAGE)
+            : 0.0f;
+    latest_line_differential_volts_ = 2.0f * latest_line_rotation_volts_;
 
     // Mix forward + rotation outputs into per-wheel volts (mazerunner shape).
     float left_volts  = forward_output - rotation_output;
@@ -520,6 +554,7 @@ void Motion::runPositionControl()
     // Clamp at hardware boundary — no slew limit (would blunt FF response).
     left_volts  = utils::clampAbs(left_volts, MAX_VOLTAGE);
     right_volts = utils::clampAbs(right_volts, MAX_VOLTAGE);
+    latest_motor_differential_volts_ = right_volts - left_volts;
 
     drivetrain_->setVoltage(left_volts, right_volts);
 }
