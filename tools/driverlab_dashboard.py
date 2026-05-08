@@ -733,6 +733,7 @@ class Dashboard(QMainWindow):
         }
         self.line_parameters = dict(self.line_config_defaults)
         self.update_line_parameters()
+        self.log_message('Line spinboxes loaded from config/tuning.h; press READ LINE to sync robot runtime values.')
 
         # Store for zeta/td coupling math
         self.parameters['kM'] = kM
@@ -1116,6 +1117,12 @@ class Dashboard(QMainWindow):
             if key in self.line_parameters:
                 self.set_safely(widget, self.line_parameters[key])
 
+    def line_speed_envelope_valid(self, values):
+        min_speed = values['LINE_MIN_SPEED_MMPS']
+        target_speed = values['LINE_TARGET_SPEED_MMPS']
+        max_speed = values['LINE_MAX_SPEED_MMPS']
+        return min_speed <= target_speed <= max_speed
+
     def parse_line_tuning_lines(self, lines):
         for line in lines:
             if not line.startswith('LINE_') or '=' not in line:
@@ -1378,6 +1385,7 @@ class Dashboard(QMainWindow):
         if not self.device:
             return
         self.log_message('Read Line Settings')
+        self.log_message('READ LINE syncs these spinboxes from the robot runtime values.')
         self.data = self.query("LINE TUNE\n")
         self.log_data()
         self.parse_line_tuning_lines(self.data)
@@ -1394,27 +1402,23 @@ class Dashboard(QMainWindow):
             'LINE_MAX_SPEED_MMPS': self.spin_line_max_speed.value(),
             'LINE_MIN_SPEED_MMPS': self.spin_line_min_speed.value(),
         }
+        if not self.line_speed_envelope_valid(written):
+            self.log_message('Line settings not written: require Min <= Target <= Max speed.')
+            return
+
         self.line_parameters.update(written)
         self.update_line_parameters()
         self.log_message('Writing line settings...')
+        self.log_message('Values are runtime-only; after dashboard restart press READ LINE to sync from the robot.')
 
-        was_monitoring = self.monitoring
-        if was_monitoring:
-            self.stop_monitoring()
+        commands = ''.join(f"LINE SET {key} {value}\n" for key, value in written.items())
+        try:
+            self.serial.write(commands.encode('ascii'))
+        except (OSError, serial.SerialException) as exc:
+            self.log_message(f'Line settings write failed: {exc}')
+            return
 
-        ser = self.serial
-        ser.reset_input_buffer()
-        for key, value in written.items():
-            ser.write((f"LINE SET {key} {value}\n").encode('ascii'))
-            time.sleep(0.04)
-            if ser.in_waiting:
-                response = ser.read(ser.in_waiting).decode('ascii', errors='ignore').strip()
-                if response:
-                    self.log_message(response)
-
-        self.log_message('Line settings written OK')
-        if was_monitoring:
-            self.start_monitoring()
+        self.log_message('Line settings sent OK')
 
     def default_line_settings(self):
         if self.line_config_defaults:
