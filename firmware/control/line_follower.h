@@ -22,6 +22,7 @@ class LineFollower
     {
         Idle,
         FollowingLine,
+        AdvancingBeforeTurn,
         TurningLeft,
         TurningRight,
         Stopping
@@ -95,7 +96,16 @@ class LineFollower
     bool        routeHasRemaining() const;
 
   private:
+    enum class PendingTurn
+    {
+        None,
+        Left,
+        Right
+    };
+
     void followLine(float dt);
+    void beginTurnLeadIn(PendingTurn pending_turn);
+    void updateTurnLeadIn();
     void updateTurn();
     void resetControlHistory();
     void evaluateIntersectionCommand(uint32_t now_ms);
@@ -126,6 +136,7 @@ class LineFollower
     char                     route_[kMaxRouteLength + 1]  = {};
     uint8_t                  route_length_                = 0;
     uint8_t                  route_index_                 = 0;
+    PendingTurn              pending_turn_                = PendingTurn::None;
     uint32_t                 intersection_lockout_end_ms_ = 0;
     bool                     recovery_active_             = false;
     bool                     major_correction_active_     = false;

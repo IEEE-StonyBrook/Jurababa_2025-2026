@@ -1201,6 +1201,9 @@ void CommandLineInterface::printLineSnapshot()
         case LineFollower::State::FollowingLine:
             name = "FOLLOWING";
             break;
+        case LineFollower::State::AdvancingBeforeTurn:
+            name = "ADVANCE_TURN";
+            break;
         case LineFollower::State::TurningLeft:
             name = "TURN_LEFT";
             break;
@@ -1225,7 +1228,8 @@ void CommandLineInterface::printLineSnapshot()
                 static_cast<double>(deps_.line_follower->filteredLineError()),
                 static_cast<double>(deps_.line_follower->steeringAdjustmentDegps()),
                 static_cast<double>(motion_steering), motion_steering_valid, name,
-                deps_.line_follower->route(), static_cast<unsigned>(deps_.line_follower->routeIndex()));
+                deps_.line_follower->route(),
+                static_cast<unsigned>(deps_.line_follower->routeIndex()));
 }
 
 void CommandLineInterface::printMazeView(char mode)

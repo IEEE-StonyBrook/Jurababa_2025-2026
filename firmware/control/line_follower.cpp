@@ -46,6 +46,10 @@ void LineFollower::update(float dt)
             followLine(dt);
             break;
 
+        case State::AdvancingBeforeTurn:
+            updateTurnLeadIn();
+            break;
+
         case State::TurningLeft:
         case State::TurningRight:
             updateTurn();
@@ -191,6 +195,43 @@ void LineFollower::turnRight90()
     LOG_DEBUG("LineFollower: Turning right 90°");
 }
 
+void LineFollower::beginTurnLeadIn(PendingTurn pending_turn)
+{
+    if (pending_turn == PendingTurn::None)
+        return;
+
+    state_        = State::AdvancingBeforeTurn;
+    pending_turn_ = pending_turn;
+    turn_done_    = false;
+
+    motion_->clear_line_steering_adjustment();
+    motion_->start_move(LINE_TURN_LEAD_IN_DISTANCE_MM, LINE_FOLLOW_BASE_SPEED_MMPS, 0.0f,
+                        ROBOT_BASE_ACCEL_MMPS2);
+}
+
+void LineFollower::updateTurnLeadIn()
+{
+    if (!motion_->move_finished())
+        return;
+
+    const PendingTurn pending_turn = pending_turn_;
+    pending_turn_                  = PendingTurn::None;
+
+    if (pending_turn == PendingTurn::Left)
+    {
+        turnLeft90();
+        return;
+    }
+
+    if (pending_turn == PendingTurn::Right)
+    {
+        turnRight90();
+        return;
+    }
+
+    startFollowing();
+}
+
 void LineFollower::updateTurn()
 {
     if (motion_->turn_finished())
@@ -220,14 +261,14 @@ void LineFollower::evaluateIntersectionCommand(uint32_t now_ms)
     if (command == 'L')
     {
         LOG_INFO("LineFollower: intersection -> route L");
-        turnLeft90();
+        beginTurnLeadIn(PendingTurn::Left);
         return;
     }
 
     if (command == 'R')
     {
         LOG_INFO("LineFollower: intersection -> route R");
-        turnRight90();
+        beginTurnLeadIn(PendingTurn::Right);
         return;
     }
 
@@ -245,7 +286,8 @@ void LineFollower::stop()
 
 bool LineFollower::isMotionDone() const
 {
-    if (state_ == State::TurningLeft || state_ == State::TurningRight)
+    if (state_ == State::AdvancingBeforeTurn || state_ == State::TurningLeft ||
+        state_ == State::TurningRight)
         return turn_done_;
     return true;
 }
@@ -266,6 +308,7 @@ void LineFollower::resetControlHistory()
     line_seen_                   = false;
     line_lost_                   = false;
     last_line_seen_ms_           = 0;
+    pending_turn_                = PendingTurn::None;
     intersection_lockout_end_ms_ = 0;
     recovery_active_             = false;
     major_correction_active_     = false;
