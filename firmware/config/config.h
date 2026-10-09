@@ -20,6 +20,12 @@
 // ===================== Battery ===================== //
 #define DEFAULT_BATTERY_VOLTAGE 8.35f // Nominal 2S LiPo
 
+// Instantaneous rail voltage below which the pack is failing to deliver current.
+// 2S LiPo at ~3.2 V/cell. Estimate — tune once real sag figures are measured.
+#define BATTERY_SAG_WARN_V 6.4f
+// Recovery margin, so a reading sitting on the threshold does not chatter.
+#define BATTERY_SAG_CLEAR_V 0.2f
+
 // ===================== Multicore ===================== //
 #define CORE_SLEEP_MS 250 // Inter-core sync sleep (ms)
 

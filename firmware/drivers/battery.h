@@ -54,6 +54,9 @@ class Battery
     uint16_t raw_adc() const;
 
   private:
+    /// Shared by the smoothed and instantaneous paths so both scale identically.
+    float voltsFromAdc(float adc_counts) const;
+
     static constexpr int   AVERAGE_SAMPLES = 10;
     static constexpr float ADC_MAX         = 4095.0f;
     static constexpr float ADC_REF_VOLTAGE = 3.3f;
@@ -68,6 +71,7 @@ class Battery
     uint8_t  reading_index_;
     uint32_t reading_sum_;
     bool     buffer_filled_;
+    bool     sagging_; // edge-trigger latch for the sag warning
 };
 
 #endif
