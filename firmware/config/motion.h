@@ -37,12 +37,11 @@
 // Jurababa-validated IMU spin-turn defaults. These are deliberately gentler
 // than Orion-class UKMARS values because our rotation feedback comes from the
 // BNO085 RVC stream rather than 500 Hz encoder yaw.
-#define ROBOT_MAX_TURN_SPEED_DEGPS         300.0f  // Max angular velocity
-#define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2    1200.0f // Turn acceleration
-#define ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS   250.0f  // Linear speed during smooth turns
-#define ROBOT_SMOOTH_TURN_OMEGA_DEGPS      240.0f  // UKMARS SS90E starting point
-#define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2     1200.0f // UKMARS SS90E starting point
-#define ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM 95.0f   // Starting ToF trigger calibration
+#define ROBOT_MAX_TURN_SPEED_DEGPS       300.0f  // Max angular velocity
+#define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2  1200.0f // Turn acceleration
+#define ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS 250.0f  // Linear speed during smooth turns
+#define ROBOT_SMOOTH_TURN_OMEGA_DEGPS    240.0f  // UKMARS SS90E starting point
+#define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2   1200.0f // UKMARS SS90E starting point
 
 // ================ Maze Heading Hold =================== //
 // Competition maze-running can use the logical maze heading as a gentle

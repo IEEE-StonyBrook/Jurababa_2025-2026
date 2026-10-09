@@ -811,7 +811,7 @@ void Mouse::turn_left()
 {
     if (movement_style_ == MovementStyle::Smooth)
     {
-        turn_smooth(SS90EL);
+        turn_smooth(/*turn_left=*/true);
 #ifndef SIMULATOR_BUILD
         if (!run_on_simulator && motion_ != nullptr)
             motion_->set_position(SENSING_POSITION_MM);
@@ -854,7 +854,7 @@ void Mouse::turn_right()
 {
     if (movement_style_ == MovementStyle::Smooth)
     {
-        turn_smooth(SS90ER);
+        turn_smooth(/*turn_left=*/false);
 #ifndef SIMULATOR_BUILD
         if (!run_on_simulator && motion_ != nullptr)
             motion_->set_position(SENSING_POSITION_MM);
@@ -925,21 +925,21 @@ void Mouse::turn_back()
     maze_mouse_->turn45Steps(4);
 }
 
-void Mouse::turn_smooth(int turn_id)
+void Mouse::turn_smooth(bool turn_left)
 {
     if (run_on_simulator)
     {
-        simulatorResponse((turn_id & 1) ? "arcTurnRight90" : "arcTurnLeft90");
+        simulatorResponse(turn_left ? "arcTurnLeft90" : "arcTurnRight90");
         return;
     }
 #ifndef SIMULATOR_BUILD
     if (motion_ == nullptr)
         return;
-    // Motion::turn_smooth starts simultaneous fwd + rot profiles using the
-    // SMOOTH_TURN_PARAMS table — same emergent-arc shape as mazerunner.
+    // Motion::start_smooth_turn drives entry straight, arc and exit straight
+    // on one forward profile — the robot never stops at the corner.
     suspend_maze_heading_hold();
-    motion_->turn_smooth(turn_id);
-    (void)waitForMotion();
+    if (motion_->start_smooth_turn(turn_left))
+        (void)waitForMotion();
 #endif
 }
 
@@ -1890,7 +1890,7 @@ bool Mouse::test_SS90E()
         motion_->set_position(SENSING_POSITION_MM);
     }
 #endif
-    turn_smooth(SS90ER);
+    turn_smooth(/*turn_left=*/false);
     maze_mouse_->turn45Steps(2);
     return !haltRequested();
 }
@@ -2113,7 +2113,7 @@ void Mouse::arcTurnLeft90()
     else
     {
         suspend_maze_heading_hold();
-        turn_smooth(SS90EL);
+        turn_smooth(/*turn_left=*/true);
     }
 #endif
     maze_mouse_->turn45Steps(-2);
@@ -2127,7 +2127,7 @@ void Mouse::arcTurnRight90()
     else
     {
         suspend_maze_heading_hold();
-        turn_smooth(SS90ER);
+        turn_smooth(/*turn_left=*/false);
     }
 #endif
     maze_mouse_->turn45Steps(2);

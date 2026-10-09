@@ -10,24 +10,10 @@
 #include "config/geometry.h"
 #include "config/motion.h"
 
-struct SmoothTurnParameters
-{
-    float speed_mmps;
-    float entry_offset_mm;
-    float exit_offset_mm;
-    float angle_deg;
-    float omega_degps;
-    float alpha_degps2;
-    float front_trigger_mm;
-};
-
-enum SmoothTurnId
-{
-    SS90EL = 0,
-    SS90ER = 1,
-    SS90L  = 2,
-    SS90R  = 3,
-};
+// Smooth turn speed/omega/alpha and the entry/exit corrections are runtime
+// tuneable over the CLI, so they live in Motion::SmoothTurnTuning (seeded from
+// config/motion.h) rather than a constexpr table here. The phase lengths are
+// derived in control/smooth_turn_geometry.h.
 
 constexpr float SENSING_POSITION_MM = CELL_SIZE_MM - 10.0f; // Osmium SENSING_POSITION = 170
 constexpr float FRONT_REFERENCE_MM =
@@ -40,54 +26,30 @@ constexpr float STOP_AT_CENTRE_FRONT_SPEED_MMPS = 30.0f; // UKMARS front-wall fi
 constexpr uint32_t STOP_AT_CENTRE_FRONT_TIMEOUT_MS   = 500;  // UKMARS front-wall timeout = 500 ms
 constexpr uint32_t STOP_AT_CENTRE_PROFILE_TIMEOUT_MS = 1000; // UKMARS no-wall timeout = 1000 ms
 
-// Positive adjustment delays the sensor-triggered turn when adjacent walls
-// make the front ToF read short. Start with zero until measured on Jurababa.
-constexpr float EXTRA_WALL_ADJUST_MM = 0.0f; // Osmium EXTRA_WALL_ADJUST = 5/6 raw analog
-
 // Smooth-turn tuning notes
 // ------------------------
-// Each row is the UKMARS SS90E/SS90 shape:
-//   speed, entry offset, exit offset, angle, omega, alpha, front trigger
+// Live knobs are edited over serial with `SMOOTH SET <name> <value>` and shown
+// by `SMOOTH`: SPEED, OMEGA, ALPHA, and the per-side ENTRY_L/EXIT_L/ENTRY_R/
+// EXIT_R corrections. Defaults come from config/motion.h; `SMOOTH DEFAULTS`
+// restores them. Entry and exit are DERIVED from speed and omega
+// (HALF_CELL - radius); the offsets are corrections on top, default 0.
 //
-// The turn starts while the mouse is crossing the next cell boundary. If the
-// front ToF reaches front_trigger_mm before the distance trigger, the turn
-// begins early from sensor truth; otherwise it begins at:
-//   FULL_CELL + HALF_CELL - entry_offset_mm
-//
-// Tune in this order:
+// Tune in this order, using `SMOOTH RUN L|R` to measure each change:
 //   1. Keep speed/omega/alpha conservative until in-place turns are repeatable.
-//   2. Tune front_trigger_mm so the turn starts at the same physical point with
-//      and without a front wall. If side walls make the front ToF read short,
-//      raise EXTRA_WALL_ADJUST_MM.
-//   3. Tune entry_offset_mm for the start of the arc. Too small starts late and
-//      clips the inside wall; too large starts early and drifts wide.
-//   4. Tune exit_offset_mm so the robot finishes the arc aimed down the next
-//      cell and reaches SENSING_POSITION_MM without a lateral step.
-//   5. Tune omega_degps/alpha_degps2 only after geometry is close. Higher omega
-//      shortens the radius at a fixed speed; higher alpha makes the heading
-//      transition sharper and can expose IMU/controller lag.
-//   6. Tune left and right rows independently. Tire loading, motor asymmetry,
-//      and ToF mounting can make SS90EL and SS90ER differ.
+//   2. Tune ENTRY_* for the start of the arc. Too small starts late and clips
+//      the inside wall; too large starts early and drifts wide.
+//   3. Tune EXIT_* so the robot finishes the arc aimed down the next cell and
+//      reaches SENSING_POSITION_MM without a lateral step.
+//   4. Tune OMEGA/ALPHA only after geometry is close. Higher omega shortens the
+//      radius at a fixed speed; higher alpha makes the heading transition
+//      sharper and can expose IMU/controller lag.
+//   5. Tune left and right independently. Tire loading, motor asymmetry, and
+//      ToF mounting make the two sides differ.
+//   6. Raise SPEED last, and re-check the radius still fits a half cell.
 //
-// Osmium reference from ukmars/mazerunner-core config-robot-osmium.h is kept
-// beside each active value below. Use it as a shape reference, not a direct
-// target: Osmium uses analog wall sensors and encoder yaw, while Jurababa uses
-// ToF millimeters and IMU yaw.
-
-constexpr SmoothTurnParameters SMOOTH_TURN_PARAMS[] = {
-    // speed, entry, exit, angle, omega, alpha, front trigger
-    // Osmium: {300, 70, 80, +/-90, 287, 2866, raw trigger 82/110}
-    {ROBOT_SEARCH_TURN_SPEED_MMPS, 70.0f, 80.0f, 90.0f, ROBOT_SMOOTH_TURN_OMEGA_DEGPS,
-     ROBOT_SMOOTH_TURN_ALPHA_DEGPS2, ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM}, // Osmium SS90EL
-    {ROBOT_SEARCH_TURN_SPEED_MMPS, 70.0f, 80.0f, -90.0f, ROBOT_SMOOTH_TURN_OMEGA_DEGPS,
-     ROBOT_SMOOTH_TURN_ALPHA_DEGPS2, ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM}, // Osmium SS90ER
-    {ROBOT_SEARCH_TURN_SPEED_MMPS, 70.0f, 80.0f, 90.0f, ROBOT_SMOOTH_TURN_OMEGA_DEGPS,
-     ROBOT_SMOOTH_TURN_ALPHA_DEGPS2, ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM}, // Osmium SS90L
-    {ROBOT_SEARCH_TURN_SPEED_MMPS, 70.0f, 80.0f, -90.0f, ROBOT_SMOOTH_TURN_OMEGA_DEGPS,
-     ROBOT_SMOOTH_TURN_ALPHA_DEGPS2, ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM}, // Osmium SS90R
-};
-
-constexpr int SMOOTH_TURN_PARAM_COUNT =
-    static_cast<int>(sizeof(SMOOTH_TURN_PARAMS) / sizeof(SMOOTH_TURN_PARAMS[0]));
+// Not yet implemented: starting the turn from a front-ToF reading rather than
+// from commanded distance — the turn begins where the caller arms it. The
+// constants it would need are deliberately absent: a tuneable nothing reads
+// is worse than no tuneable at all.
 
 #endif // CONFIG_SMOOTH_TURN_H

@@ -22,7 +22,6 @@
 #include "common/tof_wall_utils.h"
 #include "config/geometry.h"
 #include "config/motion.h"
-#include "config/smooth_turn.h"
 #include "control/line_follower.h"
 #include "control/motion.h"
 #include "drivers/battery.h"
@@ -211,6 +210,12 @@ bool parseFloatArg(const Args& args, int index, float min_value, float max_value
 
     value = parsed;
     return true;
+}
+
+// Turn segments carry a signed angle in degrees; positive turns left.
+bool turnsLeft(float angle_deg)
+{
+    return angle_deg >= 0.0f;
 }
 
 float normalizeYawDelta(float delta)
@@ -700,6 +705,11 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         handle_line_command(args);
         return;
     }
+    if (std::strcmp(args.argv[0], "SMOOTH") == 0)
+    {
+        handle_smooth_command(args);
+        return;
+    }
     if (std::strcmp(args.argv[0], "HALT") == 0)
     {
         stop();
@@ -1141,6 +1151,75 @@ bool CommandLineInterface::parse_path_sequence(const Args& args, int first_param
     return true;
 }
 
+bool CommandLineInterface::run_path_start_center()
+{
+    // The hand-start nudge: the mouse begins against the back wall, so advance
+    // it to the first cell's centre. Kept out of run_path_segments() so that
+    // function stays purely "drive these segments" and callers which start the
+    // mouse mid-maze can reuse it without inheriting this move.
+    deps_.motion->begin_motion_sequence();
+    halted_ = false;
+    deps_.motion->set_heading_hold(deps_.motion->yaw_deg());
+    deps_.motion->move(START_CENTER_DISTANCE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f,
+                       ROBOT_BASE_ACCEL_MMPS2);
+    const bool ok = wait_path_segment_motion();
+    deps_.motion->end_motion_sequence();
+
+    printFormat("PATH hand_start: advance=%.1f mm %s\n",
+                static_cast<double>(START_CENTER_DISTANCE_MM), ok ? "ok" : "ABORTED");
+    return ok;
+}
+
+bool CommandLineInterface::resolve_path_segments(std::vector<PathSegment>& segments)
+{
+    // Resolve every segment's motion parameters, and reject the whole path on
+    // anything undrivable, BEFORE the robot moves. A mid-path abort would leave
+    // it stranded part-way down the maze.
+    const float turn_speed_mmps = deps_.motion->smoothTurnTuning().speed_mmps;
+
+    for (size_t i = 0; i < segments.size(); ++i)
+    {
+        PathSegment& segment = segments[i];
+
+        if (segment.type == PathSegmentType::SmoothTurn)
+        {
+            if (!deps_.motion->smoothTurnGeometry(turnsLeft(segment.value)).valid)
+            {
+                printFormat("PATH rejected: segment %lu smooth turn geometry is invalid. "
+                            "Run SMOOTH to inspect.\n",
+                            static_cast<unsigned long>(i + 1));
+                return false;
+            }
+            continue;
+        }
+
+        if (segment.type != PathSegmentType::Forward)
+            continue;
+
+        // A smooth turn owns HALF_CELL_MM of forward progress either side of the
+        // turn cell's centre, so a straight next to one gives up that much.
+        // Feeding into a turn, the straight keeps the turn speed as its final
+        // speed: that is what stops the robot braking to zero at every corner.
+        const bool turn_next =
+            i + 1 < segments.size() && segments[i + 1].type == PathSegmentType::SmoothTurn;
+        const bool turn_prev = i > 0 && segments[i - 1].type == PathSegmentType::SmoothTurn;
+
+        segment.drive_mm =
+            segment.value - (turn_next ? HALF_CELL_MM : 0.0f) - (turn_prev ? HALF_CELL_MM : 0.0f);
+        segment.final_speed_mmps = turn_next ? turn_speed_mmps : 0.0f;
+
+        if (segment.drive_mm <= 0.0f)
+        {
+            printFormat("PATH rejected: straight %lu is shorter than the %.1f mm a neighbouring "
+                        "smooth turn needs. Lengthen it or drop the SMOOTH flag.\n",
+                        static_cast<unsigned long>(i + 1), static_cast<double>(HALF_CELL_MM));
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments, float speed_mmps,
                                              float accel_mmps2, float omega_degps,
                                              float alpha_degps2, bool smooth_turns, bool raw_mode)
@@ -1163,10 +1242,16 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
         }
     }
 
+    if (!resolve_path_segments(segments))
+        return false;
+
     deps_.motion->begin_motion_sequence();
     halted_ = false;
 
-    float expected_yaw_deg = 0.0f;
+    // Yaw targets are tracked relative to wherever the mouse is actually
+    // pointing now. PATH starts from a fresh reset so this is ~0, but a trial
+    // run mid-maze is not, and assuming 0 would make heading hold fight it.
+    float expected_yaw_deg = deps_.motion->yaw_deg();
     float total_forward_mm = 0.0f;
 
     printFormat("PATH segments=%lu speed=%.1f accel=%.1f omega=%.1f alpha=%.1f smooth=%s raw=%s\n",
@@ -1174,22 +1259,6 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                 static_cast<double>(accel_mmps2), static_cast<double>(omega_degps),
                 static_cast<double>(alpha_degps2), smooth_turns ? "true" : "false",
                 raw_mode ? "true" : "false");
-
-    if (!raw_mode)
-    {
-        deps_.motion->set_heading_hold(0.0f);
-        deps_.motion->move(START_CENTER_DISTANCE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f,
-                           ROBOT_BASE_ACCEL_MMPS2);
-        if (!wait_path_segment_motion())
-        {
-            deps_.motion->end_motion_sequence();
-            return false;
-        }
-        deps_.motion->set_position(HALF_CELL_MM);
-        printFormat("PATH hand_start: advance=%.1f mm pos=%.1f mm\n",
-                    static_cast<double>(START_CENTER_DISTANCE_MM),
-                    static_cast<double>(HALF_CELL_MM));
-    }
 
     for (size_t i = 0; i < segments.size(); ++i)
     {
@@ -1199,29 +1268,40 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
 
         if (segment.type == PathSegmentType::Forward)
         {
-            printFormat("PATH %lu/%lu: F %.1f mm\n", static_cast<unsigned long>(i + 1),
+            printFormat("PATH %lu/%lu: F %.1f mm (drive %.1f, final %.1f mm/s)\n",
+                        static_cast<unsigned long>(i + 1),
                         static_cast<unsigned long>(segments.size()),
-                        static_cast<double>(segment.value));
+                        static_cast<double>(segment.value), static_cast<double>(segment.drive_mm),
+                        static_cast<double>(segment.final_speed_mmps));
             if (!raw_mode)
                 deps_.motion->set_heading_hold(normalizeYawDelta(expected_yaw_deg));
-            deps_.motion->start_move(segment.value, speed_mmps, 0.0f, accel_mmps2);
+            deps_.motion->start_move(segment.drive_mm, speed_mmps, segment.final_speed_mmps,
+                                     accel_mmps2);
             ok = wait_path_segment_motion();
-            total_forward_mm += segment.value;
+            total_forward_mm += segment.drive_mm;
         }
         else if (segment.type == PathSegmentType::SmoothTurn)
         {
+            // Heading hold stays off across the whole turn: the exit straight
+            // runs with rotation idle on the NEW heading, so a stale target
+            // would steer the robot back out of the corner.
             if (!raw_mode)
                 deps_.motion->clear_heading_hold();
-            const int                   turn_id = segment.value >= 0.0f ? SS90L : SS90R;
-            const SmoothTurnParameters& params  = SMOOTH_TURN_PARAMS[turn_id];
-            printFormat(
-                "PATH %lu/%lu: SMOOTH %.1f deg speed=%.1f omega=%.1f\n",
-                static_cast<unsigned long>(i + 1), static_cast<unsigned long>(segments.size()),
-                static_cast<double>(params.angle_deg), static_cast<double>(params.speed_mmps),
-                static_cast<double>(params.omega_degps));
-            deps_.motion->turn_smooth(turn_id);
+            const bool                      turn_left = turnsLeft(segment.value);
+            const Motion::SmoothTurnTuning& tune      = deps_.motion->smoothTurnTuning();
+            const SmoothTurnGeometry        geo       = deps_.motion->smoothTurnGeometry(turn_left);
+            printFormat("PATH %lu/%lu: SMOOTH %+.1f deg speed=%.1f omega=%.1f r=%.1f total=%.1f\n",
+                        static_cast<unsigned long>(i + 1),
+                        static_cast<unsigned long>(segments.size()),
+                        static_cast<double>(geo.angle_deg), static_cast<double>(tune.speed_mmps),
+                        static_cast<double>(tune.omega_degps), static_cast<double>(geo.radius_mm),
+                        static_cast<double>(geo.total_mm()));
+            deps_.motion->start_smooth_turn(turn_left); // Geometry validated in the pre-pass.
             ok = wait_path_segment_motion();
-            expected_yaw_deg += params.angle_deg;
+            // The arc's path length is shorter than the cell it crosses; count
+            // the cell so the summary's cell total stays truthful.
+            total_forward_mm += CELL_SIZE_MM;
+            expected_yaw_deg += geo.angle_deg;
         }
         else
         {
@@ -1251,7 +1331,8 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                 static_cast<double>(deps_.motion->headingHoldErrorDeg()),
                 static_cast<double>(deps_.motion->headingHoldAdjustmentDegps()));
         }
-        else if (segment.type == PathSegmentType::Turn)
+        else if (segment.type == PathSegmentType::Turn ||
+                 segment.type == PathSegmentType::SmoothTurn)
         {
             printFormat(
                 "PATH %lu/%lu result: cmd=%+.2f yaw_before=%.2f yaw_after=%.2f delta=%+.2f "
@@ -1311,6 +1392,145 @@ bool CommandLineInterface::wait_path_segment_motion()
         sleep_ms(2);
     }
     return true;
+}
+
+void CommandLineInterface::printSmoothTuning()
+{
+    if (deps_.motion == nullptr)
+        return;
+
+    const Motion::SmoothTurnTuning& tune = deps_.motion->smoothTurnTuning();
+    printFormat("SMOOTH_TUNE\n");
+    for (const Motion::SmoothTurnField& field : Motion::SMOOTH_TURN_FIELDS)
+        printFormat("%s = %.6f\n", field.name, static_cast<double>(tune.*field.member));
+
+    // Derived phase lengths are what actually gets driven, so print them next
+    // to the knobs that produced them.
+    bool any_invalid = false;
+    for (const bool turn_left : {true, false})
+    {
+        const SmoothTurnGeometry geo = deps_.motion->smoothTurnGeometry(turn_left);
+        any_invalid                  = any_invalid || !geo.valid;
+        printFormat("%s radius=%.2f entry=%.2f arc=%.2f exit=%.2f total=%.2f %s\n",
+                    turn_left ? "LEFT " : "RIGHT", static_cast<double>(geo.radius_mm),
+                    static_cast<double>(geo.entry_mm), static_cast<double>(geo.arc_mm),
+                    static_cast<double>(geo.exit_mm), static_cast<double>(geo.total_mm()),
+                    geo.valid ? "OK" : "INVALID");
+    }
+    if (any_invalid)
+    {
+        printFormat("SMOOTH INVALID: radius must be <= %.1f mm (half a cell) and the entry/exit "
+                    "straights must stay positive. Raise OMEGA or lower SPEED.\n",
+                    static_cast<double>(HALF_CELL_MM));
+    }
+}
+
+bool CommandLineInterface::run_smooth_turn_trial(bool turn_left)
+{
+    if (!needsTof("SMOOTH RUN"))
+        return false;
+
+    const Motion::SmoothTurnTuning& tune = deps_.motion->smoothTurnTuning();
+    const SmoothTurnGeometry        geo  = deps_.motion->smoothTurnGeometry(turn_left);
+    if (!geo.valid)
+    {
+        printFormat("SMOOTH RUN refused: geometry invalid.\n");
+        printSmoothTuning();
+        return false;
+    }
+
+    printFormat("SMOOTH RUN %s speed=%.1f omega=%.1f alpha=%.1f\n", turn_left ? "L" : "R",
+                static_cast<double>(tune.speed_mmps), static_cast<double>(tune.omega_degps),
+                static_cast<double>(tune.alpha_degps2));
+    printFormat("  geometry r=%.1f entry=%.1f arc=%.1f exit=%.1f total=%.1f\n",
+                static_cast<double>(geo.radius_mm), static_cast<double>(geo.entry_mm),
+                static_cast<double>(geo.arc_mm), static_cast<double>(geo.exit_mm),
+                static_cast<double>(geo.total_mm()));
+
+    // One cell of straight in, the turn, one cell of straight out — expressed
+    // as a path so the segment driver owns the heading-hold protocol and the
+    // per-segment yaw reporting. Each straight asks for a cell and a half
+    // because the turn claims HALF_CELL_MM of it, leaving a full cell driven.
+    // No hand-start nudge: the mouse is placed mid-strip for a turn trial.
+    std::vector<PathSegment> segments = {
+        {PathSegmentType::Forward, CELL_SIZE_MM + HALF_CELL_MM},
+        {PathSegmentType::Turn, geo.angle_deg},
+        {PathSegmentType::Forward, CELL_SIZE_MM + HALF_CELL_MM},
+    };
+    return run_path_segments(segments, tune.speed_mmps, ROBOT_BASE_ACCEL_MMPS2,
+                             ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2,
+                             /*smooth_turns=*/true, /*raw_mode=*/false);
+}
+
+void CommandLineInterface::handle_smooth_command(const Args& args)
+{
+    if (deps_.motion == nullptr)
+    {
+        printFormat("SMOOTH requires Motion in ToF CLI mode.\n");
+        return;
+    }
+
+    if (args.argc < 2 || std::strcmp(args.argv[1], "TUNE") == 0)
+    {
+        printSmoothTuning();
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "DEFAULTS") == 0)
+    {
+        deps_.motion->reset_smooth_turn_tuning();
+        printFormat("SMOOTH DEFAULTS restored from config/motion.h\n");
+        printSmoothTuning();
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "SET") == 0)
+    {
+        if (args.argc < 4)
+        {
+            printFormat("SMOOTH SET usage: SMOOTH SET <name> <value>\n");
+            return;
+        }
+
+        float value = 0.0f;
+        if (!parseFloatArg(args, 3, -10000.0f, 10000.0f, value))
+        {
+            printFormat("SMOOTH SET value must be numeric.\n");
+            return;
+        }
+
+        if (!deps_.motion->set_smooth_turn_value(args.argv[2], value))
+        {
+            printFormat("SMOOTH SET invalid name/range. Editable:");
+            for (const Motion::SmoothTurnField& field : Motion::SMOOTH_TURN_FIELDS)
+                printFormat(" %s[%.1f..%.1f]", field.name, static_cast<double>(field.min_value),
+                            static_cast<double>(field.max_value));
+            printFormat("\n");
+            return;
+        }
+
+        printFormat("SMOOTH SET OK %s=%.6f\n", args.argv[2], static_cast<double>(value));
+        printSmoothTuning();
+        return;
+    }
+
+    if (std::strcmp(args.argv[1], "RUN") == 0)
+    {
+        if (args.argc < 3)
+        {
+            printFormat("SMOOTH RUN usage: SMOOTH RUN <L|R>\n");
+            return;
+        }
+        if (std::strcmp(args.argv[2], "L") == 0)
+            run_smooth_turn_trial(/*turn_left=*/true);
+        else if (std::strcmp(args.argv[2], "R") == 0)
+            run_smooth_turn_trial(/*turn_left=*/false);
+        else
+            printFormat("SMOOTH RUN expects L or R.\n");
+        return;
+    }
+
+    printFormat("SMOOTH expects TUNE, SET, DEFAULTS or RUN.\n");
 }
 
 void CommandLineInterface::handle_path_command(const Args& args)
@@ -1374,6 +1594,11 @@ void CommandLineInterface::handle_path_command(const Args& args)
                     "[alpha_degps2] [SMOOTH] [RAW]\n");
         return;
     }
+
+    // The mouse is placed against the back wall, so advance it to the first
+    // cell's centre before driving the path. RAW skips it, as it always has.
+    if (!raw_mode && !run_path_start_center())
+        return;
 
     run_path_segments(segments, speed, accel, omega, alpha, smooth_turns, raw_mode);
 }
@@ -2457,6 +2682,7 @@ void CommandLineInterface::help_debug()
     printFormat("STYLE [STATIONARY|SMOOTH] : select path execution style\n");
     printFormat(
         "PATH seq [spd acc omg alp] [SMOOTH] [RAW] : manual path, RAW disables heading hold\n");
+    printFormat("SMOOTH [SET <name> <val>|DEFAULTS|RUN <L|R>] : tune/measure arc turns\n");
     printFormat("CENTER [spd acc] : move from start pose to cell center (%.1f mm)\n",
                 static_cast<double>(START_CENTER_DISTANCE_MM));
     printFormat("STARTCENTER [spd acc] : CENTER alias\n");

@@ -99,7 +99,7 @@ class Mouse
     void turn_left();
     void turn_right();
     void turn_back();
-    void turn_smooth(int turn_id);
+    void turn_smooth(bool turn_left);
     bool turn_IP180();
     bool turn_IP90R();
     bool turn_IP90L();

@@ -111,6 +111,9 @@ class CommandLineInterface
     void handle_path_command(const Args& args);
     void handle_center_command(const Args& args);
     void handle_line_command(const Args& args);
+    void handle_smooth_command(const Args& args);
+    void printSmoothTuning();
+    bool run_smooth_turn_trial(bool turn_left);
     bool waitForLineStartButton();
     void printLineStartBanner();
     void printLineTuning();
@@ -137,8 +140,13 @@ class CommandLineInterface
     struct PathSegment
     {
         PathSegmentType type;
-        float           value; // Forward: mm. Turns: deg.
+        float           value; // As typed. Forward: mm. Turns: deg.
+        // Resolved by resolve_path_segments() before any motion starts.
+        float drive_mm         = 0.0f; // Forward: value minus what adjacent smooth turns own.
+        float final_speed_mmps = 0.0f; // Non-zero when rolling into a smooth turn.
     };
+    bool run_path_start_center();
+    bool resolve_path_segments(std::vector<PathSegment>& segments);
     bool parse_path_sequence(const Args& args, int first_param_index,
                              std::vector<PathSegment>& segments);
     bool parse_path_chunk(const char* chunk, std::vector<PathSegment>& segments);

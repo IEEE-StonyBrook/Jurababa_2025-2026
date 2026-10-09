@@ -4,8 +4,10 @@
 #include <cstdint>
 
 #include "common/tof_wall_utils.h"
+#include "config/motion.h"
 #include "control/pid.h"
 #include "control/profile.h"
+#include "control/smooth_turn_geometry.h"
 
 class Drivetrain;
 class IMU;
@@ -30,6 +32,49 @@ class Motion
         uint32_t source_changes = 0;
         uint32_t both_samples   = 0;
         uint32_t single_samples = 0;
+    };
+
+    /**
+     * @brief Live, CLI-editable smooth turn parameters.
+     *
+     * RAM shadow of the config/motion.h defaults so a corner can be tuned over
+     * serial without a rebuild, same pattern as LineFollower::RuntimeTuning.
+     * Left and right offsets stay independent: tire loading and motor
+     * asymmetry make the two sides differ.
+     */
+    struct SmoothTurnTuning
+    {
+        float speed_mmps            = ROBOT_SEARCH_TURN_SPEED_MMPS;
+        float omega_degps           = ROBOT_SMOOTH_TURN_OMEGA_DEGPS;
+        float alpha_degps2          = ROBOT_SMOOTH_TURN_ALPHA_DEGPS2;
+        float entry_offset_left_mm  = 0.0f;
+        float exit_offset_left_mm   = 0.0f;
+        float entry_offset_right_mm = 0.0f;
+        float exit_offset_right_mm  = 0.0f;
+    };
+
+    /**
+     * @brief One editable smooth turn knob, named as the CLI spells it.
+     *
+     * Single source of truth: the setter validates against this table and the
+     * CLI prints and lists it. Adding a knob means adding one row here.
+     */
+    struct SmoothTurnField
+    {
+        const char* name;
+        float SmoothTurnTuning::* member;
+        float                     min_value;
+        float                     max_value;
+    };
+
+    static constexpr SmoothTurnField SMOOTH_TURN_FIELDS[] = {
+        {"SPEED", &SmoothTurnTuning::speed_mmps, 50.0f, 600.0f},
+        {"OMEGA", &SmoothTurnTuning::omega_degps, 30.0f, 600.0f},
+        {"ALPHA", &SmoothTurnTuning::alpha_degps2, 100.0f, 5000.0f},
+        {"ENTRY_L", &SmoothTurnTuning::entry_offset_left_mm, -40.0f, 40.0f},
+        {"EXIT_L", &SmoothTurnTuning::exit_offset_left_mm, -40.0f, 40.0f},
+        {"ENTRY_R", &SmoothTurnTuning::entry_offset_right_mm, -40.0f, 40.0f},
+        {"EXIT_R", &SmoothTurnTuning::exit_offset_right_mm, -40.0f, 40.0f},
     };
 
     Motion(Drivetrain* drivetrain, IMU* imu);
@@ -118,7 +163,23 @@ class Motion
     void wait_until_position(float position_mm);
     bool wait_until_distance(float distance_mm, uint32_t timeout_ms);
     void wait_until_distance(float distance_mm);
-    void turn_smooth(int turn_id);
+
+    // === Smooth (arc) turns ===
+    // One continuous forward profile carries the robot through entry straight,
+    // arc and exit straight without stopping. See smooth_turn_geometry.h.
+    //
+    // Caller contract: arm this when the robot is HALF_CELL_MM before the turn
+    // cell's centre, and clear heading hold for the whole turn — the exit
+    // straight runs with rotation idle on the NEW heading, so a stale hold
+    // target would steer the robot back out of the corner.
+    const SmoothTurnTuning& smoothTurnTuning() const { return smooth_turn_; }
+    bool                    set_smooth_turn_value(const char* name, float value);
+    void                    reset_smooth_turn_tuning();
+    SmoothTurnGeometry      smoothTurnGeometry(bool turn_left) const;
+    // Returns false (and arms nothing) when the tuned geometry does not fit a
+    // cell. A caller that has already checked smoothTurnGeometry().valid may
+    // ignore it; one that has not must check, or the turn silently no-ops.
+    bool start_smooth_turn(bool turn_left);
 
     // === Control Loop ===
     // Caller must invoke update() exactly once per tick from a deterministic
@@ -154,6 +215,29 @@ class Motion
     float prev_left_cmd_vel_mmps_  = 0.0f;
     float prev_right_cmd_vel_mmps_ = 0.0f;
     bool  motion_sequence_active_  = false;
+
+    SmoothTurnTuning smooth_turn_{};
+
+    /**
+     * @brief An arc armed by start_smooth_turn(), fired later by update().
+     *
+     * Everything the arc needs is snapshotted at arm time, so it stays
+     * consistent with the forward distance start_smooth_turn() has already
+     * committed even if the tuning changes in between. update() runs in the
+     * 500 Hz timer ISR, so it must never read live tuning here.
+     *
+     * Keeping the whole turn on one forward profile means move_finished()
+     * never flickers true mid-turn.
+     */
+    struct PendingArc
+    {
+        float trigger_mm   = 0.0f; // Forward profile position at which the arc starts.
+        float angle_deg    = 0.0f;
+        float omega_degps  = 0.0f;
+        float alpha_degps2 = 0.0f;
+        bool  armed        = false;
+    };
+    PendingArc pending_arc_{};
 
     // ToFs are physically read and filtered outside Motion. Filtered values
     // feed wall detection/steering; raw values are kept only for diagnostics.

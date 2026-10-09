@@ -1,6 +1,7 @@
 #include "control/motion.h"
 
 #include <cmath>
+#include <cstring>
 
 #include "common/log.h"
 #include "common/utils.h"
@@ -40,6 +41,11 @@ void Motion::reset()
 
 void Motion::reset_drive_system()
 {
+    // Disarm first: update() runs in the 500 Hz timer ISR and can fire a
+    // pending arc. Disarming after rotation_.reset() would let an ISR tick in
+    // between start a turn that nothing then cancels — the robot would keep
+    // rotating through an emergency stop.
+    pending_arc_            = {};
     motion_sequence_active_ = false;
     clear_heading_hold();
     drivetrain_->stop();
@@ -53,6 +59,7 @@ void Motion::reset_drive_system()
 
 void Motion::reset_drive_control()
 {
+    pending_arc_ = {}; // Disarm before the profiles — see reset_drive_system().
     drivetrain_->stop();
     drivetrain_->reset();
     forward_.reset();
@@ -415,7 +422,9 @@ void Motion::start_turn(float degrees, float top_speed_degps, float final_speed_
 
 bool Motion::turn_finished() const
 {
-    return !rotation_.active();
+    // A pending smooth turn arc has not started yet, so the turn is not done —
+    // without this a caller's wait loop exits during the entry straight.
+    return !rotation_.active() && !pending_arc_.armed;
 }
 
 void Motion::turn(float degrees, float top_speed_degps, float final_speed_degps, float accel_degps2)
@@ -482,23 +491,64 @@ void Motion::adjust_forward_position(float delta_mm)
     forward_.adjustPosition(delta_mm);
 }
 
-void Motion::turn_smooth(int turn_id)
+bool Motion::set_smooth_turn_value(const char* name, float value)
 {
-    if (turn_id < 0 || turn_id >= SMOOTH_TURN_PARAM_COUNT)
-        return;
+    if (name == nullptr)
+        return false;
 
-    const SmoothTurnParameters& params = SMOOTH_TURN_PARAMS[turn_id];
-    const float                 radius_mm =
-        (std::fabs(params.angle_deg) > 1e-3f)
-                            ? ((params.speed_mmps / params.omega_degps) * (180.0f / static_cast<float>(M_PI)))
-                            : 0.0f;
+    // Ranges are deliberately narrow: a bad value here drives the robot into a
+    // wall. Entry/exit are corrections on derived geometry, not absolute
+    // distances, so +/-40 mm is already past anything physically sane.
+    for (const SmoothTurnField& field : SMOOTH_TURN_FIELDS)
+    {
+        if (std::strcmp(name, field.name) != 0)
+            continue;
+        if (value < field.min_value || value > field.max_value)
+            return false;
+        smooth_turn_.*field.member = value;
+        return true;
+    }
 
-    if (radius_mm <= 0.0f)
-        return;
+    return false;
+}
 
-    const float arc_length_mm = std::fabs(params.angle_deg) * (M_PI / 180.0f) * radius_mm;
-    forward_.start(arc_length_mm, params.speed_mmps, params.speed_mmps, ROBOT_BASE_ACCEL_MMPS2);
-    rotation_.start(params.angle_deg, params.omega_degps, 0.0f, params.alpha_degps2);
+void Motion::reset_smooth_turn_tuning()
+{
+    smooth_turn_ = SmoothTurnTuning{};
+}
+
+SmoothTurnGeometry Motion::smoothTurnGeometry(bool turn_left) const
+{
+    // The returned geometry carries the signed angle, so no caller needs to
+    // re-derive it from turn_left.
+    return ::smoothTurnGeometry(
+        smooth_turn_.speed_mmps, smooth_turn_.omega_degps, turn_left ? 90.0f : -90.0f,
+        turn_left ? smooth_turn_.entry_offset_left_mm : smooth_turn_.entry_offset_right_mm,
+        turn_left ? smooth_turn_.exit_offset_left_mm : smooth_turn_.exit_offset_right_mm);
+}
+
+bool Motion::start_smooth_turn(bool turn_left)
+{
+    const SmoothTurnGeometry geo = smoothTurnGeometry(turn_left);
+    if (!geo.valid)
+    {
+        LOG_ERROR("Motion: smooth turn geometry invalid radius_mm="
+                  << geo.radius_mm << " entry_mm=" << geo.entry_mm << " exit_mm=" << geo.exit_mm);
+        return false;
+    }
+
+    // One forward profile for entry + arc + exit. final_speed == top_speed, so
+    // the profile completes while still rolling: the robot never stops, and
+    // start_move() carries the current velocity in as start_speed.
+    start_move(geo.total_mm(), smooth_turn_.speed_mmps, smooth_turn_.speed_mmps,
+               ROBOT_BASE_ACCEL_MMPS2);
+
+    pending_arc_.trigger_mm   = geo.entry_mm;
+    pending_arc_.angle_deg    = geo.angle_deg;
+    pending_arc_.omega_degps  = smooth_turn_.omega_degps;
+    pending_arc_.alpha_degps2 = smooth_turn_.alpha_degps2;
+    pending_arc_.armed        = true; // Last: update() may fire on the next tick.
+    return true;
 }
 
 void Motion::update()
@@ -510,6 +560,17 @@ void Motion::update()
     drivetrain_->update();
     imu_->update();
     forward_.update();
+
+    // Smooth turn: release the arc once the single forward profile has covered
+    // the entry straight. Placed before rotation_.update() so the arc starts
+    // on this same tick.
+    if (pending_arc_.armed && forward_.position() >= pending_arc_.trigger_mm)
+    {
+        start_turn(pending_arc_.angle_deg, pending_arc_.omega_degps, 0.0f,
+                   pending_arc_.alpha_degps2);
+        pending_arc_.armed = false;
+    }
+
     rotation_.update();
 
     runPositionControl();
