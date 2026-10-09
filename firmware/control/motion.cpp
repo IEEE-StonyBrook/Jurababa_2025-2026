@@ -497,8 +497,8 @@ bool Motion::set_smooth_turn_value(const char* name, float value)
         return false;
 
     // Ranges are deliberately narrow: a bad value here drives the robot into a
-    // wall. Entry/exit are corrections on derived geometry, not absolute
-    // distances, so +/-40 mm is already past anything physically sane.
+    // wall. Entry/exit are distances from the turn cell centre, so anything
+    // past HALF_CELL_MM would start or end the arc outside the cell.
     for (const SmoothTurnField& field : SMOOTH_TURN_FIELDS)
     {
         if (std::strcmp(name, field.name) != 0)
@@ -517,34 +517,43 @@ void Motion::reset_smooth_turn_tuning()
     smooth_turn_ = SmoothTurnTuning{};
 }
 
-SmoothTurnGeometry Motion::smoothTurnGeometry(bool turn_left) const
+float Motion::smoothTurnLeadMm(bool turn_left, float turn_centre_ahead_mm) const
 {
-    // The returned geometry carries the signed angle, so no caller needs to
-    // re-derive it from turn_left.
-    return ::smoothTurnGeometry(
-        smooth_turn_.speed_mmps, smooth_turn_.omega_degps, turn_left ? 90.0f : -90.0f,
-        turn_left ? smooth_turn_.entry_offset_left_mm : smooth_turn_.entry_offset_right_mm,
-        turn_left ? smooth_turn_.exit_offset_left_mm : smooth_turn_.exit_offset_right_mm);
+    // mazerunner-core: turn_point = FULL_CELL + HALF_CELL - entry_offset.
+    return turn_centre_ahead_mm -
+           (turn_left ? smooth_turn_.entry_offset_left_mm : smooth_turn_.entry_offset_right_mm);
 }
 
-bool Motion::start_smooth_turn(bool turn_left)
+float Motion::smoothTurnExitMm(bool turn_left, float end_after_centre_mm) const
 {
-    const SmoothTurnGeometry geo = smoothTurnGeometry(turn_left);
-    if (!geo.valid)
+    // mazerunner-core: move(SENSING_POSITION - (HALF_CELL + exit_offset)).
+    // Clamp so an exit offset larger than the room left never reverses the
+    // robot; that case means the turn is too wide for the cell (raise ALPHA).
+    const float exit_mm = end_after_centre_mm - (turn_left ? smooth_turn_.exit_offset_left_mm
+                                                           : smooth_turn_.exit_offset_right_mm);
+    return (exit_mm > 0.0f) ? exit_mm : 0.0f;
+}
+
+bool Motion::start_smooth_turn(bool turn_left, float turn_centre_ahead_mm)
+{
+    float lead_mm = smoothTurnLeadMm(turn_left, turn_centre_ahead_mm);
+    if (lead_mm < 0.0f)
     {
-        LOG_ERROR("Motion: smooth turn geometry invalid radius_mm="
-                  << geo.radius_mm << " entry_mm=" << geo.entry_mm << " exit_mm=" << geo.exit_mm);
-        return false;
+        // Already past the turn point (slow planning). Turn now, as
+        // mazerunner-core's wait loop does: a late turn is recoverable, but
+        // skipping it would leave the maze heading turned and the robot not.
+        LOG_WARNING("Motion: smooth turn late by " << -lead_mm << " mm; turning now");
+        lead_mm = 0.0f;
     }
 
-    // One forward profile for entry + arc + exit. final_speed == top_speed, so
-    // the profile completes while still rolling: the robot never stops, and
+    // Lead-in to the turn point with final_speed == top_speed, so the profile
+    // finishes still rolling at the turn speed and carries it through the arc
+    // (mazerunner sets target velocity to SEARCH_TURN_SPEED and keeps rolling).
     // start_move() carries the current velocity in as start_speed.
-    start_move(geo.total_mm(), smooth_turn_.speed_mmps, smooth_turn_.speed_mmps,
-               ROBOT_BASE_ACCEL_MMPS2);
+    start_move(lead_mm, smooth_turn_.speed_mmps, smooth_turn_.speed_mmps, ROBOT_SEARCH_ACCEL_MMPS2);
 
-    pending_arc_.trigger_mm   = geo.entry_mm;
-    pending_arc_.angle_deg    = geo.angle_deg;
+    pending_arc_.trigger_mm   = lead_mm;
+    pending_arc_.angle_deg    = turn_left ? 90.0f : -90.0f;
     pending_arc_.omega_degps  = smooth_turn_.omega_degps;
     pending_arc_.alpha_degps2 = smooth_turn_.alpha_degps2;
     pending_arc_.armed        = true; // Last: update() may fire on the next tick.

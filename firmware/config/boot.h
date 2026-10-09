@@ -24,7 +24,7 @@ enum class BootSensorSelection
 // Set either value to Prompt to restore the boot-time keyboard picker.
 // Competition boots directly into the gesture-driven COMP loop. CheeseHunt
 // also forces ToF and disables Bluetooth because GP12/GP13 become IR pins.
-#define BOOT_MODE_SELECTION   BootModeSelection::Competition
+#define BOOT_MODE_SELECTION   BootModeSelection::CLI
 #define BOOT_SENSOR_SELECTION BootSensorSelection::ToF
 
 #define BOOT_MODE_PROMPT_TIMEOUT_MS   3000u

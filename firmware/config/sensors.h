@@ -61,7 +61,7 @@
 // side_error_norm (drifted right of center) commands a positive omega
 // (steer left). Sign matches the IMU's IMU_YAW_SIGN inversion done once
 // in the driver layer.
-#define TOF_STEERING_ENABLE                 1
+#define TOF_STEERING_ENABLE                 0
 #define TOF_STEERING_KP_DEGPS_PER_NOMINAL   1.0f
 #define TOF_STEERING_KD_DEG_PER_NOMINAL     0.0f
 #define TOF_STEERING_ADJUST_LIMIT_DEGPS     10.0f

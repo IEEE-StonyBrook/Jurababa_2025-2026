@@ -119,7 +119,7 @@ class Mouse
     bool wander_to(const std::vector<std::array<int, 2>>& goals);
     bool getRandomBool();
     std::string randomHeading();
-    bool        test_SS90E();
+    bool        test_SS90E(bool turn_left);
     void        blink(int count);
 
     // UKMARS setup/report helpers. They intentionally use Jurababa ToF mm

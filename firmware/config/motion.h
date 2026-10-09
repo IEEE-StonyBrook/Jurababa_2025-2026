@@ -28,10 +28,11 @@
 // ================ Forward Speed Limits ================= //
 #define ROBOT_MAX_SEARCH_SPEED_MMPS  400.0f  // Search mode cruise speed
 #define ROBOT_MAX_FAST_SPEED_MMPS    1500.0f // Stage 3+ explored-path cruise (Mouse::cruiseSpeed)
-#define ROBOT_SEARCH_TURN_SPEED_MMPS 240.0f  // Constant speed through search smooth turns
+#define ROBOT_SEARCH_TURN_SPEED_MMPS 300.0f  // mazerunner-core (Orion) SEARCH_TURN_SPEED
 
 // ================ Forward Acceleration ================= //
-#define ROBOT_BASE_ACCEL_MMPS2 2500.0f
+#define ROBOT_BASE_ACCEL_MMPS2   2500.0f
+#define ROBOT_SEARCH_ACCEL_MMPS2 2000.0f // mazerunner-core (Orion) SEARCH_ACCELERATION
 
 // ================= Rotation Limits ===================== //
 // Jurababa-validated IMU spin-turn defaults. These are deliberately gentler
@@ -40,8 +41,14 @@
 #define ROBOT_MAX_TURN_SPEED_DEGPS       300.0f  // Max angular velocity
 #define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2  1200.0f // Turn acceleration
 #define ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS 250.0f  // Linear speed during smooth turns
-#define ROBOT_SMOOTH_TURN_OMEGA_DEGPS    240.0f  // UKMARS SS90E starting point
-#define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2   1200.0f // UKMARS SS90E starting point
+#define ROBOT_SMOOTH_TURN_OMEGA_DEGPS    280.0f  // mazerunner-core (Orion) SS90E omega
+#define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2   4000.0f // mazerunner-core (Orion) SS90E alpha
+// mazerunner-core SS90E offsets: how far before the turn cell centre the arc
+// starts, and how far past the centre (on the new heading) it ends. Tuned, not
+// derived — the alpha ramps make the real reach longer than v/omega.
+#define ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM  70.0f // mazerunner-core (Orion) SS90EL entry
+#define ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM 55.0f // mazerunner-core (Orion) SS90ER entry
+#define ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM 80.0f // mazerunner-core (Orion) SS90E exit
 
 // ================ Maze Heading Hold =================== //
 // Competition maze-running can use the logical maze heading as a gentle

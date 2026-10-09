@@ -22,6 +22,7 @@
 #include "common/tof_wall_utils.h"
 #include "config/geometry.h"
 #include "config/motion.h"
+#include "config/smooth_turn.h"
 #include "control/line_follower.h"
 #include "control/motion.h"
 #include "drivers/battery.h"
@@ -1183,11 +1184,13 @@ bool CommandLineInterface::resolve_path_segments(std::vector<PathSegment>& segme
 
         if (segment.type == PathSegmentType::SmoothTurn)
         {
-            if (!deps_.motion->smoothTurnGeometry(turnsLeft(segment.value)).valid)
+            // Every turn is armed HALF_CELL_MM before its centre, so the arc
+            // start must not lie behind that point.
+            if (deps_.motion->smoothTurnLeadMm(turnsLeft(segment.value), HALF_CELL_MM) < 0.0f)
             {
-                printFormat("PATH rejected: segment %lu smooth turn geometry is invalid. "
+                printFormat("PATH rejected: segment %lu smooth turn ENTRY exceeds %.1f mm. "
                             "Run SMOOTH to inspect.\n",
-                            static_cast<unsigned long>(i + 1));
+                            static_cast<unsigned long>(i + 1), static_cast<double>(HALF_CELL_MM));
                 return false;
             }
             continue;
@@ -1288,20 +1291,32 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
             if (!raw_mode)
                 deps_.motion->clear_heading_hold();
             const bool                      turn_left = turnsLeft(segment.value);
+            const float                     angle_deg = turn_left ? 90.0f : -90.0f;
             const Motion::SmoothTurnTuning& tune      = deps_.motion->smoothTurnTuning();
-            const SmoothTurnGeometry        geo       = deps_.motion->smoothTurnGeometry(turn_left);
-            printFormat("PATH %lu/%lu: SMOOTH %+.1f deg speed=%.1f omega=%.1f r=%.1f total=%.1f\n",
+            const float lead_mm = deps_.motion->smoothTurnLeadMm(turn_left, HALF_CELL_MM);
+            const float exit_mm = deps_.motion->smoothTurnExitMm(turn_left, HALF_CELL_MM);
+            printFormat("PATH %lu/%lu: SMOOTH %+.1f deg speed=%.1f omega=%.1f alpha=%.1f "
+                        "lead=%.1f exit=%.1f\n",
                         static_cast<unsigned long>(i + 1),
-                        static_cast<unsigned long>(segments.size()),
-                        static_cast<double>(geo.angle_deg), static_cast<double>(tune.speed_mmps),
-                        static_cast<double>(tune.omega_degps), static_cast<double>(geo.radius_mm),
-                        static_cast<double>(geo.total_mm()));
-            deps_.motion->start_smooth_turn(turn_left); // Geometry validated in the pre-pass.
-            ok = wait_path_segment_motion();
+                        static_cast<unsigned long>(segments.size()), static_cast<double>(angle_deg),
+                        static_cast<double>(tune.speed_mmps), static_cast<double>(tune.omega_degps),
+                        static_cast<double>(tune.alpha_degps2), static_cast<double>(lead_mm),
+                        static_cast<double>(exit_mm));
+            // mazerunner-core turn_smooth(): lead-in and arc, then the exit leg
+            // to HALF_CELL_MM past the centre. Lead validated in the pre-pass.
+            ok = deps_.motion->start_smooth_turn(turn_left, HALF_CELL_MM) &&
+                 wait_path_segment_motion();
+            if (ok)
+            {
+                const float exit_final_mmps = (i + 1 < segments.size()) ? tune.speed_mmps : 0.0f;
+                deps_.motion->start_move(exit_mm, tune.speed_mmps, exit_final_mmps,
+                                         ROBOT_SEARCH_ACCEL_MMPS2);
+                ok = wait_path_segment_motion();
+            }
             // The arc's path length is shorter than the cell it crosses; count
             // the cell so the summary's cell total stays truthful.
             total_forward_mm += CELL_SIZE_MM;
-            expected_yaw_deg += geo.angle_deg;
+            expected_yaw_deg += angle_deg;
         }
         else
         {
@@ -1404,24 +1419,22 @@ void CommandLineInterface::printSmoothTuning()
     for (const Motion::SmoothTurnField& field : Motion::SMOOTH_TURN_FIELDS)
         printFormat("%s = %.6f\n", field.name, static_cast<double>(tune.*field.member));
 
-    // Derived phase lengths are what actually gets driven, so print them next
-    // to the knobs that produced them.
-    bool any_invalid = false;
+    // The straights actually driven around the arc, for a turn armed
+    // HALF_CELL_MM before the centre (PATH) and one ending at the search
+    // sensing point. A clamped exit means the arc already reaches past where
+    // the robot should end up: shorten EXIT or tighten the arc (ALPHA/OMEGA).
     for (const bool turn_left : {true, false})
     {
-        const SmoothTurnGeometry geo = deps_.motion->smoothTurnGeometry(turn_left);
-        any_invalid                  = any_invalid || !geo.valid;
-        printFormat("%s radius=%.2f entry=%.2f arc=%.2f exit=%.2f total=%.2f %s\n",
-                    turn_left ? "LEFT " : "RIGHT", static_cast<double>(geo.radius_mm),
-                    static_cast<double>(geo.entry_mm), static_cast<double>(geo.arc_mm),
-                    static_cast<double>(geo.exit_mm), static_cast<double>(geo.total_mm()),
-                    geo.valid ? "OK" : "INVALID");
-    }
-    if (any_invalid)
-    {
-        printFormat("SMOOTH INVALID: radius must be <= %.1f mm (half a cell) and the entry/exit "
-                    "straights must stay positive. Raise OMEGA or lower SPEED.\n",
-                    static_cast<double>(HALF_CELL_MM));
+        const float lead_mm   = deps_.motion->smoothTurnLeadMm(turn_left, HALF_CELL_MM);
+        const float exit_path = deps_.motion->smoothTurnExitMm(turn_left, HALF_CELL_MM);
+        const float exit_search =
+            deps_.motion->smoothTurnExitMm(turn_left, SENSING_POSITION_MM - HALF_CELL_MM);
+        const float exit_room_mm = SENSING_POSITION_MM - HALF_CELL_MM;
+        const float exit_offset  = turn_left ? tune.exit_offset_left_mm : tune.exit_offset_right_mm;
+        printFormat("%s lead=%.1f exit_path=%.1f exit_search=%.1f%s\n",
+                    turn_left ? "LEFT " : "RIGHT", static_cast<double>(lead_mm),
+                    static_cast<double>(exit_path), static_cast<double>(exit_search),
+                    exit_offset > exit_room_mm ? " EXIT LEG CLAMPED (search)" : "");
     }
 }
 
@@ -1429,37 +1442,31 @@ bool CommandLineInterface::run_smooth_turn_trial(bool turn_left)
 {
     if (!needsTof("SMOOTH RUN"))
         return false;
-
-    const Motion::SmoothTurnTuning& tune = deps_.motion->smoothTurnTuning();
-    const SmoothTurnGeometry        geo  = deps_.motion->smoothTurnGeometry(turn_left);
-    if (!geo.valid)
+    if (deps_.mouse == nullptr)
     {
-        printFormat("SMOOTH RUN refused: geometry invalid.\n");
-        printSmoothTuning();
+        printFormat("SMOOTH RUN requires Mouse in ToF CLI mode.\n");
         return false;
     }
 
-    printFormat("SMOOTH RUN %s speed=%.1f omega=%.1f alpha=%.1f\n", turn_left ? "L" : "R",
-                static_cast<double>(tune.speed_mmps), static_cast<double>(tune.omega_degps),
-                static_cast<double>(tune.alpha_degps2));
-    printFormat("  geometry r=%.1f entry=%.1f arc=%.1f exit=%.1f total=%.1f\n",
-                static_cast<double>(geo.radius_mm), static_cast<double>(geo.entry_mm),
-                static_cast<double>(geo.arc_mm), static_cast<double>(geo.exit_mm),
-                static_cast<double>(geo.total_mm()));
+    const Motion::SmoothTurnTuning& tune = deps_.motion->smoothTurnTuning();
+    printFormat(
+        "SMOOTH RUN %s speed=%.1f omega=%.1f alpha=%.1f entry=%.1f exit=%.1f\n",
+        turn_left ? "L" : "R", static_cast<double>(tune.speed_mmps),
+        static_cast<double>(tune.omega_degps), static_cast<double>(tune.alpha_degps2),
+        static_cast<double>(turn_left ? tune.entry_offset_left_mm : tune.entry_offset_right_mm),
+        static_cast<double>(turn_left ? tune.exit_offset_left_mm : tune.exit_offset_right_mm));
 
-    // One cell of straight in, the turn, one cell of straight out — expressed
-    // as a path so the segment driver owns the heading-hold protocol and the
-    // per-segment yaw reporting. Each straight asks for a cell and a half
-    // because the turn claims HALF_CELL_MM of it, leaving a full cell driven.
-    // No hand-start nudge: the mouse is placed mid-strip for a turn trial.
-    std::vector<PathSegment> segments = {
-        {PathSegmentType::Forward, CELL_SIZE_MM + HALF_CELL_MM},
-        {PathSegmentType::Turn, geo.angle_deg},
-        {PathSegmentType::Forward, CELL_SIZE_MM + HALF_CELL_MM},
-    };
-    return run_path_segments(segments, tune.speed_mmps, ROBOT_BASE_ACCEL_MMPS2,
-                             ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2,
-                             /*smooth_turns=*/true, /*raw_mode=*/false);
+    // mazerunner-core test_SS90E through the search loop's own turn code, so
+    // a turn tuned here is the turn search drives. The mouse starts with its
+    // back against the start cell's back wall: no hand alignment needed.
+    halted_ = false;
+    deps_.motion->emergency_stop();
+    deps_.mouse->set_hand_start(true);
+    const bool ok = deps_.mouse->test_SS90E(turn_left);
+    printFormat(ok ? "SMOOTH RUN %s done. See SS90E turn_yaw_error above.\n"
+                   : "SMOOTH RUN %s failed.\n",
+                turn_left ? "L" : "R");
+    return ok;
 }
 
 void CommandLineInterface::handle_smooth_command(const Args& args)
@@ -2002,7 +2009,8 @@ void CommandLineInterface::run_function(int cmd)
                 deps_.motion->emergency_stop();
             printFormat("Test SS90E Turn: starting immediately.\n");
             deps_.mouse->set_hand_start(true);
-            printFormat(deps_.mouse->test_SS90E() ? "SS90E right done.\n" : "SS90E failed.\n");
+            printFormat(deps_.mouse->test_SS90E(/*turn_left=*/false) ? "SS90E right done.\n"
+                                                                     : "SS90E failed.\n");
             break;
 
         case 5:

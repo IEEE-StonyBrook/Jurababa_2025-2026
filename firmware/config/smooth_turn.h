@@ -10,10 +10,9 @@
 #include "config/geometry.h"
 #include "config/motion.h"
 
-// Smooth turn speed/omega/alpha and the entry/exit corrections are runtime
+// Smooth turn speed/omega/alpha and the entry/exit offsets are runtime
 // tuneable over the CLI, so they live in Motion::SmoothTurnTuning (seeded from
-// config/motion.h) rather than a constexpr table here. The phase lengths are
-// derived in control/smooth_turn_geometry.h.
+// config/motion.h) rather than a constexpr table here.
 
 constexpr float SENSING_POSITION_MM = CELL_SIZE_MM - 10.0f; // Osmium SENSING_POSITION = 170
 constexpr float FRONT_REFERENCE_MM =
@@ -28,28 +27,29 @@ constexpr uint32_t STOP_AT_CENTRE_PROFILE_TIMEOUT_MS = 1000; // UKMARS no-wall t
 
 // Smooth-turn tuning notes
 // ------------------------
-// Live knobs are edited over serial with `SMOOTH SET <name> <value>` and shown
-// by `SMOOTH`: SPEED, OMEGA, ALPHA, and the per-side ENTRY_L/EXIT_L/ENTRY_R/
-// EXIT_R corrections. Defaults come from config/motion.h; `SMOOTH DEFAULTS`
-// restores them. Entry and exit are DERIVED from speed and omega
-// (HALF_CELL - radius); the offsets are corrections on top, default 0.
+// Same shape as ukmars/mazerunner-core Mouse::turn_smooth() (SS90E):
+//   - roll at SPEED until the robot is ENTRY mm before the turn cell centre,
+//   - arc 90 deg at OMEGA/ALPHA while still rolling,
+//   - drive (end point - EXIT) mm, where the arc ends EXIT mm past the centre.
+// ENTRY and EXIT are tuned reaches, not derived: the ALPHA ramps make the real
+// reach longer than SPEED/OMEGA. Defaults are mazerunner-core's Orion values
+// (300 mm/s, 280 deg/s, 4000 deg/s^2, entry 70 L / 55 R, exit 80).
 //
-// Tune in this order, using `SMOOTH RUN L|R` to measure each change:
-//   1. Keep speed/omega/alpha conservative until in-place turns are repeatable.
-//   2. Tune ENTRY_* for the start of the arc. Too small starts late and clips
-//      the inside wall; too large starts early and drifts wide.
-//   3. Tune EXIT_* so the robot finishes the arc aimed down the next cell and
+// Live knobs: `SMOOTH`, `SMOOTH SET <name> <value>`, `SMOOTH DEFAULTS`,
+// `SMOOTH RUN L|R`. Names: SPEED OMEGA ALPHA ENTRY_L EXIT_L ENTRY_R EXIT_R.
+//
+// Tune in this order, using `SMOOTH RUN L|R` over tape for each change:
+//   1. Keep SPEED/OMEGA/ALPHA conservative until in-place turns are repeatable.
+//      A search turn must end before SENSING_POSITION_MM: if `SMOOTH` reports
+//      EXIT LEG CLAMPED, raise ALPHA (or OMEGA) before touching offsets.
+//   2. ENTRY_*: too small starts late and swings wide; too large starts early
+//      and clips the inside post.
+//   3. EXIT_*: set so the robot finishes the arc centred in the next cell and
 //      reaches SENSING_POSITION_MM without a lateral step.
-//   4. Tune OMEGA/ALPHA only after geometry is close. Higher omega shortens the
-//      radius at a fixed speed; higher alpha makes the heading transition
-//      sharper and can expose IMU/controller lag.
-//   5. Tune left and right independently. Tire loading, motor asymmetry, and
-//      ToF mounting make the two sides differ.
-//   6. Raise SPEED last, and re-check the radius still fits a half cell.
+//   4. Tune left and right independently.
 //
-// Not yet implemented: starting the turn from a front-ToF reading rather than
-// from commanded distance — the turn begins where the caller arms it. The
-// constants it would need are deliberately absent: a tuneable nothing reads
-// is worse than no tuneable at all.
+// Not yet implemented: mazerunner's front-sensor early trigger
+// (front_sum > trigger, +EXTRA_WALL_ADJUST per side wall). It needs a measured
+// Jurababa ToF mm threshold.
 
 #endif // CONFIG_SMOOTH_TURN_H

@@ -836,7 +836,7 @@ void Mouse::turn_left()
             motion_->resetWallSteeringStats();
             begin_search_front_latch();
             motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_,
-                          cruise_speed_mmps_, ROBOT_BASE_ACCEL_MMPS2);
+                          cruise_speed_mmps_, ROBOT_SEARCH_ACCEL_MMPS2);
             if (!waitForMotion())
             {
                 clear_search_front_latch();
@@ -879,7 +879,7 @@ void Mouse::turn_right()
             motion_->resetWallSteeringStats();
             begin_search_front_latch();
             motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_,
-                          cruise_speed_mmps_, ROBOT_BASE_ACCEL_MMPS2);
+                          cruise_speed_mmps_, ROBOT_SEARCH_ACCEL_MMPS2);
             if (!waitForMotion())
             {
                 clear_search_front_latch();
@@ -912,7 +912,7 @@ void Mouse::turn_back()
         motion_->resetWallSteeringStats();
         begin_search_front_latch();
         motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_, cruise_speed_mmps_,
-                      ROBOT_BASE_ACCEL_MMPS2);
+                      ROBOT_SEARCH_ACCEL_MMPS2);
         if (!waitForMotion())
         {
             clear_search_front_latch();
@@ -935,11 +935,24 @@ void Mouse::turn_smooth(bool turn_left)
 #ifndef SIMULATOR_BUILD
     if (motion_ == nullptr)
         return;
-    // Motion::start_smooth_turn drives entry straight, arc and exit straight
-    // on one forward profile — the robot never stops at the corner.
+    // mazerunner-core turn_smooth(). Position is in the cell frame where
+    // SENSING_POSITION_MM was set, so the turn cell centre is always at
+    // CELL_SIZE_MM + HALF_CELL_MM however long the planner took to get here.
+    motion_->set_steering_mode(tof_wall::SteeringMode::STEERING_OFF);
     suspend_maze_heading_hold();
-    if (motion_->start_smooth_turn(turn_left))
-        (void)waitForMotion();
+    const float centre_ahead_mm = CELL_SIZE_MM + HALF_CELL_MM - motion_->position();
+    if (!motion_->start_smooth_turn(turn_left, centre_ahead_mm) || !waitForMotion())
+        return;
+
+    // Exit leg: the arc ends EXIT mm past the centre; run on to the sensing
+    // point of the new cell, still rolling so move_ahead() chains without a
+    // stop. Keeps the caller's set_position(SENSING_POSITION_MM) truthful.
+    const float exit_mm = motion_->smoothTurnExitMm(turn_left, SENSING_POSITION_MM - HALF_CELL_MM);
+    motion_->move(exit_mm, cruise_speed_mmps_, cruise_speed_mmps_, ROBOT_SEARCH_ACCEL_MMPS2);
+    if (!waitForMotion())
+        return;
+
+    motion_->set_steering_mode(tof_wall::SteeringMode::STEER_NORMAL);
 #endif
 }
 
@@ -1041,12 +1054,36 @@ bool Mouse::stopAtCentre()
     LOG_INFO("stopAtCentre: position_mm=" + fixed1(motion_->position()) +
              " distance_mm=" + fixed1(distance_mm));
     apply_maze_heading_hold();
-    motion_->move(distance_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_BASE_ACCEL_MMPS2);
+    motion_->move(distance_mm, ROBOT_MAX_SEARCH_SPEED_MMPS, 0.0f, ROBOT_SEARCH_ACCEL_MMPS2);
     if (!waitForMotion() || haltRequested())
         return false;
     motion_->set_position(HALF_CELL_MM);
 #endif
     return true;
+}
+
+void Mouse::logFrontCentreCalibration(const char* stage)
+{
+#ifndef SIMULATOR_BUILD
+    if (!LOG_FRONT_CENTRE_CALIBRATION || motion_ == nullptr)
+        return;
+    // The front reading is a moving average, so right after a stop it still
+    // holds samples taken while moving. Let a few fresh ToF periods through
+    // before logging, so the value is what the sensor reads at rest. Place the
+    // robot at the true cell centre by hand and compare against this to set
+    // FRONT_REFERENCE_MM.
+    for (int i = 0; i < kFrontCalibrationSettlePeriods; ++i)
+    {
+        sleep_ms(TOF_MEASUREMENT_PERIOD_MS);
+        serviceSensors();
+    }
+    LOG_INFO("FRONT_CENTRE " + std::string(stage) +
+             " front_mm=" + fixed1(motion_->frontDistance()) +
+             " front_raw_mm=" + fixed1(motion_->frontRawDistance()) +
+             " reference_mm=" + fixed1(FRONT_REFERENCE_MM));
+#else
+    (void)stage;
+#endif
 }
 
 bool Mouse::adjustPosition()
@@ -1064,7 +1101,10 @@ bool Mouse::adjustPosition()
 
     float correction_mm = front_mm - FRONT_REFERENCE_MM;
     if (std::fabs(correction_mm) <= FRONT_CORRECTION_TOLERANCE_MM)
+    {
+        logFrontCentreCalibration("no_correction");
         return true;
+    }
 
     if (correction_mm > FRONT_CORRECTION_STEP_MM)
         correction_mm = FRONT_CORRECTION_STEP_MM;
@@ -1078,6 +1118,7 @@ bool Mouse::adjustPosition()
     if (!waitForMotion())
         return false;
     motion_->set_position(HALF_CELL_MM);
+    logFrontCentreCalibration("after_correction");
     return !haltRequested();
 #else
     return true;
@@ -1212,7 +1253,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
                 " sensing_position_mm=" + fixed1(SENSING_POSITION_MM));
             apply_maze_heading_hold();
             motion_->move(sensing_wait_position_mm, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_SEARCH_ACCEL_MMPS2);
             m_handStart = false;
         }
         else
@@ -1221,7 +1262,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
                      " sensing_position_mm=" + fixed1(SENSING_POSITION_MM));
             apply_maze_heading_hold();
             motion_->move(sensing_wait_position_mm, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_SEARCH_ACCEL_MMPS2);
         }
         if (!wait_until_position(sensing_wait_position_mm))
         {
@@ -1495,7 +1536,7 @@ bool Mouse::cheese_hunt(const std::array<int, 2>& start_cell, BeaconIr* beacon_i
                 " sensing_position_mm=" + fixed1(SENSING_POSITION_MM));
             apply_maze_heading_hold();
             motion_->move(sensing_wait_position_mm, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_SEARCH_ACCEL_MMPS2);
             m_handStart = false;
         }
         else
@@ -1503,7 +1544,7 @@ bool Mouse::cheese_hunt(const std::array<int, 2>& start_cell, BeaconIr* beacon_i
             LOG_INFO("Cheese Hunt: center_start distance_mm=" + fixed1(sensing_wait_position_mm));
             apply_maze_heading_hold();
             motion_->move(sensing_wait_position_mm, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+                          ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_SEARCH_ACCEL_MMPS2);
         }
         if (!wait_until_position(sensing_wait_position_mm))
         {
@@ -1751,7 +1792,7 @@ bool Mouse::follow_to(const std::vector<std::array<int, 2>>& goals)
         motion_->set_position(HALF_CELL_MM);
         apply_maze_heading_hold();
         motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                      ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+                      ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_SEARCH_ACCEL_MMPS2);
         if (!waitForMotion())
             return false;
         motion_->set_position(SENSING_POSITION_MM);
@@ -1819,7 +1860,7 @@ bool Mouse::wander_to(const std::vector<std::array<int, 2>>& goals)
         motion_->set_position(HALF_CELL_MM);
         apply_maze_heading_hold();
         motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                      ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+                      ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_SEARCH_ACCEL_MMPS2);
         if (!waitForMotion())
             return false;
         motion_->set_position(SENSING_POSITION_MM);
@@ -1866,32 +1907,78 @@ bool Mouse::wander_to(const std::vector<std::array<int, 2>>& goals)
     return true;
 }
 
-bool Mouse::test_SS90E()
+bool Mouse::test_SS90E(bool turn_left)
 {
+    // mazerunner-core test_SS90E(), but driven through the same turn_left() /
+    // turn_right() the search loop calls. Arrival speed, steering and
+    // heading-hold handoff, the arc and the exit to SENSING_POSITION_MM are
+    // therefore the search code itself: a turn tuned here is tuned for search.
     if (maze_mouse_ == nullptr)
         return false;
 
     MouseMotionSequenceGuard motion_sequence(this);
+    const MovementStyle      saved_style = movement_style_;
+    movement_style_                      = MovementStyle::Smooth;
 #ifndef SIMULATOR_BUILD
+    float start_yaw_deg = 0.0f;
     if (!run_on_simulator && motion_ != nullptr)
     {
+        // Same as search_to(): never steer from zero speed, run to the first
+        // sensing point at search speed while holding the start heading.
         motion_->set_steering_mode(tof_wall::SteeringMode::STEERING_OFF);
         if (m_handStart)
         {
             if (!start_center())
+            {
+                movement_style_ = saved_style;
                 return false;
+            }
             m_handStart = false;
         }
+        // Search holds the maze heading on straights; on a square start that
+        // is the yaw the robot was placed at.
+        start_yaw_deg = motion_->yaw_deg();
+        motion_->set_heading_hold(start_yaw_deg);
         motion_->set_position(HALF_CELL_MM);
         motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS,
-                      ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2);
+                      ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_SEARCH_ACCEL_MMPS2);
         if (!waitForMotion())
+        {
+            movement_style_ = saved_style;
             return false;
+        }
         motion_->set_position(SENSING_POSITION_MM);
+        motion_->set_steering_mode(tof_wall::SteeringMode::STEER_NORMAL);
     }
 #endif
-    turn_smooth(/*turn_left=*/false);
-    maze_mouse_->turn45Steps(2);
+
+    if (turn_left)
+        this->turn_left();
+    else
+        turn_right();
+    movement_style_ = saved_style;
+
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator && motion_ != nullptr && !haltRequested())
+    {
+        // Read the turn's yaw error now: the run-out below holds the new
+        // heading and would hide it.
+        const float target_yaw_deg =
+            normalizeYawDelta(start_yaw_deg + (turn_left ? 90.0f : -90.0f));
+        const float turn_error_deg = normalizeYawDelta(target_yaw_deg - motion_->yaw_deg());
+        LOG_INFO("SS90E " + std::string(turn_left ? "L" : "R") +
+                 " start_yaw=" + fixed1(start_yaw_deg) + " target_yaw=" + fixed1(target_yaw_deg) +
+                 " yaw=" + fixed1(motion_->yaw_deg()) + " turn_yaw_error=" +
+                 signedFixed1(turn_error_deg) + " position_mm=" + fixed1(motion_->position()));
+
+        // mazerunner-core: run on two cells to a stop. The robot rests at the
+        // sensing point two cells on, so its offset there is the turn's.
+        motion_->set_heading_hold(target_yaw_deg);
+        motion_->move(2.0f * CELL_SIZE_MM, cruise_speed_mmps_, 0.0f, ROBOT_SEARCH_ACCEL_MMPS2);
+        if (!waitForMotion())
+            return false;
+    }
+#endif
     return !haltRequested();
 }
 
