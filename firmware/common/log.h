@@ -28,7 +28,16 @@ class Log
         uint32_t truncated_messages;
     };
 
-    static void                 message(LogPriority priority, std::string msg);
+    static void message(LogPriority priority, std::string msg);
+
+    /**
+     * @brief Operator-hostile detail (raw registers, bit fields) tagged "[DIAG]".
+     *
+     * A separate tier, not a severity, so it ignores the priority gates: the host
+     * terminal hides these lines from its window but still writes them to the log
+     * file, which keeps the human view readable without losing the detail.
+     */
+    static void                 diagnostic(std::string msg);
     static void                 setBluetoothInterface(Bluetooth* bt);
     static void                 setBluetoothEnabled(bool enabled);
     static void                 setBluetoothPriority(LogPriority priority);
@@ -76,6 +85,13 @@ class Log
         std::ostringstream ss;                                                                     \
         ss << msg;                                                                                 \
         Log::message(LogPriority::FATAL, ss.str());                                                \
+    }
+
+#define LOG_DIAG(msg)                                                                              \
+    {                                                                                              \
+        std::ostringstream ss;                                                                     \
+        ss << msg;                                                                                 \
+        Log::diagnostic(ss.str());                                                                 \
     }
 
 #endif

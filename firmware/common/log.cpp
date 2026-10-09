@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "common/breadcrumb.h"
+
 #ifdef PICO_BUILD
 #include "app/bluetooth.h"
 #include "pico/critical_section.h"
@@ -106,6 +108,10 @@ void Log::message(LogPriority priority, std::string msg)
 
     std::string final_msg = prefix + msg;
 
+    // Recorded before any transport, so the last thing the robot was doing survives
+    // a reset even when the line itself never makes it out over Bluetooth.
+    Breadcrumb::noteActivity(final_msg.c_str());
+
 #ifdef SIMULATOR_BUILD
     // Use stderr for simulator to avoid interfering with mms protocol on stdout
     std::cerr << final_msg << '\n';
@@ -116,6 +122,25 @@ void Log::message(LogPriority priority, std::string msg)
 #ifdef PICO_BUILD
     if (bluetooth_enabled_ && bluetooth_ != nullptr &&
         static_cast<int>(priority) >= static_cast<int>(bluetooth_priority_level_))
+    {
+        enqueueBluetoothLog(final_msg);
+    }
+#endif
+}
+
+void Log::diagnostic(std::string msg)
+{
+    std::string final_msg = "[DIAG] " + msg;
+
+#ifdef SIMULATOR_BUILD
+    std::cerr << final_msg << '\n';
+#else
+    std::cout << final_msg << '\n';
+#endif
+
+#ifdef PICO_BUILD
+    // No priority gate: DIAG is a separate tier the host filters by tag, not a severity.
+    if (bluetooth_enabled_ && bluetooth_ != nullptr)
     {
         enqueueBluetoothLog(final_msg);
     }
