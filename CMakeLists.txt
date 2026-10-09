@@ -79,6 +79,7 @@ set(DRIVER_LAB_SOURCES
 )
 
 set(COMMON_SOURCES
+    firmware/common/breadcrumb.cpp
     firmware/common/log.cpp
 )
 

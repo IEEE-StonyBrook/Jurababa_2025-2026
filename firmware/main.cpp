@@ -40,6 +40,7 @@
 #include "app/firmware_mouse.h"
 #include "app/leds.h"
 #include "common/bluetooth_stdio.h"
+#include "common/breadcrumb.h"
 #include "common/log.h"
 #include "config/config.h"
 #include "control/drivetrain.h"
@@ -493,6 +494,10 @@ static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool compe
         printf("ToF stack forced. GP12/GP13 reserved for IR; Bluetooth disabled.\n");
     }
 
+    // After the banner block so the verdict reaches stdout always, and Bluetooth
+    // whenever this mode enabled it — one call site, both transports.
+    Breadcrumb::report();
+
     // Maze + virtual mouse + wall bridge live on Core 0 in both sub-modes.
     std::array<int, 2> start_cell = {0, 0};
     std::vector<std::array<int, 2>> goal_cells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
@@ -651,6 +656,10 @@ static void runCheeseHuntMode(Battery* battery)
 // ----------------------------------------------------------------------------
 int main()
 {
+    // First, before anything logs or samples: this snapshots the previous session's
+    // record, and any log line would otherwise overwrite the history we want to read.
+    Breadcrumb::begin();
+
     stdio_init_all();
     stage_led::flashBoot();
     sleep_ms(2000); // wait for USB-CDC enumeration
