@@ -87,6 +87,20 @@ const char* yesNo(bool value)
     return value ? "yes" : "no";
 }
 
+// Polls both input paths readSerialLine() uses (USB CDC and HC-05 UART).
+bool keyPressed()
+{
+    bool pressed = false;
+    while (getchar_timeout_us(0) != PICO_ERROR_TIMEOUT)
+        pressed = true;
+    while (uart_is_readable(uart0))
+    {
+        uart_getc(uart0);
+        pressed = true;
+    }
+    return pressed;
+}
+
 } // namespace
 
 // ============================================================================
@@ -2073,8 +2087,15 @@ void DriverLab::cmdYawContinuous(const DriverLabArgs& args)
 
     const uint32_t start_time = to_ms_since_boot(get_absolute_time());
     uint32_t       elapsed    = 0;
+    printf("(press any key to stop)\n");
+    keyPressed(); // discard the LF that trails the command's CR
     while (elapsed < duration_ms)
     {
+        if (keyPressed())
+        {
+            printf("=== Stopped ===\n");
+            return;
+        }
         elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
         // IMU is ISR-driven; just read.
         printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed), imu_->robot_angle(),
@@ -2137,8 +2158,15 @@ void DriverLab::cmdTofContinuous(const DriverLabArgs& args)
 
     const uint32_t start_time = to_ms_since_boot(get_absolute_time());
     uint32_t       elapsed    = 0;
+    printf("(press any key to stop)\n");
+    keyPressed(); // discard the LF that trails the command's CR
     while (elapsed < duration_ms)
     {
+        if (keyPressed())
+        {
+            printf("=== Stopped ===\n");
+            return;
+        }
         elapsed                = to_ms_since_boot(get_absolute_time()) - start_time;
         const float left_dist  = (left_tof_ != nullptr) ? left_tof_->get_distance() : 0.0f;
         const float front_dist = (front_tof_ != nullptr) ? front_tof_->get_distance() : 0.0f;
@@ -2205,8 +2233,15 @@ void DriverLab::cmdEncoderContinuous(const DriverLabArgs& args)
 
     const uint32_t start_time = to_ms_since_boot(get_absolute_time());
     uint32_t       elapsed    = 0;
+    printf("(press any key to stop)\n");
+    keyPressed(); // discard the LF that trails the command's CR
     while (elapsed < duration_ms)
     {
+        if (keyPressed())
+        {
+            printf("=== Stopped ===\n");
+            return;
+        }
         elapsed              = to_ms_since_boot(get_absolute_time()) - start_time;
         const float left_mm  = left_encoder_ ? left_encoder_->ticks() * MM_PER_TICK : 0.0f;
         const float right_mm = right_encoder_ ? right_encoder_->ticks() * MM_PER_TICK : 0.0f;
@@ -2607,8 +2642,15 @@ void DriverLab::cmdLineContinuous(const DriverLabArgs& args)
 
     const uint32_t start_time = to_ms_since_boot(get_absolute_time());
     uint32_t       elapsed    = 0;
+    printf("(press any key to stop)\n");
+    keyPressed(); // discard the LF that trails the command's CR
     while (elapsed < duration_ms)
     {
+        if (keyPressed())
+        {
+            printf("=== Stopped ===\n");
+            return;
+        }
         elapsed = to_ms_since_boot(get_absolute_time()) - start_time;
         line_sensor_->read();
         const float                         position = line_sensor_->get_position();
