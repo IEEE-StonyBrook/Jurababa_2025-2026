@@ -725,6 +725,18 @@ void CommandLineInterface::run_long_cmd(const Args& args)
         handle_path_command(args);
         return;
     }
+    if (std::strcmp(args.argv[0], "TRACE") == 0)
+    {
+        // Dumps the trace PATH armed. SMOOTH RUN prints its own.
+        if (deps_.mouse == nullptr || deps_.motion == nullptr)
+        {
+            printFormat("TRACE requires Motion/Mouse in ToF CLI mode.\n");
+            return;
+        }
+        deps_.motion->stop_trace();
+        deps_.mouse->print_turn_trace(NAN);
+        return;
+    }
     if (std::strcmp(args.argv[0], "CENTER") == 0 || std::strcmp(args.argv[0], "STARTCENTER") == 0)
     {
         handle_center_command(args);
@@ -1247,6 +1259,8 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
         printFormat("PATH requires Motion/Mouse in ToF CLI mode.\n");
         return false;
     }
+    // Record the run for TRACE; the buffer holds the first 2.4 s.
+    deps_.motion->start_trace();
 
     if (smooth_turns)
     {

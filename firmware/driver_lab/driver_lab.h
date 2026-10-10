@@ -277,6 +277,11 @@ class DriverLab
         std::vector<float> omega_steady;
         std::vector<float> rot_tm_samples;
 
+        // Same fit from encoder yaw, which has no BNO085 lag in it.
+        std::vector<float> step_omegas_enc;
+        std::vector<float> omega_steady_enc;
+        std::vector<float> rot_tm_samples_enc;
+
         // Inter-step pause
         bool pausing;
         int  pause_loop_count;
@@ -291,6 +296,10 @@ class DriverLab
 
         std::vector<float> times_s;
         std::vector<float> omegas;
+
+        // Encoder omega every tick (500 Hz), for the lag-free ROT_TM.
+        std::vector<float> enc_times_s;
+        std::vector<float> enc_omegas;
     };
 
     // ------------------------------------------------------------------
@@ -321,6 +330,12 @@ class DriverLab
     int   prev_right_ticks_;
     float left_velocity_mmps_;
     float right_velocity_mmps_;
+
+    // Body omega from the averaged wheel speeds, deg/s, positive CCW.
+    float encoderOmegaDegps() const
+    {
+        return (right_velocity_mmps_ - left_velocity_mmps_) * DEG_PER_MM_DIFFERENCE;
+    }
     float left_position_mm_;
     float right_position_mm_;
 
