@@ -57,25 +57,30 @@
 #define TOF_FRONT_WALL_THRESHOLD_MM 250.0f
 
 // Front ToF model for the search's odometry check (SEARCH MAP fwd[...]):
-// reading = (wall face - position) - FRONT_TOF_AXLE_OFFSET_MM + v * FRONT_TOF_LAG_S,
-// with position in the cell frame (axle reference). Stationary after PATH FFFFF,
-// ruler nose gap + axle-to-nose 74.2 mm minus the reading: 38.2 and 41.2.
-#define FRONT_TOF_AXLE_OFFSET_MM 40.0f
-#define FRONT_TOF_LAG_S          0.04f // ~12 mm at 300 mm/s
+// reading = GAIN * (wall face - position) - OFFSET + v * FRONT_TOF_LAG_S,
+// position in the cell frame (axle reference). Fit to 6 stationary reads at
+// ruler-measured 182-289 mm (2026-10-10), residuals within 5 mm: the VL53L0X
+// over-reads distance by ~17%, so a single offset is only right at one range.
+#define FRONT_TOF_GAIN      1.166f
+#define FRONT_TOF_OFFSET_MM 85.1f
+#define FRONT_TOF_LAG_S     0.04f // ~12 mm at 300 mm/s
 
 // UKMARS-style wall steering. Wall detection remains enabled regardless of
 // this switch; TOF_STEERING_ENABLE only controls whether side-wall error is
 // injected into the rotation PID. Search also keeps IMU heading hold active,
-// so ToF steering should stay gentle and be treated as lateral trim.
+// so ToF steering should stay gentle and be treated as lateral trim. At 1.0 /
+// 10 deg/s it sat saturated for a whole cell after every smooth turn (39% of
+// straight samples, 2026-10-10); mazerunner's limit is 90. Raised to re-centre
+// within about half a cell, still gentle enough for the ToF's 40-60 ms lag.
 //
 // Jurababa yaw/omega convention: positive yaw = CCW (left), so a positive
 // side_error_norm (drifted right of center) commands a positive omega
 // (steer left). Sign matches the IMU's IMU_YAW_SIGN inversion done once
 // in the driver layer.
 #define TOF_STEERING_ENABLE                 1
-#define TOF_STEERING_KP_DEGPS_PER_NOMINAL   1.0f
+#define TOF_STEERING_KP_DEGPS_PER_NOMINAL   2.0f
 #define TOF_STEERING_KD_DEG_PER_NOMINAL     0.0f
-#define TOF_STEERING_ADJUST_LIMIT_DEGPS     10.0f
+#define TOF_STEERING_ADJUST_LIMIT_DEGPS     30.0f
 #define TOF_FRONT_WALL_RELIABILITY_LIMIT_MM 160.0f
 
 // ================= IMU Configuration ================= //

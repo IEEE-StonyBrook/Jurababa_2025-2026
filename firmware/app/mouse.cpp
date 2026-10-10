@@ -1185,13 +1185,13 @@ void Mouse::update_map()
         if (instant_front_wall)
         {
             // Odometry check: the wall seen is the far side of the cell being
-            // entered. err > 0 means the robot is short of where it thinks.
+            // entered. err (true mm) > 0 means the robot is short of where it thinks.
             const float wall_ahead_mm =
                 2.0f * CELL_SIZE_MM - WALL_THICKNESS_MM / 2.0f - motion_->position();
-            const float expected_mm =
-                wall_ahead_mm - FRONT_TOF_AXLE_OFFSET_MM + motion_->velocity() * FRONT_TOF_LAG_S;
-            map_log << " fwd[exp=" << fixed1(expected_mm)
-                    << " err=" << signedFixed1(motion_->frontDistance() - expected_mm)
+            const float expected_mm = FRONT_TOF_GAIN * wall_ahead_mm - FRONT_TOF_OFFSET_MM +
+                                      motion_->velocity() * FRONT_TOF_LAG_S;
+            map_log << " fwd[exp=" << fixed1(expected_mm) << " err="
+                    << signedFixed1((motion_->frontDistance() - expected_mm) / FRONT_TOF_GAIN)
                     << " v=" << fixed1(motion_->velocity()) << "]";
         }
         map_log << "]";

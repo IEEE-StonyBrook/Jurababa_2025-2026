@@ -49,14 +49,18 @@
 // derived — the alpha ramps make the real reach longer than v/omega.
 #define ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM  76.0f // Same as right; 6 runs at 300 mm/s
 #define ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM 76.0f // ToF-tuned at 300 mm/s, 3 runs: exit -2.7 mm
-#define ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM 80.0f // mazerunner-core (Orion) SS90E exit
+// Where the arc ends past the turn-cell centre. Left ruler-measured 2026-10-10
+// (SMOOTH RUN L, 8.1 V): 80 left the robot 19-20 mm short, 61 lands within 2 mm.
+#define ROBOT_SMOOTH_TURN_EXIT_LEFT_MM  61.0f
+#define ROBOT_SMOOTH_TURN_EXIT_RIGHT_MM 61.0f // Same as left; not ruler-measured
 // Encoder arc size. Tyre scrub at 300 mm/s turns the body ~4 deg less than
 // the wheels; 95 lands it on 90 (+0.7 deg mean over 3 runs).
 #define ROBOT_SMOOTH_TURN_ANGLE_RIGHT_DEG 95.0f
-// Front ToF reading that starts the arc early (wall ahead). Odometry put
-// the turn point at 112-119 mm over 10 runs at 300 mm/s, entry 76; 112
-// only fires when odometry is >~3 mm behind, never on ToF noise.
-#define ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM 112.0f
+// Front ToF reading that starts the arc early (wall ahead). mazerunner sets
+// its threshold at its odometry turn point so the two coincide. With the
+// 37.0 mm wheel that point reads ~120 mm static, ~132 at 300 mm/s (ToF lag);
+// 125 fires once the robot is ~7 mm long, above ToF noise.
+#define ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM 125.0f
 #define ROBOT_SMOOTH_TURN_ANGLE_LEFT_DEG   95.5f // 95 and 96 tested: +0.9 deg, +3.6 mm mean
 // Smooth-turn arcs feed encoder yaw to the rotation PD: the BNO085 lags ~40 ms,
 // enough to reverse the inside wheel and overshoot the arc. Encoder yaw stays
