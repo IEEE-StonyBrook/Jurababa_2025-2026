@@ -594,13 +594,15 @@ void Motion::runPositionControl()
     // IMU as a held-flat per-tick delta; this removes the 10 ms staircase
     // that the old 100 Hz gate produced in rotation_output_ and stops the
     // step-input-driven oscillation on spin turns.
-    const float forward_output =
-        forward_commanded ? forward_controller_.update(fwd_velocity, fwd_change_mm) : 0.0f;
-    const bool straight_move       = forward_.active() && !rotation_.active();
-    float      wall_adjustment     = 0.0f;
-    float      heading_adjustment  = 0.0f;
-    float      steering_adjustment = 0.0f;
-    const bool line_steering_used  = straight_move && line_steering_valid_;
+    // mazerunner-core runs both PDs every tick. During a spin the forward
+    // setpoint is 0, so this holds position; skipping it let motor imbalance
+    // walk the robot ~30 mm forward per 360 deg.
+    const float forward_output      = forward_controller_.update(fwd_velocity, fwd_change_mm);
+    const bool  straight_move       = forward_.active() && !rotation_.active();
+    float       wall_adjustment     = 0.0f;
+    float       heading_adjustment  = 0.0f;
+    float       steering_adjustment = 0.0f;
+    const bool  line_steering_used  = straight_move && line_steering_valid_;
     if (line_steering_used)
     {
         steering_adjustment                   = line_steering_adjustment_degps_;
