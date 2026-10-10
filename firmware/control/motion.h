@@ -185,6 +185,36 @@ class Motion
     // scheduler pinned to LOOP_FREQUENCY_HZ.
     void update();
 
+    // === Turn trace (diagnostics) ===
+    // Recorded on the control core every TRACE_DECIMATION ticks while armed;
+    // read back on Core 0 only after the motion has finished.
+    struct TraceSample
+    {
+        float target_deg;    // rotation profile position, relative to turn start
+        float yaw_deg;       // IMU robot angle (absolute)
+        float rot_error_deg; // rotation PD accumulated error
+        float rot_volts;     // rotation PD output
+        float hold_err_deg;  // heading hold error
+        float wall_degps;    // ToF wall steering fed to the rotation PD
+        float hold_degps;    // IMU heading hold fed to the rotation PD
+        float fwd_mmps;      // forward profile velocity
+        float left_mmps;     // measured wheel velocity
+        float right_mmps;
+        float left_volts;
+        float right_volts;
+        bool  encoder_rotation; // rotation PD fed from encoders, not the IMU
+        float left_tof_mm;      // filtered ToF distances as last set by Core 0
+        float front_tof_mm;
+        float right_tof_mm;
+    };
+    static constexpr uint16_t TRACE_CAPACITY   = 600;
+    static constexpr uint16_t TRACE_DECIMATION = 2; // 4 ms between samples at 500 Hz
+
+    void               start_trace();
+    void               stop_trace();
+    uint16_t           traceCount() const;
+    const TraceSample& traceSample(uint16_t index) const;
+
   private:
     void  runPositionControl();
     float wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps);
@@ -249,6 +279,15 @@ class Motion
     float heading_hold_target_yaw_deg_          = 0.0f;
     float latest_heading_hold_error_deg_        = 0.0f;
     float latest_heading_hold_adjustment_degps_ = 0.0f;
+
+    TraceSample       trace_[TRACE_CAPACITY] = {};
+    volatile uint16_t trace_count_           = 0;
+    uint16_t          trace_tick_            = 0;
+    volatile bool     trace_active_          = false;
+
+    // Non-zero while the rotation PD reads encoder yaw: UINT16_MAX during a
+    // smooth-turn arc, then a holdover countdown in ticks once it ends.
+    uint16_t encoder_rotation_ticks_ = 0;
 };
 
 #endif

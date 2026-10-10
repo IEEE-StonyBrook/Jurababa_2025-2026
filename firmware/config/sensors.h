@@ -38,8 +38,8 @@
 // becomes "100" after multiplication. We don't need accurate mm; we need
 // symmetric normalized units, which compile-time scaling delivers for free.
 #define TOF_SIDE_NOMINAL         100.0f
-#define TOF_LEFT_CALIBRATION_MM  65.0f // raw left ToF reading at center (re-measure!)
-#define TOF_RIGHT_CALIBRATION_MM 93.0f // raw right ToF reading at center (re-measure!)
+#define TOF_LEFT_CALIBRATION_MM  75.5f // Mean of 10 S reads, centred to 1 mm (2026-10-09)
+#define TOF_RIGHT_CALIBRATION_MM 82.6f // Mean of 10 S reads; 10 mm offset moved L -11.8, R +10.3
 #define TOF_LEFT_SCALE           (TOF_SIDE_NOMINAL / TOF_LEFT_CALIBRATION_MM)
 #define TOF_RIGHT_SCALE          (TOF_SIDE_NOMINAL / TOF_RIGHT_CALIBRATION_MM)
 
@@ -61,7 +61,7 @@
 // side_error_norm (drifted right of center) commands a positive omega
 // (steer left). Sign matches the IMU's IMU_YAW_SIGN inversion done once
 // in the driver layer.
-#define TOF_STEERING_ENABLE                 0
+#define TOF_STEERING_ENABLE                 1
 #define TOF_STEERING_KP_DEGPS_PER_NOMINAL   1.0f
 #define TOF_STEERING_KD_DEG_PER_NOMINAL     0.0f
 #define TOF_STEERING_ADJUST_LIMIT_DEGPS     10.0f

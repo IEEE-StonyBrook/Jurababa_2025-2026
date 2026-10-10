@@ -49,7 +49,8 @@ void Drivetrain::reset()
     left_velocity_mmps_  = 0.0f;
     right_velocity_mmps_ = 0.0f;
 
-    fwd_change_mm_ = 0.0f;
+    fwd_change_mm_  = 0.0f;
+    rot_change_deg_ = 0.0f;
 }
 
 float Drivetrain::position(WheelSide side)
@@ -127,13 +128,15 @@ void Drivetrain::update()
     right_history_[averager_index_] = static_cast<int8_t>(d_right);
     averager_index_                 = (averager_index_ + 1) % ENCODER_AVERAGER_LENGTH;
 
-    constexpr float inv_avg      = 1.0f / static_cast<float>(ENCODER_AVERAGER_LENGTH);
-    const float     left_change  = static_cast<float>(left_history_total_) * inv_avg * MM_PER_TICK_LEFT;
-    const float     right_change = static_cast<float>(right_history_total_) * inv_avg * MM_PER_TICK_RIGHT;
+    constexpr float inv_avg = 1.0f / static_cast<float>(ENCODER_AVERAGER_LENGTH);
+    const float left_change = static_cast<float>(left_history_total_) * inv_avg * MM_PER_TICK_LEFT;
+    const float right_change =
+        static_cast<float>(right_history_total_) * inv_avg * MM_PER_TICK_RIGHT;
 
     left_velocity_mmps_  = left_change / LOOP_INTERVAL_S;
     right_velocity_mmps_ = right_change / LOOP_INTERVAL_S;
     fwd_change_mm_       = 0.5f * (left_change + right_change);
+    rot_change_deg_      = (right_change - left_change) * DEG_PER_MM_DIFFERENCE;
 }
 
 void Drivetrain::setVoltage(float left_volts, float right_volts)
