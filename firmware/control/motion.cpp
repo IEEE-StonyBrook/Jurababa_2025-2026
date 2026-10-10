@@ -660,27 +660,31 @@ void Motion::runPositionControl()
 
     drivetrain_->setVoltage(left_volts, right_volts);
 
-    if (trace_active_ && ++trace_tick_ >= trace_decimation_ && trace_count_ < TRACE_CAPACITY)
+    // Ring buffer: a run longer than the buffer keeps its last samples, the
+    // ones leading up to a crash or HALT.
+    if (trace_active_ && ++trace_tick_ >= trace_decimation_)
     {
-        trace_tick_          = 0;
-        trace_[trace_count_] = {rotation_.position(),
-                                yaw_deg(),
-                                rotation_controller_.error(),
-                                rotation_output,
-                                latest_heading_hold_error_deg_,
-                                wall_adjustment,
-                                heading_adjustment,
-                                fwd_velocity,
-                                drivetrain_->velocity(WheelSide::LEFT),
-                                drivetrain_->velocity(WheelSide::RIGHT),
-                                left_volts,
-                                right_volts,
-                                encoder_rotation,
-                                left_wall_mm_,
-                                front_wall_mm_,
-                                right_wall_mm_,
-                                forward_.position()};
-        trace_count_         = trace_count_ + 1;
+        trace_tick_         = 0;
+        trace_[trace_next_] = {rotation_.position(),
+                               yaw_deg(),
+                               rotation_controller_.error(),
+                               rotation_output,
+                               latest_heading_hold_error_deg_,
+                               wall_adjustment,
+                               heading_adjustment,
+                               fwd_velocity,
+                               drivetrain_->velocity(WheelSide::LEFT),
+                               drivetrain_->velocity(WheelSide::RIGHT),
+                               left_volts,
+                               right_volts,
+                               encoder_rotation,
+                               left_wall_mm_,
+                               front_wall_mm_,
+                               right_wall_mm_,
+                               forward_.position()};
+        trace_next_         = static_cast<uint16_t>((trace_next_ + 1) % TRACE_CAPACITY);
+        if (trace_count_ < TRACE_CAPACITY)
+            trace_count_ = trace_count_ + 1;
     }
 }
 
@@ -688,6 +692,7 @@ void Motion::start_trace(uint16_t decimation)
 {
     trace_active_     = false;
     trace_count_      = 0;
+    trace_next_       = 0;
     trace_tick_       = 0;
     trace_decimation_ = decimation > 0 ? decimation : 1;
     trace_active_     = true;
@@ -710,13 +715,16 @@ uint16_t Motion::traceDtMs() const
 
 const Motion::TraceSample& Motion::traceSample(uint16_t index) const
 {
-    return trace_[index];
+    // Oldest sample first.
+    return trace_[(trace_next_ + TRACE_CAPACITY - trace_count_ + index) % TRACE_CAPACITY];
 }
 
 float Motion::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps)
 {
-    const bool straight_move = forward_.active() && !rotation_.active() &&
-                               fwd_velocity_mmps > 1.0f && std::fabs(rot_velocity_degps) < 1.0f;
+    // Not forward_.active(): a search straight rolls on a finished profile at
+    // its final speed (mazerunner applies steering every tick regardless).
+    const bool straight_move =
+        !rotation_.active() && fwd_velocity_mmps > 1.0f && std::fabs(rot_velocity_degps) < 1.0f;
     if (!straight_move)
     {
         side_error_prev_valid_ = false;
@@ -769,8 +777,10 @@ void Motion::recordWallSteeringStats(float adjustment_degps, tof_wall::SteeringS
 
 float Motion::headingHoldAdjustment(float fwd_velocity_mmps, float rot_velocity_degps)
 {
-    const bool straight_move = forward_.active() && !rotation_.active() &&
-                               fwd_velocity_mmps > 1.0f && std::fabs(rot_velocity_degps) < 1.0f;
+    // Not forward_.active(): a search straight rolls on a finished profile at
+    // its final speed (mazerunner applies steering every tick regardless).
+    const bool straight_move =
+        !rotation_.active() && fwd_velocity_mmps > 1.0f && std::fabs(rot_velocity_degps) < 1.0f;
     if (!heading_hold_enabled_ || !straight_move)
     {
         latest_heading_hold_adjustment_degps_ = 0.0f;

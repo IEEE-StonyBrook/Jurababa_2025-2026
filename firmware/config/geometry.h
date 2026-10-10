@@ -6,8 +6,13 @@
 #define CONFIG_GEOMETRY_H
 
 // ===================== Wheels ===================== //
-#define WHEEL_DIAMETER_MM 38.8f // Effective, from 500 mm Q pushes (calipers: 37.2)
-#define WHEEL_BASE_MM     84.3f // Effective, IMU-checked spin after creep fix (calipers: 84.5)
+// Driven, not Q: hand pushes skid the geared wheels and lose up to 6% of ticks.
+#define WHEEL_DIAMETER_MM                                                                          \
+    37.0f                   // Mean of 2 ruler-checked PATH FFFFF runs: 36.9, 37.0 (calipers: 37.2)
+#define WHEEL_BASE_MM 80.4f // 84.3 IMU-checked at 38.8 wheel, scaled with it: keeps deg/tick
+
+// ===================== Body ===================== //
+#define ROBOT_LENGTH_MM 93.2f // Back edge to nose, ruler; a wall-to-wall push travels span - this
 
 // ===================== Encoder ===================== //
 #define ENCODER_CPR 12     // Counts per motor shaft revolution
@@ -30,9 +35,10 @@
 #define DEG_PER_MM_DIFFERENCE (180.0f / (3.14159265f * WHEEL_BASE_MM))
 
 // ===================== Maze ===================== //
-#define MAZE_SIZE    16     // 16x16 cell maze
-#define CELL_SIZE_MM 180.0f // Standard micromouse cell
-#define HALF_CELL_MM (CELL_SIZE_MM / 2.0f)
+#define MAZE_SIZE         16     // 16x16 cell maze
+#define CELL_SIZE_MM      180.0f // Standard micromouse cell
+#define WALL_THICKNESS_MM 12.0f  // Standard micromouse wall
+#define HALF_CELL_MM      (CELL_SIZE_MM / 2.0f)
 
 // Start with the back/wheel reference aligned to the first cell's rear wall.
 #define START_BACK_REFERENCE_OFFSET_MM 6.0f
