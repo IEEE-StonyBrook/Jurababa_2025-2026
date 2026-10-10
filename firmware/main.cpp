@@ -501,7 +501,7 @@ static void runMouseAppMode(Battery* battery, SensorMode sensor_mode, bool compe
     // Maze + virtual mouse + wall bridge live on Core 0 in both sub-modes.
     std::array<int, 2> start_cell = {0, 0};
     // std::vector<std::array<int, 2>> goal_cells = {{7, 7}, {7, 8}, {8, 7}, {8, 8}};
-    std::vector<std::array<int, 2>> goal_cells = {{2, 2}};
+    std::vector<std::array<int, 2>> goal_cells = {{3, 3}, {3, 4}, {4, 3}, {4, 4}};
 
     static Maze          maze(MAZE_SIZE, MAZE_SIZE);
     static MazeMouse     maze_mouse(start_cell, std::string("n"), goal_cells, &maze);
