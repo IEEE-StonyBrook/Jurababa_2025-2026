@@ -33,6 +33,13 @@ bool traverseExploredPath(Mouse* mouse, MazeMouse* maze_mouse,
                           const std::vector<std::array<int, 2>>& goals,
                           bool                                   start_from_back_wall = false);
 
+// Plan, without driving, the explored-only cardinal speed path that
+// traverseExploredPath() would run: its LFR text and cells (both empty when
+// already at a goal). False if the yaw preflight fails or there is no path.
+bool planExploredPath(Mouse* mouse, MazeMouse* maze_mouse,
+                      const std::vector<std::array<int, 2>>& goals, std::string& lfr,
+                      std::vector<Cell*>& path);
+
 // Execute one diagonalized speed path using only cells already explored.
 bool traverseExploredDiagonalPath(Mouse* mouse, MazeMouse* maze_mouse,
                                   const std::vector<std::array<int, 2>>& goals,

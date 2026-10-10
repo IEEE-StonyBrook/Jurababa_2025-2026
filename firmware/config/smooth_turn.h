@@ -17,9 +17,13 @@
 constexpr float SENSING_POSITION_MM = CELL_SIZE_MM - 10.0f; // Osmium SENSING_POSITION = 170
 // Largest heading error an arc corrects (Mouse::smooth_turn); search saw 15.
 constexpr float SMOOTH_TURN_MAX_AIM_DEG = 20.0f;
-// Back-off before a dead-end 180: the axle sits 74 mm behind the nose, so a
-// spin at the centre swept the front corners into the walls (trace 2026-10-10).
-constexpr float DEAD_END_SPIN_BACKOFF_MM = 30.0f; // nose ~40 mm off the wall
+// Dead-end 180s spin with the robot body, not the axle, centred in the cell:
+// the axle sits 74 mm behind the nose, so an axle-centred spin swept the
+// front corners into the walls (trace 2026-10-10). Body centred = nose ~37 mm
+// off the wall, which the front ToF reads as ~49 (ruler: 30 -> 42, 40 -> 52).
+constexpr float DEAD_END_SPIN_FRONT_MM = 49.0f;
+// Body centre ahead of the axle: half the length less the axle-to-back offset.
+constexpr float BODY_CENTRE_AHEAD_OF_AXLE_MM = ROBOT_LENGTH_MM / 2.0f - WHEEL_DIAMETER_MM / 2.0f;
 // Front ToF at the true cell centre (nose ~10 mm off the wall). Ruler vs S,
 // 2026-10-10: nose 0 mm reads 31, 10 -> 33, 20 -> 43, 30 -> 42, 40 -> 52. The
 // old 28 was below the touching reading, so the stop crept into the wall.

@@ -156,6 +156,10 @@ class CommandLineInterface
     bool run_path_segments(std::vector<PathSegment>& segments, float speed_mmps, float accel_mmps2,
                            float omega_degps, float alpha_degps2, bool smooth_turns, bool raw_mode);
     bool wait_path_segment_motion();
+    // STYLE SMOOTH fast run: the explored-only speed path driven through
+    // run_path_segments() with smooth turns, instead of stop-and-spin.
+    bool run_smooth_fast_path(const std::vector<std::array<int, 2>>& goals,
+                              bool                                   start_from_back_wall);
     void stop();
     void reset();
     void print(const char* text);
