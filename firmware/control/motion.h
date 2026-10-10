@@ -40,6 +40,9 @@ class Motion
      * exit_mm: how far past the centre (on the new heading) the arc ends.
      * front_trigger_mm: front ToF distance that starts the arc early when a
      * wall is ahead (mazerunner's sensor trigger); 0 = distance only.
+     * angle_deg: arc size the encoders drive (mazerunner TurnParameters.angle).
+     * Tyre scrub makes the body turn less than the wheels say at speed, so a
+     * robot can need slightly more than 90 to come out square.
      * Left and right stay independent: tyre loading and motor asymmetry make
      * the two sides differ (Orion: entry 70 L / 55 R).
      */
@@ -48,6 +51,7 @@ class Motion
         float entry_mm;
         float exit_mm;
         float front_trigger_mm;
+        float angle_deg;
     };
 
     /**
@@ -61,10 +65,10 @@ class Motion
         float          speed_mmps   = ROBOT_SEARCH_TURN_SPEED_MMPS;
         float          omega_degps  = ROBOT_SMOOTH_TURN_OMEGA_DEGPS;
         float          alpha_degps2 = ROBOT_SMOOTH_TURN_ALPHA_DEGPS2;
-        SmoothTurnSide left{ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM, ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM,
-                            0.0f};
+        SmoothTurnSide left{ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM, ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM, 0.0f,
+                            ROBOT_SMOOTH_TURN_ANGLE_LEFT_DEG};
         SmoothTurnSide right{ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM, ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM,
-                             0.0f};
+                             0.0f, ROBOT_SMOOTH_TURN_ANGLE_RIGHT_DEG};
         // mazerunner EXTRA_WALL_ADJUST: front trigger shift per side wall seen.
         float extra_wall_adjust_mm = 0.0f;
 

@@ -241,6 +241,10 @@ constexpr SmoothTurnField SMOOTH_TURN_FIELDS[] = {
      0.0f, 250.0f},
     {"EXTRA_WALL_ADJ", [](Motion::SmoothTurnTuning& t) -> float& { return t.extra_wall_adjust_mm; },
      0.0f, 30.0f},
+    {"ANGLE_L", [](Motion::SmoothTurnTuning& t) -> float& { return t.left.angle_deg; }, 80.0f,
+     100.0f},
+    {"ANGLE_R", [](Motion::SmoothTurnTuning& t) -> float& { return t.right.angle_deg; }, 80.0f,
+     100.0f},
 };
 
 bool turnsLeft(float angle_deg)
