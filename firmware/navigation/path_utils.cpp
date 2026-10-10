@@ -531,6 +531,36 @@ bool traverseExploredPath(Mouse* mouse, MazeMouse* maze_mouse,
     return ok;
 }
 
+bool planExploredPath(Mouse* mouse, MazeMouse* maze_mouse,
+                      const std::vector<std::array<int, 2>>& goals, std::string& lfr,
+                      std::vector<Cell*>& path)
+{
+    lfr.clear();
+    path.clear();
+    if (mouse == nullptr || maze_mouse == nullptr)
+        return false;
+    if (atAnyGoal(maze_mouse, goals))
+        return true;
+    if (!speedRunYawPreflight(mouse, maze_mouse))
+        return false;
+
+    const MazeMask previous_mask = maze_mouse->mazeMask();
+    maze_mouse->setMazeMask(MASK_CLOSED);
+    path = bestExploredPath(maze_mouse, goals);
+    if (!path.empty())
+        lfr = PathConverter::buildLFR(maze_mouse->currentCell(),
+                                      maze_mouse->currentDirectionArray(), path);
+    maze_mouse->setMazeMask(previous_mask);
+    if (path.empty())
+    {
+        LOG_ERROR("No explored-only cardinal speed run path available.");
+        return false;
+    }
+    colorPath(mouse, path);
+    LOG_INFO("Explored Cardinal A* LFR Path: " + lfr);
+    return true;
+}
+
 bool traverseExploredDiagonalPath(Mouse* mouse, MazeMouse* maze_mouse,
                                   const std::vector<std::array<int, 2>>& goals,
                                   bool                                   start_from_back_wall)

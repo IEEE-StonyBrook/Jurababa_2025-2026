@@ -860,18 +860,25 @@ void Mouse::stationary_turn(const std::string& target_heading, int half_steps)
     // sensing point at search speed.
     if (!stopAtCentre() || !adjustPosition())
         return;
-    // At a dead end, back off so the spin has room; that puts the axle the
-    // back-off past the centre on the new heading.
+    // At a dead end, reverse until the body is centred in the cell (read off
+    // the front wall), the spot with room to spin; the axle then ends up
+    // BODY_CENTRE_AHEAD_OF_AXLE_MM past the centre on the new heading.
     float start_mm = HALF_CELL_MM;
 #ifndef SIMULATOR_BUILD
     if (half_steps == 4 && !run_on_simulator && motion_ != nullptr &&
         tof_wall::wallFront(motion_->frontDistance()))
     {
-        motion_->move(-DEAD_END_SPIN_BACKOFF_MM, ROBOT_MAX_SEARCH_SPEED_MMPS / 4.0f, 0.0f,
+        motion_->move(-HALF_CELL_MM, ROBOT_MAX_SEARCH_SPEED_MMPS / 4.0f, 0.0f,
                       ROBOT_SEARCH_ACCEL_MMPS2 / 2.0f);
-        if (!waitForMotion())
+        if (!pollUntil([&]
+            { // Bounded by the move: never reverse more than half a cell.
+                return motion_->frontDistance() >= DEAD_END_SPIN_FRONT_MM ||
+                       motion_->move_settled();
+            },
+                       kMouseMotionWaitTimeoutMs, "dead-end centre") ||
+            !motion_->stop_forward(ROBOT_SEARCH_ACCEL_MMPS2, STOP_AT_CENTRE_PROFILE_TIMEOUT_MS))
             return;
-        start_mm += DEAD_END_SPIN_BACKOFF_MM;
+        start_mm += BODY_CENTRE_AHEAD_OF_AXLE_MM;
     }
 #endif
     if (!turn_to_cardinal_yaw(target_heading))

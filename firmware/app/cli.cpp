@@ -1247,7 +1247,8 @@ bool CommandLineInterface::resolve_path_segments(std::vector<PathSegment>& segme
             segment.value - (turn_next ? HALF_CELL_MM : 0.0f) - (turn_prev ? HALF_CELL_MM : 0.0f);
         segment.final_speed_mmps = turn_next ? turn_speed_mmps : 0.0f;
 
-        if (segment.drive_mm <= 0.0f)
+        // Exactly one cell between two arcs leaves 0 mm: arc exit runs into arc entry.
+        if (segment.drive_mm < 0.0f)
         {
             printFormat("PATH rejected: straight %lu is shorter than the %.1f mm a neighbouring "
                         "smooth turn needs. Lengthen it or drop the SMOOTH flag.\n",
@@ -1273,10 +1274,15 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
 
     if (smooth_turns)
     {
-        for (PathSegment& segment : segments)
+        // An arc needs a straight on both sides (it rolls in and out); a
+        // turn at either end of the path, or next to a spin, stays a spin.
+        for (size_t i = 1; i + 1 < segments.size(); ++i)
         {
+            PathSegment& segment = segments[i];
             if (segment.type == PathSegmentType::Turn &&
-                std::fabs(std::fabs(segment.value) - 90.0f) < 0.125f)
+                std::fabs(std::fabs(segment.value) - 90.0f) < 0.125f &&
+                segments[i - 1].type != PathSegmentType::Turn &&
+                segments[i + 1].type == PathSegmentType::Forward)
             {
                 segment.type = PathSegmentType::SmoothTurn;
             }
@@ -1316,9 +1322,12 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                         static_cast<double>(segment.final_speed_mmps));
             if (!raw_mode)
                 deps_.motion->set_heading_hold(normalizeYawDelta(expected_yaw_deg));
-            deps_.motion->start_move(segment.drive_mm, speed_mmps, segment.final_speed_mmps,
-                                     accel_mmps2);
-            ok = wait_path_segment_motion();
+            if (segment.drive_mm > 0.0f)
+            {
+                deps_.motion->start_move(segment.drive_mm, speed_mmps, segment.final_speed_mmps,
+                                         accel_mmps2);
+                ok = wait_path_segment_motion();
+            }
             total_forward_mm += segment.drive_mm;
         }
         else if (segment.type == PathSegmentType::SmoothTurn)
@@ -1411,6 +1420,39 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                 static_cast<double>(expected_yaw_deg), static_cast<double>(final_yaw),
                 static_cast<double>(final_error));
     deps_.motion->end_motion_sequence();
+    return true;
+}
+
+bool CommandLineInterface::run_smooth_fast_path(const std::vector<std::array<int, 2>>& goals,
+                                                bool start_from_back_wall)
+{
+    std::string        lfr;
+    std::vector<Cell*> path;
+    if (!PathUtils::planExploredPath(deps_.mouse, deps_.maze_mouse, goals, lfr, path))
+        return false;
+    if (path.empty())
+        return true; // already at a goal
+
+    std::vector<PathSegment> segments;
+    if (!parse_path_chunk(lfr.c_str(), segments))
+        return false;
+    if (start_from_back_wall && !run_path_start_center())
+        return false;
+    if (!run_path_segments(segments, ROBOT_MAX_FAST_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2,
+                           ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2,
+                           /*smooth_turns=*/true, /*raw_mode=*/false))
+        return false;
+
+    // PATH drives the motion but not the maze pose: put it at the path's end,
+    // facing along the last step, so the next stage plans from there.
+    // The maze pose is still at the start, so it is the step before a 1-cell path.
+    Cell*       last    = path.back();
+    Cell*       from    = path.size() > 1 ? path[path.size() - 2] : deps_.maze_mouse->currentCell();
+    const int   dx      = last->x() - from->x();
+    const int   dy      = last->y() - from->y();
+    std::string heading = dx > 0 ? "e" : dx < 0 ? "w" : dy > 0 ? "n" : "s";
+    deps_.maze_mouse->setPosition(last);
+    deps_.maze_mouse->setDirection(heading);
     return true;
 }
 
@@ -1872,8 +1914,12 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
             deps_.mouse->setPhaseColor('g');
             const float prev_cruise = deps_.mouse->cruiseSpeed();
             deps_.mouse->setCruiseSpeed(ROBOT_MAX_FAST_SPEED_MMPS);
-            const bool ok = PathUtils::traverseExploredPath(
-                deps_.mouse, deps_.maze_mouse, deps_.goal_cells, /*start_from_back_wall=*/true);
+            const bool ok =
+                deps_.mouse->movementStyle() == Mouse::MovementStyle::Smooth
+                    ? run_smooth_fast_path(deps_.goal_cells, /*start_from_back_wall=*/true)
+                    : PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse,
+                                                      deps_.goal_cells,
+                                                      /*start_from_back_wall=*/true);
             deps_.mouse->setCruiseSpeed(prev_cruise);
             return ok;
         }
@@ -1885,8 +1931,11 @@ bool CommandLineInterface::run_competition_stage(int stage, bool wait_for_start)
             std::vector<std::array<int, 2>> goals       = {deps_.start_cell};
             const float                     prev_cruise = deps_.mouse->cruiseSpeed();
             deps_.mouse->setCruiseSpeed(ROBOT_MAX_FAST_SPEED_MMPS);
-            const bool ok = PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, goals,
-                                                            /*start_from_back_wall=*/false);
+            const bool ok =
+                deps_.mouse->movementStyle() == Mouse::MovementStyle::Smooth
+                    ? run_smooth_fast_path(goals, /*start_from_back_wall=*/false)
+                    : PathUtils::traverseExploredPath(deps_.mouse, deps_.maze_mouse, goals,
+                                                      /*start_from_back_wall=*/false);
             deps_.mouse->setCruiseSpeed(prev_cruise);
             return ok;
         }
