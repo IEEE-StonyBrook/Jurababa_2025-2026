@@ -1322,6 +1322,10 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
                         static_cast<double>(segment.final_speed_mmps));
             if (!raw_mode)
                 deps_.motion->set_heading_hold(normalizeYawDelta(expected_yaw_deg));
+            // Each arc turns wall steering off; straights between arcs need it back,
+            // as search's smooth_turn_step() does, or an arc's sideways error stays.
+            if (!raw_mode && smooth_turns)
+                deps_.motion->set_steering_mode(tof_wall::SteeringMode::STEER_NORMAL);
             if (segment.drive_mm > 0.0f)
             {
                 deps_.motion->start_move(segment.drive_mm, speed_mmps, segment.final_speed_mmps,
@@ -1436,8 +1440,16 @@ bool CommandLineInterface::run_smooth_fast_path(const std::vector<std::array<int
     std::vector<PathSegment> segments;
     if (!parse_path_chunk(lfr.c_str(), segments))
         return false;
-    if (start_from_back_wall && !run_path_start_center())
-        return false;
+    // From the back wall, fold the advance to the start cell centre into the
+    // first straight so the run doesn't stop there; a path that opens with a
+    // turn still needs the stop.
+    if (start_from_back_wall)
+    {
+        if (segments.front().type == PathSegmentType::Forward)
+            segments.front().value += START_CENTER_DISTANCE_MM;
+        else if (!run_path_start_center())
+            return false;
+    }
     if (!run_path_segments(segments, ROBOT_MAX_FAST_SPEED_MMPS, ROBOT_BASE_ACCEL_MMPS2,
                            ROBOT_MAX_TURN_SPEED_DEGPS, ROBOT_BASE_ANGULAR_ACCEL_DEGPS2,
                            /*smooth_turns=*/true, /*raw_mode=*/false))
