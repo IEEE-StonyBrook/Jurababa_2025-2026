@@ -678,7 +678,8 @@ void Motion::runPositionControl()
                                 encoder_rotation,
                                 left_wall_mm_,
                                 front_wall_mm_,
-                                right_wall_mm_};
+                                right_wall_mm_,
+                                forward_.position()};
         trace_count_         = trace_count_ + 1;
     }
 }
