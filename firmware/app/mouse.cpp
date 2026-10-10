@@ -1309,6 +1309,12 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
     if (run_on_simulator)
         simulatorResponse("moveForward");
 
+    // A* targets: the goals until the goal area is entered, then its
+    // unexplored cells, then a goal cell with a wall ahead to stop in.
+    std::vector<std::array<int, 2>> targets            = goals;
+    int                             goal_extra_steps   = 0;
+    constexpr int                   kMaxGoalExtraSteps = 2;
+
     int step = 1;
     while (true)
     {
@@ -1330,6 +1336,42 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         }
         if (reached_goal)
         {
+            // Explore every goal cell, as other mice do, then stop in one with
+            // a wall ahead: stopAtCentre() and adjustPosition() square on it,
+            // and the next leg backs into it.
+            std::vector<std::array<int, 2>> unexplored;
+            std::vector<std::array<int, 2>> others;
+            for (const auto& goal : goals)
+            {
+                if (current->x() == goal[0] && current->y() == goal[1])
+                    continue;
+                others.push_back(goal);
+                Cell* goal_cell = maze_mouse_->cellAt(goal[0], goal[1]);
+                if (goal_cell != nullptr && !goal_cell->explored())
+                    unexplored.push_back(goal);
+            }
+            const char front_dir =
+                maze_mouse_->directionAsString(maze_mouse_->currentDirectionArray())[0];
+            const bool wall_ahead = current->wallState(front_dir) == WALL;
+            targets.clear();
+            if (!unexplored.empty())
+                targets = unexplored;
+            else if (!wall_ahead && !others.empty() && goal_extra_steps < kMaxGoalExtraSteps)
+            {
+                targets = others;
+                ++goal_extra_steps;
+            }
+            if (!targets.empty())
+            {
+                AStar              goal_a_star(maze_mouse_);
+                std::vector<Cell*> goal_path = goal_a_star.cellPath(targets, /*diagonals=*/false,
+                                                                    /*pass_goals=*/true);
+                if (goal_path.empty())
+                    targets.clear(); // walled off: stop here
+            }
+        }
+        if (reached_goal && targets.empty())
+        {
             LOG_INFO("search_to: goal reached at (" + std::to_string(current->x()) + "," +
                      std::to_string(current->y()) + ")");
             if (!stopAtCentre())
@@ -1341,7 +1383,7 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         }
 
         AStar              a_star(maze_mouse_);
-        std::vector<Cell*> cell_path = a_star.cellPath(goals, /*diagonals=*/false,
+        std::vector<Cell*> cell_path = a_star.cellPath(targets, /*diagonals=*/false,
                                                        /*pass_goals=*/true);
         if (cell_path.empty())
         {
