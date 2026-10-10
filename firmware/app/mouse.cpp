@@ -2002,24 +2002,24 @@ void Mouse::print_turn_trace(float target_yaw_deg)
              << count << " dt_ms=" << motion_->traceDtMs()
              << " cols=t_ms,target_deg,yaw_deg,rot_err_deg,rot_v,hold_err_deg,"
                 "wall_degps,hold_degps,fwd_mmps,left_mmps,right_mmps,left_v,right_v,enc,tof_l_mm,"
-                "tof_f_mm,tof_r_mm");
+                "tof_f_mm,tof_r_mm,pos_mm");
     Log::drainBluetooth();
     for (uint16_t i = 0; i < count; ++i)
     {
         const Motion::TraceSample& s = motion_->traceSample(i);
         char                       row[160];
-        std::snprintf(
-            row, sizeof(row),
-            "T,%d,%.1f,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.0f,%.0f,%.0f,%.2f,%.2f,%d,%.0f,%.0f,%.0f",
-            i * motion_->traceDtMs(), static_cast<double>(s.target_deg),
-            static_cast<double>(s.yaw_deg), static_cast<double>(s.rot_error_deg),
-            static_cast<double>(s.rot_volts), static_cast<double>(s.hold_err_deg),
-            static_cast<double>(s.wall_degps), static_cast<double>(s.hold_degps),
-            static_cast<double>(s.fwd_mmps), static_cast<double>(s.left_mmps),
-            static_cast<double>(s.right_mmps), static_cast<double>(s.left_volts),
-            static_cast<double>(s.right_volts), s.encoder_rotation ? 1 : 0,
-            static_cast<double>(s.left_tof_mm), static_cast<double>(s.front_tof_mm),
-            static_cast<double>(s.right_tof_mm));
+        std::snprintf(row, sizeof(row),
+                      "T,%d,%.1f,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.0f,%.0f,%.0f,%.2f,%.2f,%d,%.0f,%."
+                      "0f,%.0f,%.1f",
+                      i * motion_->traceDtMs(), static_cast<double>(s.target_deg),
+                      static_cast<double>(s.yaw_deg), static_cast<double>(s.rot_error_deg),
+                      static_cast<double>(s.rot_volts), static_cast<double>(s.hold_err_deg),
+                      static_cast<double>(s.wall_degps), static_cast<double>(s.hold_degps),
+                      static_cast<double>(s.fwd_mmps), static_cast<double>(s.left_mmps),
+                      static_cast<double>(s.right_mmps), static_cast<double>(s.left_volts),
+                      static_cast<double>(s.right_volts), s.encoder_rotation ? 1 : 0,
+                      static_cast<double>(s.left_tof_mm), static_cast<double>(s.front_tof_mm),
+                      static_cast<double>(s.right_tof_mm), static_cast<double>(s.pos_mm));
         LOG_INFO(row);
         for (int k = 0; k < 4; ++k)
         {

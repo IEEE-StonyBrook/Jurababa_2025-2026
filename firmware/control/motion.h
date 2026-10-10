@@ -210,6 +210,7 @@ class Motion
         float left_tof_mm;      // filtered ToF distances as last set by Core 0
         float front_tof_mm;
         float right_tof_mm;
+        float pos_mm; // forward profile position (the search's cell frame)
     };
     static constexpr uint16_t TRACE_CAPACITY   = 600;
     static constexpr uint16_t TRACE_DECIMATION = 2; // default: 4 ms between samples at 500 Hz
