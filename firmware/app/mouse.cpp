@@ -2025,20 +2025,23 @@ void Mouse::print_turn_trace(float target_yaw_deg)
             sleep_ms(2);
         }
     }
-    // The SS90E line reads yaw while the IMU still lags the arc by ~40 ms; the
-    // first IMU-fed sample after the encoder holdover is the settled error.
-    // A NaN target (CLI TRACE) has no turn to score.
-    for (uint16_t i = 1; i < count && !std::isnan(target_yaw_deg); ++i)
+    // The SS90E line reads yaw while the IMU still lags the arc by ~40 ms.
+    // Score the turn 100 ms after the rotation profile reaches its target,
+    // once that lag has drained. A NaN target (CLI TRACE) has no turn.
+    constexpr uint16_t kSettleSamples = 100 / (2 * Motion::TRACE_DECIMATION);
+    for (uint16_t i = 0; i < count && !std::isnan(target_yaw_deg); ++i)
     {
-        if (motion_->traceSample(i - 1).encoder_rotation &&
-            !motion_->traceSample(i).encoder_rotation)
+        if (std::fabs(motion_->traceSample(i).target_deg) < 89.8f)
+            continue;
+        const uint16_t j = i + kSettleSamples;
+        if (j < count)
         {
             LOG_INFO(
                 "TRACE turn_yaw_error_settled="
-                << signedFixed1(normalizeYawDelta(target_yaw_deg - motion_->traceSample(i).yaw_deg))
-                << " at_ms=" << i * 2 * Motion::TRACE_DECIMATION);
-            break;
+                << signedFixed1(normalizeYawDelta(target_yaw_deg - motion_->traceSample(j).yaw_deg))
+                << " at_ms=" << j * 2 * Motion::TRACE_DECIMATION);
         }
+        break;
     }
     LOG_INFO("TRACE end");
     Log::drainBluetooth();
