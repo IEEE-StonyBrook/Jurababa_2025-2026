@@ -793,6 +793,8 @@ void CommandLineInterface::handle_search_command(const Args& args)
 
     deps_.mouse->set_hand_start(true);
     printFormat("Search to %d,%d\n", x, y);
+    // 10 ms samples: the 600-sample buffer covers ~6 s, about a 7-cell run. TRACE prints it.
+    deps_.motion->start_trace(5);
     std::vector<std::array<int, 2>> goals = {{x, y}};
     const bool                      ok    = deps_.mouse->search_to(goals);
     printFormat(ok ? "Search done.\n" : "Search failed.\n");

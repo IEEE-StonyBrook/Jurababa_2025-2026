@@ -660,7 +660,7 @@ void Motion::runPositionControl()
 
     drivetrain_->setVoltage(left_volts, right_volts);
 
-    if (trace_active_ && ++trace_tick_ >= TRACE_DECIMATION && trace_count_ < TRACE_CAPACITY)
+    if (trace_active_ && ++trace_tick_ >= trace_decimation_ && trace_count_ < TRACE_CAPACITY)
     {
         trace_tick_          = 0;
         trace_[trace_count_] = {rotation_.position(),
@@ -683,12 +683,13 @@ void Motion::runPositionControl()
     }
 }
 
-void Motion::start_trace()
+void Motion::start_trace(uint16_t decimation)
 {
-    trace_active_ = false;
-    trace_count_  = 0;
-    trace_tick_   = 0;
-    trace_active_ = true;
+    trace_active_     = false;
+    trace_count_      = 0;
+    trace_tick_       = 0;
+    trace_decimation_ = decimation > 0 ? decimation : 1;
+    trace_active_     = true;
 }
 
 void Motion::stop_trace()
@@ -699,6 +700,11 @@ void Motion::stop_trace()
 uint16_t Motion::traceCount() const
 {
     return trace_count_;
+}
+
+uint16_t Motion::traceDtMs() const
+{
+    return static_cast<uint16_t>(trace_decimation_ * 1000.0f / LOOP_FREQUENCY_HZ);
 }
 
 const Motion::TraceSample& Motion::traceSample(uint16_t index) const

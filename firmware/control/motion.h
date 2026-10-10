@@ -212,11 +212,12 @@ class Motion
         float right_tof_mm;
     };
     static constexpr uint16_t TRACE_CAPACITY   = 600;
-    static constexpr uint16_t TRACE_DECIMATION = 2; // 4 ms between samples at 500 Hz
+    static constexpr uint16_t TRACE_DECIMATION = 2; // default: 4 ms between samples at 500 Hz
 
-    void               start_trace();
+    void               start_trace(uint16_t decimation = TRACE_DECIMATION);
     void               stop_trace();
     uint16_t           traceCount() const;
+    uint16_t           traceDtMs() const;
     const TraceSample& traceSample(uint16_t index) const;
 
   private:
@@ -287,6 +288,7 @@ class Motion
     TraceSample       trace_[TRACE_CAPACITY] = {};
     volatile uint16_t trace_count_           = 0;
     uint16_t          trace_tick_            = 0;
+    uint16_t          trace_decimation_      = TRACE_DECIMATION;
     volatile bool     trace_active_          = false;
 
     // Non-zero while the rotation PD reads encoder yaw: UINT16_MAX during a

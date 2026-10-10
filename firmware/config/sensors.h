@@ -50,7 +50,11 @@
 #define TOF_SIDE_WALL_MARGIN_MM     50.0f
 #define TOF_LEFT_WALL_THRESHOLD_MM  (TOF_LEFT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
 #define TOF_RIGHT_WALL_THRESHOLD_MM (TOF_RIGHT_CALIBRATION_MM + TOF_SIDE_WALL_MARGIN_MM)
-#define TOF_FRONT_WALL_THRESHOLD_MM 190.0f
+// At the sensing point a wall at the far end of the next cell reads ~148 mm
+// stationary (+~12 mm of ToF lag at 300 mm/s); one a cell further reads
+// >=328 mm. 190 sat inside that spread: a search read 193 and drove into
+// the wall. 250 is the midpoint, tolerant of +-40 mm of position error.
+#define TOF_FRONT_WALL_THRESHOLD_MM 250.0f
 
 // UKMARS-style wall steering. Wall detection remains enabled regardless of
 // this switch; TOF_STEERING_ENABLE only controls whether side-wall error is
