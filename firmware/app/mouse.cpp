@@ -114,7 +114,7 @@ float expectedYawForHeading(const std::string& heading)
 #endif
 
 #ifndef SEARCH_STEP_INFO_LOGGING_ENABLE
-#define SEARCH_STEP_INFO_LOGGING_ENABLE 0
+#define SEARCH_STEP_INFO_LOGGING_ENABLE 1
 #endif
 
 constexpr bool kSearchStepInfoLoggingEnabled = SEARCH_STEP_INFO_LOGGING_ENABLE != 0;
@@ -1038,7 +1038,7 @@ bool Mouse::frontWallInThisCell(float centre_ahead_mm)
 #ifndef SIMULATOR_BUILD
     // A wall in this cell reads about FRONT_REFERENCE_MM + centre_ahead_mm; one
     // a cell further reads ~CELL_SIZE_MM more. Cut halfway, so a far wall that
-    // still passes wallFront()'s 190 mm mapping threshold is not mistaken for
+    // still passes wallFront()'s 250 mm mapping threshold is not mistaken for
     // this cell's (seen as a 20 mm "correction" toward a wall at 175 mm).
     serviceSensors();
     return wallFront() &&
@@ -1322,6 +1322,9 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         {
             LOG_ERROR("search_to: no path found from (" + std::to_string(current->x()) + "," +
                       std::to_string(current->y()) + ")");
+            // The chained move is still rolling at search speed; returning without
+            // a stop drove the robot into the wall ahead.
+            stopAtCentre();
             return false;
         }
 
@@ -1996,7 +1999,7 @@ void Mouse::print_turn_trace(float target_yaw_deg)
     // drains the console; a ~75 byte row takes ~6.5 ms at 115200 baud.
     const uint16_t count = motion_->traceCount();
     LOG_INFO("TRACE n="
-             << count << " dt_ms=" << 2 * Motion::TRACE_DECIMATION
+             << count << " dt_ms=" << motion_->traceDtMs()
              << " cols=t_ms,target_deg,yaw_deg,rot_err_deg,rot_v,hold_err_deg,"
                 "wall_degps,hold_degps,fwd_mmps,left_mmps,right_mmps,left_v,right_v,enc,tof_l_mm,"
                 "tof_f_mm,tof_r_mm");
@@ -2008,7 +2011,7 @@ void Mouse::print_turn_trace(float target_yaw_deg)
         std::snprintf(
             row, sizeof(row),
             "T,%d,%.1f,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.0f,%.0f,%.0f,%.2f,%.2f,%d,%.0f,%.0f,%.0f",
-            i * 2 * Motion::TRACE_DECIMATION, static_cast<double>(s.target_deg),
+            i * motion_->traceDtMs(), static_cast<double>(s.target_deg),
             static_cast<double>(s.yaw_deg), static_cast<double>(s.rot_error_deg),
             static_cast<double>(s.rot_volts), static_cast<double>(s.hold_err_deg),
             static_cast<double>(s.wall_degps), static_cast<double>(s.hold_degps),
@@ -2028,8 +2031,8 @@ void Mouse::print_turn_trace(float target_yaw_deg)
     // The SS90E line reads yaw while the IMU still lags the arc by ~40 ms.
     // Score the turn 100 ms after the rotation profile reaches its target,
     // once that lag has drained. A NaN target (CLI TRACE) has no turn.
-    constexpr uint16_t kSettleSamples   = 100 / (2 * Motion::TRACE_DECIMATION);
-    float              final_target_deg = 0.0f;
+    const uint16_t kSettleSamples   = 100 / motion_->traceDtMs();
+    float          final_target_deg = 0.0f;
     for (uint16_t i = 0; i < count; ++i)
         final_target_deg =
             std::max(final_target_deg, std::fabs(motion_->traceSample(i).target_deg));
@@ -2043,7 +2046,7 @@ void Mouse::print_turn_trace(float target_yaw_deg)
             LOG_INFO(
                 "TRACE turn_yaw_error_settled="
                 << signedFixed1(normalizeYawDelta(target_yaw_deg - motion_->traceSample(j).yaw_deg))
-                << " at_ms=" << j * 2 * Motion::TRACE_DECIMATION);
+                << " at_ms=" << j * motion_->traceDtMs());
         }
         break;
     }
