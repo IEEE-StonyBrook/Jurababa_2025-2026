@@ -840,6 +840,8 @@ void Mouse::turn_side(bool turn_left)
     {
         smooth_turn_step(turn_left);
         maze_mouse_->turn45Steps(half_steps);
+        // Hold the new heading so a turn straight after this one can aim at it.
+        apply_maze_heading_hold();
         return;
     }
     stationary_turn(turn_left ? maze_mouse_->directionLeft() : maze_mouse_->directionRight(),
@@ -856,18 +858,34 @@ void Mouse::stationary_turn(const std::string& target_heading, int half_steps)
     // mazerunner-core turn_back(), used for every stop-and-spin turn: stop at
     // the centre, square up on the front wall, spin, then run back out to the
     // sensing point at search speed.
-    if (!stopAtCentre() || !adjustPosition() || !turn_to_cardinal_yaw(target_heading))
+    if (!stopAtCentre() || !adjustPosition())
+        return;
+    // At a dead end, back off so the spin has room; that puts the axle the
+    // back-off past the centre on the new heading.
+    float start_mm = HALF_CELL_MM;
+#ifndef SIMULATOR_BUILD
+    if (half_steps == 4 && !run_on_simulator && motion_ != nullptr &&
+        tof_wall::wallFront(motion_->frontDistance()))
+    {
+        motion_->move(-DEAD_END_SPIN_BACKOFF_MM, ROBOT_MAX_SEARCH_SPEED_MMPS / 4.0f, 0.0f,
+                      ROBOT_SEARCH_ACCEL_MMPS2 / 2.0f);
+        if (!waitForMotion())
+            return;
+        start_mm += DEAD_END_SPIN_BACKOFF_MM;
+    }
+#endif
+    if (!turn_to_cardinal_yaw(target_heading))
         return;
     if (run_on_simulator)
         simulatorResponse("moveForward");
 #ifndef SIMULATOR_BUILD
     if (!run_on_simulator && motion_ != nullptr)
     {
-        motion_->set_position(HALF_CELL_MM);
+        motion_->set_position(start_mm);
         apply_maze_heading_hold_for_heading(target_heading);
         motion_->resetWallSteeringStats();
         begin_search_front_latch();
-        motion_->move(SENSING_POSITION_MM - HALF_CELL_MM, cruise_speed_mmps_, cruise_speed_mmps_,
+        motion_->move(SENSING_POSITION_MM - start_mm, cruise_speed_mmps_, cruise_speed_mmps_,
                       ROBOT_SEARCH_ACCEL_MMPS2);
         if (!waitForMotion())
         {
@@ -896,6 +914,11 @@ bool Mouse::smooth_turn(bool turn_left, float centre_ahead_mm, float end_after_c
     if (motion_ == nullptr)
         return false;
     motion_->set_steering_mode(tof_wall::SteeringMode::STEERING_OFF);
+    // Aim the arc at the heading the straight was holding, as the spin turns to
+    // a cardinal yaw: an arc only turns a fixed angle, so a back-to-back turn
+    // (no straight to correct on) would carry the last arc's error forward.
+    const bool  aim_arc     = motion_->headingHoldActive();
+    const float aim_yaw_deg = motion_->headingHoldTargetYawDeg();
     suspend_maze_heading_hold();
 
     // Front-sensor trigger: with a wall ahead, start the arc once the front
@@ -922,10 +945,17 @@ bool Mouse::smooth_turn(bool turn_left, float centre_ahead_mm, float end_after_c
             },
             kMouseMotionWaitTimeoutMs, "smooth_turn entry"))
         return false;
-    motion_->start_smooth_turn_arc(turn_left);
-    LOG_INFO("SMOOTH TURN " + std::string(turn_left ? "L" : "R") + " trigger=" +
-             std::string(by_sensor ? "s" : "d") + " front_mm=" + fixed1(motion_->frontDistance()) +
-             " trigger_mm=" + fixed1(trigger_mm) + " position_mm=" + fixed1(motion_->position()));
+    // Read late, after the entry leg: the BNO085 lags ~40-60 ms behind an arc.
+    // Clamped so a bad reading can't turn a 90 into something else.
+    const float aim_error_deg =
+        aim_arc ? std::clamp(normalizeYawDelta(aim_yaw_deg - motion_->yaw_deg()),
+                             -SMOOTH_TURN_MAX_AIM_DEG, SMOOTH_TURN_MAX_AIM_DEG)
+                : 0.0f;
+    motion_->start_smooth_turn_arc(turn_left, aim_error_deg);
+    LOG_INFO("SMOOTH TURN " + std::string(turn_left ? "L" : "R") + " aim_deg=" +
+             signedFixed1(aim_error_deg) + " trigger=" + std::string(by_sensor ? "s" : "d") +
+             " front_mm=" + fixed1(motion_->frontDistance()) + " trigger_mm=" + fixed1(trigger_mm) +
+             " position_mm=" + fixed1(motion_->position()));
     if (!waitForMotion())
         return false;
 
@@ -1382,7 +1412,10 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
             return true;
         }
 
-        AStar              a_star(maze_mouse_);
+        AStar a_star(maze_mouse_);
+        // Way home: take an unexplored route unless it is ~1.5x longer.
+        if (goals.size() == 1 && goals[0] == start_cell_)
+            a_star.set_explored_cell_cost(0.5f);
         std::vector<Cell*> cell_path = a_star.cellPath(targets, /*diagonals=*/false,
                                                        /*pass_goals=*/true);
         if (cell_path.empty())

@@ -2014,6 +2014,8 @@ void CommandLineInterface::run_function(int cmd)
             if (deps_.mouse != nullptr)
                 deps_.mouse->setPhaseColor('y');
             printFormat("Searching maze...\n");
+            if (deps_.motion != nullptr)
+                deps_.motion->start_trace(10); // 20 ms: TRACE after the run
             printFormat(deps_.mouse->search_maze() ? "Search done.\n" : "Search failed.\n");
             break;
 

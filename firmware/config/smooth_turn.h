@@ -15,10 +15,15 @@
 // config/motion.h) rather than a constexpr table here.
 
 constexpr float SENSING_POSITION_MM = CELL_SIZE_MM - 10.0f; // Osmium SENSING_POSITION = 170
-// Filtered front ToF at the true cell centre (CENTER + wall ahead, S snapshot):
-// 27-28 mm typical, rare 34 mm. Near the VL53L0X low limit but repeatable; the
-// chip offset is uncalibrated, so this is a matched reading, not true mm.
-constexpr float FRONT_REFERENCE_MM              = 28.0f;
+// Largest heading error an arc corrects (Mouse::smooth_turn); search saw 15.
+constexpr float SMOOTH_TURN_MAX_AIM_DEG = 20.0f;
+// Back-off before a dead-end 180: the axle sits 74 mm behind the nose, so a
+// spin at the centre swept the front corners into the walls (trace 2026-10-10).
+constexpr float DEAD_END_SPIN_BACKOFF_MM = 30.0f; // nose ~40 mm off the wall
+// Front ToF at the true cell centre (nose ~10 mm off the wall). Ruler vs S,
+// 2026-10-10: nose 0 mm reads 31, 10 -> 33, 20 -> 43, 30 -> 42, 40 -> 52. The
+// old 28 was below the touching reading, so the stop crept into the wall.
+constexpr float FRONT_REFERENCE_MM              = 33.0f;
 constexpr float FRONT_CORRECTION_TOLERANCE_MM   = 15.0f; // UKMARS adjustPosition tolerance = 50 raw
 constexpr float FRONT_CORRECTION_STEP_MM        = 20.0f; // UKMARS correction step = 10 mm
 constexpr float FRONT_CORRECTION_SPEED_MMPS     = 100.0f;  // UKMARS adj_speed = 100 mm/s
