@@ -48,7 +48,7 @@
 // starts, and how far past the centre (on the new heading) it ends. Tuned, not
 // derived — the alpha ramps make the real reach longer than v/omega.
 #define ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM  71.0f // Same as right; untuned
-#define ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM 71.0f // ToF-tuned mean of 6 runs, encoder-yaw arcs
+#define ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM 69.0f // ToF-tuned, 3 runs at ROT_TD 1.5 Tm
 #define ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM 80.0f // mazerunner-core (Orion) SS90E exit
 // Smooth-turn arcs feed encoder yaw to the rotation PD: the BNO085 lags ~40 ms,
 // enough to reverse the inside wheel and overshoot the arc. Encoder yaw stays

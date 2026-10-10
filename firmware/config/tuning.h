@@ -63,8 +63,13 @@
 // Mazerunner-core / motorlab formulation applied to the measured rotational
 // plant. DriverLab TURN uses the same 500 Hz PID convention as the forward
 // loop: kD is multiplied by LOOP_FREQUENCY inside PID::update().
+//
+// Td = 1.5 Tm (mazerunner-core uses Td = Tm). Arcs leave the inside wheel
+// near stiction (~64 mm/s at 215 mm/s); at Td = Tm the stiff loop drove it
+// into stick-slip (+-1.6 V chatter, arc 3.5 deg short, exit 20 mm off). At
+// 1.5 Tm: no chatter, arc rot_err -0.4 deg, spin rot_err within +-0.5 deg.
 #define ROT_ZETA 0.707f
-#define ROT_TD   0.200f
+#define ROT_TD   (1.5f * ROT_TM)
 #define ROT_KP   (16.0f * ROT_TM / (ROT_KM * ROT_ZETA * ROT_ZETA * ROT_TD * ROT_TD))
 #define ROT_KD   ((8.0f * ROT_TM - ROT_TD) / (ROT_KM * ROT_TD))
 
