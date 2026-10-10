@@ -2041,6 +2041,8 @@ void Mouse::print_turn_trace(float target_yaw_deg)
     }
     LOG_INFO("TRACE end");
     Log::drainBluetooth();
+#else
+    (void)target_yaw_deg;
 #endif
 }
 
