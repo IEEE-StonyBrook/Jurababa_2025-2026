@@ -1274,8 +1274,21 @@ bool Mouse::search_to(const std::vector<std::array<int, 2>>& goals)
         }
         else
         {
-            LOG_INFO("search_to: center_start distance_mm=" + fixed1(sensing_wait_position_mm) +
-                     " sensing_position_mm=" + fixed1(SENSING_POSITION_MM));
+            // mazerunner-core search_to(): back up to the wall behind at a
+            // quarter of search speed so the leg starts squared to it and at a
+            // known distance, then drive off as from a hand start. As in
+            // mazerunner, nothing checks that a wall is there; without one the
+            // robot just reverses and returns, unaligned.
+            LOG_INFO("search_to: back_up_mm=" + fixed1(START_CENTER_DISTANCE_MM));
+            motion_->move(-START_CENTER_DISTANCE_MM, ROBOT_MAX_SEARCH_SPEED_MMPS / 4.0f, 0.0f,
+                          ROBOT_SEARCH_ACCEL_MMPS2 / 2.0f);
+            if (!waitForMotion())
+            {
+                clear_search_front_latch();
+                return false;
+            }
+            sensing_wait_position_mm =
+                START_CENTER_DISTANCE_MM + (SENSING_POSITION_MM - HALF_CELL_MM);
             apply_maze_heading_hold();
             motion_->move(sensing_wait_position_mm, ROBOT_MAX_SEARCH_SPEED_MMPS,
                           ROBOT_MAX_SEARCH_SPEED_MMPS, ROBOT_SEARCH_ACCEL_MMPS2);
