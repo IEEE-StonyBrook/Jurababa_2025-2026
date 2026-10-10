@@ -81,6 +81,7 @@
 #define TOF_STEERING_KP_DEGPS_PER_NOMINAL   2.0f
 #define TOF_STEERING_KD_DEG_PER_NOMINAL     0.0f
 #define TOF_STEERING_ADJUST_LIMIT_DEGPS     30.0f
+#define TOF_STEERING_SIDE_MARGIN_MM         20.0f // steer only within this of centred
 #define TOF_FRONT_WALL_RELIABILITY_LIMIT_MM 160.0f
 
 // ================= IMU Configuration ================= //
