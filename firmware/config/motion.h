@@ -22,13 +22,14 @@
 //
 // CAUTION (per Peter Harrison's encoders.h header): changing this length
 // adds delay to the feedback loop and forces re-tuning of the forward
-// PD controller. Rotation PD is unaffected (uses IMU, not encoders).
+// PD controller. Rotation PD uses the IMU, except during smooth-turn arcs
+// (see SMOOTH_TURN_ENCODER_HOLDOVER_MS), where it reads this averaged yaw.
 #define ENCODER_AVERAGER_LENGTH 8
 
 // ================ Forward Speed Limits ================= //
 #define ROBOT_MAX_SEARCH_SPEED_MMPS  400.0f  // Search mode cruise speed
 #define ROBOT_MAX_FAST_SPEED_MMPS    1500.0f // Stage 3+ explored-path cruise (Mouse::cruiseSpeed)
-#define ROBOT_SEARCH_TURN_SPEED_MMPS 300.0f  // mazerunner-core (Orion) SEARCH_TURN_SPEED
+#define ROBOT_SEARCH_TURN_SPEED_MMPS 215.0f  // Bench-tuned; Orion's 300 overshot ~5.5 deg
 
 // ================ Forward Acceleration ================= //
 #define ROBOT_BASE_ACCEL_MMPS2   2500.0f
@@ -41,14 +42,18 @@
 #define ROBOT_MAX_TURN_SPEED_DEGPS       300.0f  // Max angular velocity
 #define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2  1200.0f // Turn acceleration
 #define ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS 250.0f  // Linear speed during smooth turns
-#define ROBOT_SMOOTH_TURN_OMEGA_DEGPS    280.0f  // mazerunner-core (Orion) SS90E omega
+#define ROBOT_SMOOTH_TURN_OMEGA_DEGPS    200.0f  // Bench-tuned; ~62 mm radius at 215 mm/s
 #define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2   4000.0f // mazerunner-core (Orion) SS90E alpha
 // mazerunner-core SS90E offsets: how far before the turn cell centre the arc
 // starts, and how far past the centre (on the new heading) it ends. Tuned, not
 // derived — the alpha ramps make the real reach longer than v/omega.
 #define ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM  70.0f // mazerunner-core (Orion) SS90EL entry
-#define ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM 55.0f // mazerunner-core (Orion) SS90ER entry
+#define ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM 71.0f // ToF-tuned mean of 6 runs, encoder-yaw arcs
 #define ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM 80.0f // mazerunner-core (Orion) SS90E exit
+// Smooth-turn arcs feed encoder yaw to the rotation PD: the BNO085 lags ~40 ms,
+// enough to reverse the inside wheel and overshoot the arc. Encoder yaw stays
+// on this long after the arc ends so the IMU lag has drained before it takes over.
+#define SMOOTH_TURN_ENCODER_HOLDOVER_MS 100
 
 // ================ Maze Heading Hold =================== //
 // Competition maze-running can use the logical maze heading as a gentle

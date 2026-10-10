@@ -6,8 +6,8 @@
 #define CONFIG_GEOMETRY_H
 
 // ===================== Wheels ===================== //
-#define WHEEL_DIAMETER_MM 37.2f // Measured outer diameter
-#define WHEEL_BASE_MM     83.9f // Center-to-center between wheels
+#define WHEEL_DIAMETER_MM 38.8f // Effective, from 500 mm Q pushes (calipers: 37.2)
+#define WHEEL_BASE_MM     83.9f // Effective, from IMU-checked spins (calipers: 84.5)
 
 // ===================== Encoder ===================== //
 #define ENCODER_CPR 12     // Counts per motor shaft revolution

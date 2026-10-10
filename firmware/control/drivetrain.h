@@ -69,6 +69,12 @@ class Drivetrain
     float fwdChangeMm() const { return fwd_change_mm_; }
 
     /**
+     * @brief Per-tick yaw delta from the wheel difference, deg, positive CCW.
+     *        Same 8-tap averaged deltas as fwdChangeMm().
+     */
+    float rotChangeDeg() const { return rot_change_deg_; }
+
+    /**
      * @brief Sets motor voltages (scaled by current battery voltage)
      */
     void setVoltage(float left_volts, float right_volts);
@@ -96,7 +102,8 @@ class Drivetrain
     // 8-tap moving average of per-tick deltas (mm) refreshed by update();
     // consumed by Motion's PD loop via fwdChangeMm(). Mirrors
     // ukmars/motorlab/src/encoders.h::m_fwd_change.
-    float fwd_change_mm_ = 0.0f;
+    float fwd_change_mm_  = 0.0f;
+    float rot_change_deg_ = 0.0f;
 
     // 8-tap moving averager state, mirroring ukmars/motorlab/src/encoders.h.
     // Operates on integer tick deltas so the ring buffer can store int8_t

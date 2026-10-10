@@ -64,6 +64,7 @@ void Motion::resetControlHistory()
 {
     forward_controller_.reset();
     rotation_controller_.reset();
+    encoder_rotation_ticks_ = 0;
 
     prev_left_cmd_vel_mmps_               = 0.0f;
     prev_right_cmd_vel_mmps_              = 0.0f;
@@ -521,6 +522,7 @@ void Motion::start_smooth_turn_arc(bool turn_left)
     // mazerunner-core: motion.turn(params.angle, params.omega, 0, params.alpha).
     start_turn(turn_left ? 90.0f : -90.0f, smooth_turn_.omega_degps, 0.0f,
                smooth_turn_.alpha_degps2);
+    encoder_rotation_ticks_ = UINT16_MAX;
 }
 
 void Motion::update()
@@ -574,8 +576,16 @@ void Motion::runPositionControl()
         return;
     }
 
-    float fwd_change_mm  = drivetrain_->fwdChangeMm();
-    float rot_change_deg = imu_->robot_rot_change(); // per-tick delta (omega * dt)
+    float fwd_change_mm = drivetrain_->fwdChangeMm();
+    // Smooth-turn arcs use encoder yaw; see SMOOTH_TURN_ENCODER_HOLDOVER_MS.
+    if (encoder_rotation_ticks_ == UINT16_MAX && !rotation_.active())
+        encoder_rotation_ticks_ =
+            static_cast<uint16_t>(SMOOTH_TURN_ENCODER_HOLDOVER_MS * LOOP_FREQUENCY_HZ / 1000.0f);
+    const bool encoder_rotation = encoder_rotation_ticks_ > 0;
+    if (encoder_rotation && encoder_rotation_ticks_ != UINT16_MAX)
+        --encoder_rotation_ticks_;
+    float rot_change_deg = encoder_rotation ? drivetrain_->rotChangeDeg()
+                                            : imu_->robot_rot_change(); // per-tick delta (deg)
     float fwd_velocity   = forward_.velocity();
     float rot_velocity   = rotation_.velocity();
 
@@ -646,6 +656,51 @@ void Motion::runPositionControl()
     latest_motor_differential_volts_ = right_volts - left_volts;
 
     drivetrain_->setVoltage(left_volts, right_volts);
+
+    if (trace_active_ && ++trace_tick_ >= TRACE_DECIMATION && trace_count_ < TRACE_CAPACITY)
+    {
+        trace_tick_          = 0;
+        trace_[trace_count_] = {rotation_.position(),
+                                yaw_deg(),
+                                rotation_controller_.error(),
+                                rotation_output,
+                                latest_heading_hold_error_deg_,
+                                wall_adjustment,
+                                heading_adjustment,
+                                fwd_velocity,
+                                drivetrain_->velocity(WheelSide::LEFT),
+                                drivetrain_->velocity(WheelSide::RIGHT),
+                                left_volts,
+                                right_volts,
+                                encoder_rotation,
+                                left_wall_mm_,
+                                front_wall_mm_,
+                                right_wall_mm_};
+        trace_count_         = trace_count_ + 1;
+    }
+}
+
+void Motion::start_trace()
+{
+    trace_active_ = false;
+    trace_count_  = 0;
+    trace_tick_   = 0;
+    trace_active_ = true;
+}
+
+void Motion::stop_trace()
+{
+    trace_active_ = false;
+}
+
+uint16_t Motion::traceCount() const
+{
+    return trace_count_;
+}
+
+const Motion::TraceSample& Motion::traceSample(uint16_t index) const
+{
+    return trace_[index];
 }
 
 float Motion::wallSteeringAdjustment(float fwd_velocity_mmps, float rot_velocity_degps)

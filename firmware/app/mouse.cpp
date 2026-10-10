@@ -1954,6 +1954,10 @@ bool Mouse::test_SS90E(bool turn_left)
     }
 #endif
 
+#ifndef SIMULATOR_BUILD
+    if (!run_on_simulator && motion_ != nullptr)
+        motion_->start_trace();
+#endif
     smooth_turn_step(turn_left);
     maze_mouse_->turn45Steps(turn_left ? -2 : 2);
 
@@ -1974,11 +1978,70 @@ bool Mouse::test_SS90E(bool turn_left)
         // sensing point two cells on, so its offset there is the turn's.
         motion_->set_heading_hold(target_yaw_deg);
         motion_->move(2.0f * CELL_SIZE_MM, cruise_speed_mmps_, 0.0f, ROBOT_SEARCH_ACCEL_MMPS2);
-        if (!waitForMotion())
+        const bool run_out_ok = waitForMotion();
+        motion_->stop_trace();
+        print_turn_trace(target_yaw_deg);
+        if (!run_out_ok)
             return false;
     }
 #endif
     return !haltRequested();
+}
+
+void Mouse::print_turn_trace(float target_yaw_deg)
+{
+#ifndef SIMULATOR_BUILD
+    // One CSV row per trace sample, paced to the Bluetooth UART: the 4 KB TX
+    // ring holds ~60 rows, so an unpaced dump drops the rest. haltRequested()
+    // drains the console; a ~75 byte row takes ~6.5 ms at 115200 baud.
+    const uint16_t count = motion_->traceCount();
+    LOG_INFO("TRACE n="
+             << count << " dt_ms=" << 2 * Motion::TRACE_DECIMATION
+             << " cols=t_ms,target_deg,yaw_deg,rot_err_deg,rot_v,hold_err_deg,"
+                "wall_degps,hold_degps,fwd_mmps,left_mmps,right_mmps,left_v,right_v,enc,tof_l_mm,"
+                "tof_f_mm,tof_r_mm");
+    Log::drainBluetooth();
+    for (uint16_t i = 0; i < count; ++i)
+    {
+        const Motion::TraceSample& s = motion_->traceSample(i);
+        char                       row[160];
+        std::snprintf(
+            row, sizeof(row),
+            "T,%d,%.1f,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.0f,%.0f,%.0f,%.2f,%.2f,%d,%.0f,%.0f,%.0f",
+            i * 2 * Motion::TRACE_DECIMATION, static_cast<double>(s.target_deg),
+            static_cast<double>(s.yaw_deg), static_cast<double>(s.rot_error_deg),
+            static_cast<double>(s.rot_volts), static_cast<double>(s.hold_err_deg),
+            static_cast<double>(s.wall_degps), static_cast<double>(s.hold_degps),
+            static_cast<double>(s.fwd_mmps), static_cast<double>(s.left_mmps),
+            static_cast<double>(s.right_mmps), static_cast<double>(s.left_volts),
+            static_cast<double>(s.right_volts), s.encoder_rotation ? 1 : 0,
+            static_cast<double>(s.left_tof_mm), static_cast<double>(s.front_tof_mm),
+            static_cast<double>(s.right_tof_mm));
+        LOG_INFO(row);
+        for (int k = 0; k < 4; ++k)
+        {
+            if (haltRequested())
+                return;
+            sleep_ms(2);
+        }
+    }
+    // The SS90E line reads yaw while the IMU still lags the arc by ~40 ms; the
+    // first IMU-fed sample after the encoder holdover is the settled error.
+    for (uint16_t i = 1; i < count; ++i)
+    {
+        if (motion_->traceSample(i - 1).encoder_rotation &&
+            !motion_->traceSample(i).encoder_rotation)
+        {
+            LOG_INFO(
+                "TRACE turn_yaw_error_settled="
+                << signedFixed1(normalizeYawDelta(target_yaw_deg - motion_->traceSample(i).yaw_deg))
+                << " at_ms=" << i * 2 * Motion::TRACE_DECIMATION);
+            break;
+        }
+    }
+    LOG_INFO("TRACE end");
+    Log::drainBluetooth();
+#endif
 }
 
 void Mouse::show_sensor_calibration()
