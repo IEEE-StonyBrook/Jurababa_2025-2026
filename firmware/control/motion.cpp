@@ -581,7 +581,7 @@ void Motion::runPositionControl()
     if (encoder_rotation_ticks_ == UINT16_MAX && !rotation_.active())
         encoder_rotation_ticks_ =
             static_cast<uint16_t>(SMOOTH_TURN_ENCODER_HOLDOVER_MS * LOOP_FREQUENCY_HZ / 1000.0f);
-    const bool encoder_rotation = encoder_rotation_ticks_ > 0;
+    const bool encoder_rotation = ROT_FEEDBACK_ENCODER || encoder_rotation_ticks_ > 0;
     if (encoder_rotation && encoder_rotation_ticks_ != UINT16_MAX)
         --encoder_rotation_ticks_;
     float rot_change_deg = encoder_rotation ? drivetrain_->rotChangeDeg()

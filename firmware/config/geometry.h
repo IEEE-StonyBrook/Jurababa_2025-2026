@@ -7,7 +7,7 @@
 
 // ===================== Wheels ===================== //
 #define WHEEL_DIAMETER_MM 38.8f // Effective, from 500 mm Q pushes (calipers: 37.2)
-#define WHEEL_BASE_MM     83.9f // Effective, from IMU-checked spins (calipers: 84.5)
+#define WHEEL_BASE_MM     84.3f // Effective, IMU-checked spin after creep fix (calipers: 84.5)
 
 // ===================== Encoder ===================== //
 #define ENCODER_CPR 12     // Counts per motor shaft revolution

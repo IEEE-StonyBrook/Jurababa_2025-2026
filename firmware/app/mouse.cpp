@@ -2027,7 +2027,8 @@ void Mouse::print_turn_trace(float target_yaw_deg)
     }
     // The SS90E line reads yaw while the IMU still lags the arc by ~40 ms; the
     // first IMU-fed sample after the encoder holdover is the settled error.
-    for (uint16_t i = 1; i < count; ++i)
+    // A NaN target (CLI TRACE) has no turn to score.
+    for (uint16_t i = 1; i < count && !std::isnan(target_yaw_deg); ++i)
     {
         if (motion_->traceSample(i - 1).encoder_rotation &&
             !motion_->traceSample(i).encoder_rotation)

@@ -54,6 +54,12 @@
 // enough to reverse the inside wheel and overshoot the arc. Encoder yaw stays
 // on this long after the arc ends so the IMU lag has drained before it takes over.
 #define SMOOTH_TURN_ENCODER_HOLDOVER_MS 100
+// 1: encoder yaw is the rotation PD's inner loop on every motion (mazerunner-
+// core); the IMU corrects absolute heading through heading hold and ToF
+// through wall steering. 0: IMU inner loop, encoder yaw only for arcs.
+// Re-measure ROT_KM/ROT_TM in DriverLab after changing it: the IMU fit
+// counts the BNO085's ~40 ms lag as part of ROT_TM.
+#define ROT_FEEDBACK_ENCODER 0
 
 // ================ Maze Heading Hold =================== //
 // Competition maze-running can use the logical maze heading as a gentle

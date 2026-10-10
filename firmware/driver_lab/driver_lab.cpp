@@ -22,6 +22,36 @@
 #include <cstdlib>
 #include <cstring>
 
+namespace
+{
+// Mean of the last `tail` samples: the steady-state value of a step.
+float tailMean(const std::vector<float>& w, size_t tail)
+{
+    tail = std::min(tail, w.size());
+    if (tail == 0)
+        return 0.0f;
+    float sum = 0.0f;
+    for (size_t i = w.size() - tail; i < w.size(); i++)
+        sum += w[i];
+    return sum / static_cast<float>(tail);
+}
+
+// First-order time constant: time at which w first crosses 63.2% of w_ss,
+// linearly interpolated. Negative when it never crosses.
+float riseTime632(const std::vector<float>& t, const std::vector<float>& w, float w_ss)
+{
+    const float target = 0.632f * w_ss;
+    for (size_t i = 1; i < w.size() && i < t.size(); i++)
+    {
+        const bool crossed = (w_ss > 0.0f) ? (w[i - 1] < target && w[i] >= target)
+                                           : (w[i - 1] > target && w[i] <= target);
+        if (crossed)
+            return t[i - 1] + (target - w[i - 1]) / (w[i] - w[i - 1]) * (t[i] - t[i - 1]);
+    }
+    return -1.0f;
+}
+} // namespace
+
 // ============================================================================
 // Version and identification
 // ============================================================================
@@ -1189,6 +1219,9 @@ void DriverLab::startTurnOpenLoopTrial(float max_v, float step_v, uint32_t settl
     tol_.diff_voltages.clear();
     tol_.omega_steady.clear();
     tol_.rot_tm_samples.clear();
+    tol_.step_omegas_enc.clear();
+    tol_.omega_steady_enc.clear();
+    tol_.rot_tm_samples_enc.clear();
     tol_.pausing          = false;
     tol_.pause_loop_count = 0;
 
@@ -1236,6 +1269,7 @@ void DriverLab::tickTurnOpenLoop()
         tol_.yaw_at_step_start = imu_->robot_angle();
         tol_.step_omegas.clear();
         tol_.step_times_s.clear();
+        tol_.step_omegas_enc.clear();
         setVoltages(-tol_.current_voltage, +tol_.current_voltage);
         return;
     }
@@ -1250,6 +1284,7 @@ void DriverLab::tickTurnOpenLoop()
     {
         tol_.step_omegas.push_back(omega);
         tol_.step_times_s.push_back(loopsToSeconds(tol_.step_loop_count));
+        tol_.step_omegas_enc.push_back(encoderOmegaDegps());
 
         const int kept = tol_.step_loop_count - SKIP_SAMPLES;
         if (kept % 10 == 0)
@@ -1293,6 +1328,15 @@ void DriverLab::tickTurnOpenLoop()
                 break;
             }
         }
+    }
+
+    const float omega_ss_enc = tailMean(tol_.step_omegas_enc, 20);
+    tol_.omega_steady_enc.push_back(omega_ss_enc);
+    if (std::fabs(omega_ss_enc) > MIN_OMEGA_THRESHOLD)
+    {
+        const float tm_enc = riseTime632(tol_.step_times_s, tol_.step_omegas_enc, omega_ss_enc);
+        if (tm_enc > 0.0f)
+            tol_.rot_tm_samples_enc.push_back(tm_enc);
     }
 
     // Inter-step pause: stop motors and dwell so the body de-spins.
@@ -1347,6 +1391,27 @@ void DriverLab::finishTurnOpenLoop()
         rot_tm_calc /= static_cast<float>(tol_.rot_tm_samples.size());
     }
 
+    float rot_kM_enc = 0.0f;
+    int   n_pts_enc  = 0;
+    linRegress(tol_.diff_voltages, tol_.omega_steady_enc, MIN_OMEGA_THRESHOLD, rot_kM_enc,
+               n_pts_enc);
+    float rot_tm_enc = 0.0f;
+    for (float t : tol_.rot_tm_samples_enc)
+        rot_tm_enc += t / static_cast<float>(tol_.rot_tm_samples_enc.size());
+
+    printf("\n=== TURN-OL encoder yaw ===\n");
+    printf("ROT_KM (encoder) = %.2f deg/s/V (%d points)\n", rot_kM_enc, n_pts_enc);
+    if (rot_tm_enc > 0.0f)
+        printf("ROT_TM (encoder, coarse) = %.5f s\n", rot_tm_enc);
+
+#if ROT_FEEDBACK_ENCODER
+    // The rotation PD reads encoder yaw, so its plant is the encoder one.
+    rot_kM = rot_kM_enc;
+    n_pts  = n_pts_enc;
+    if (rot_tm_enc > 0.0f)
+        rot_tm_calc = rot_tm_enc;
+#endif
+
     constexpr float MIN_VALID_ROT_KM = 10.0f;
     const bool      ol_ok            = (n_pts >= 2) && (rot_kM > MIN_VALID_ROT_KM);
 
@@ -1358,7 +1423,8 @@ void DriverLab::finishTurnOpenLoop()
         settings_.recalculateRotation();
     }
 
-    printf("\n=== TURN-OL Results ===\n");
+    printf("\n=== TURN-OL Results (%s, used for gains) ===\n",
+           ROT_FEEDBACK_ENCODER ? "encoder" : "IMU");
     printf("ROT_KM = %.2f deg/s/V (%d points)\n", rot_kM, n_pts);
     if (rot_tm_calc > 0.0f)
         printf("ROT_TM (coarse) = %.5f s  (run TURN-STEP for a cleaner value)\n", rot_tm_calc);
@@ -1395,6 +1461,10 @@ void DriverLab::startTurnStepTrial(float diff_v, uint32_t duration_ms)
     const size_t imu_samples = static_cast<size_t>(duration_ms / 10) + 4;
     tstep_.times_s.reserve(imu_samples);
     tstep_.omegas.reserve(imu_samples);
+    tstep_.enc_times_s.clear();
+    tstep_.enc_omegas.clear();
+    tstep_.enc_times_s.reserve(static_cast<size_t>(tstep_.duration_loops));
+    tstep_.enc_omegas.reserve(static_cast<size_t>(tstep_.duration_loops));
 
     beginCountdown("TURN Step Response", TrialState::TurnStep);
 }
@@ -1434,6 +1504,10 @@ void DriverLab::tickTurnStep()
         tstep_.omegas.push_back(omega);
         tstep_.last_packet_seq = seq_now;
     }
+
+    // Encoder omega is fresh every tick, so it is sampled at the loop rate.
+    tstep_.enc_times_s.push_back(loopsToSeconds(tstep_.loop_count));
+    tstep_.enc_omegas.push_back(encoderOmegaDegps());
 
     // CSV emission stays gated by the reporter — independent 10 ms cadence.
     const uint32_t now_ms = to_ms_since_boot(get_absolute_time());
@@ -1495,7 +1569,24 @@ void DriverLab::finishTurnStep()
         }
     }
 
-    printf("\n=== TURN-STEP Results ===\n");
+    // Encoder fit: same 63.2% crossing on the lag-free 500 Hz series. The
+    // 8-tap encoder averager still adds ~8 ms, as it does for Motion's PD.
+    const float omega_ss_enc = tailMean(tstep_.enc_omegas, tstep_.enc_omegas.size() / 5);
+    const float rot_tm_enc   = riseTime632(tstep_.enc_times_s, tstep_.enc_omegas, omega_ss_enc);
+    printf("\n=== TURN-STEP encoder yaw ===\n");
+    printf("Steady-state omega (encoder): %.1f deg/s\n", omega_ss_enc);
+    if (rot_tm_enc > 0.0f)
+        printf("ROT_TM (encoder) = %.5f s\n", rot_tm_enc);
+    else
+        printf("ROT_TM (encoder): could not determine\n");
+#if ROT_FEEDBACK_ENCODER
+    // The rotation PD reads encoder yaw, so its plant is the encoder one.
+    found       = rot_tm_enc > 0.0f;
+    rot_tm_calc = rot_tm_enc;
+#endif
+
+    printf("\n=== TURN-STEP Results (%s, used for gains) ===\n",
+           ROT_FEEDBACK_ENCODER ? "encoder" : "IMU");
     printf("Steady-state omega: %.1f deg/s\n", omega_ss);
     printf("63.2%% threshold:   %.1f deg/s\n", threshold);
 
