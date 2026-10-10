@@ -131,6 +131,14 @@ inline WallState evaluate(float left_mm, float front_mm, float right_mm,
     if (state.right_wall)
         state.right_error_norm = TOF_SIDE_NOMINAL - rss_norm;
 
+    // Steer only from a wall reading near centred. The 30-deg-forward side
+    // beam catches the post where a wall ends and reads 20-30 mm long for a
+    // sample or two, which is still a mapped wall but a false 15 mm offset.
+    const bool left_steer =
+        state.left_wall && left_mm < TOF_LEFT_CALIBRATION_MM + TOF_STEERING_SIDE_MARGIN_MM;
+    const bool right_steer =
+        state.right_wall && right_mm < TOF_RIGHT_CALIBRATION_MM + TOF_STEERING_SIDE_MARGIN_MM;
+
     if (mode == SteeringMode::STEERING_OFF)
     {
         state.steering_allowed = false;
@@ -139,7 +147,7 @@ inline WallState evaluate(float left_mm, float front_mm, float right_mm,
 
     if (mode == SteeringMode::STEER_LEFT_WALL)
     {
-        if (state.left_wall)
+        if (left_steer)
         {
             state.side_error_norm  = 2.0f * state.left_error_norm;
             state.side_error_valid = true;
@@ -148,14 +156,14 @@ inline WallState evaluate(float left_mm, float front_mm, float right_mm,
     }
     else if (mode == SteeringMode::STEER_RIGHT_WALL)
     {
-        if (state.right_wall)
+        if (right_steer)
         {
             state.side_error_norm  = 2.0f * state.right_error_norm;
             state.side_error_valid = true;
             state.source           = SteeringSource::Right;
         }
     }
-    else if (state.left_wall && state.right_wall)
+    else if (left_steer && right_steer)
     {
         // ToF mm readings are noisier than UKMARS IR counts. In a two-wall
         // corridor, fusing both sides avoids LEFT/RIGHT source chatter from
@@ -164,13 +172,13 @@ inline WallState evaluate(float left_mm, float front_mm, float right_mm,
         state.source           = SteeringSource::Both;
         state.side_error_valid = true;
     }
-    else if (state.left_wall)
+    else if (left_steer)
     {
         state.side_error_norm  = 2.0f * state.left_error_norm;
         state.side_error_valid = true;
         state.source           = SteeringSource::Left;
     }
-    else if (state.right_wall)
+    else if (right_steer)
     {
         state.side_error_norm  = 2.0f * state.right_error_norm;
         state.side_error_valid = true;
