@@ -29,7 +29,7 @@
 // ================ Forward Speed Limits ================= //
 #define ROBOT_MAX_SEARCH_SPEED_MMPS  400.0f  // Search mode cruise speed
 #define ROBOT_MAX_FAST_SPEED_MMPS    1500.0f // Stage 3+ explored-path cruise (Mouse::cruiseSpeed)
-#define ROBOT_SEARCH_TURN_SPEED_MMPS 215.0f  // Bench-tuned; Orion's 300 overshot ~5.5 deg
+#define ROBOT_SEARCH_TURN_SPEED_MMPS 300.0f  // Orion SEARCH_TURN_SPEED
 
 // ================ Forward Acceleration ================= //
 #define ROBOT_BASE_ACCEL_MMPS2   2500.0f
@@ -39,17 +39,21 @@
 // Jurababa-validated IMU spin-turn defaults. These are deliberately gentler
 // than Orion-class UKMARS values because our rotation feedback comes from the
 // BNO085 RVC stream rather than 500 Hz encoder yaw.
-#define ROBOT_MAX_TURN_SPEED_DEGPS       300.0f  // Max angular velocity
-#define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2  1200.0f // Turn acceleration
+#define ROBOT_MAX_TURN_SPEED_DEGPS       360.0f  // Orion OMEGA_SPIN_TURN
+#define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2  1800.0f // Maze-floor slip sweep: ~1 deg short per 90
 #define ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS 250.0f  // Linear speed during smooth turns
-#define ROBOT_SMOOTH_TURN_OMEGA_DEGPS    200.0f  // Bench-tuned; ~62 mm radius at 215 mm/s
+#define ROBOT_SMOOTH_TURN_OMEGA_DEGPS    280.0f  // Orion SS90E omega; ~61 mm radius
 #define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2   4000.0f // mazerunner-core (Orion) SS90E alpha
 // mazerunner-core SS90E offsets: how far before the turn cell centre the arc
 // starts, and how far past the centre (on the new heading) it ends. Tuned, not
 // derived — the alpha ramps make the real reach longer than v/omega.
-#define ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM  71.0f // Same as right; untuned
-#define ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM 69.0f // ToF-tuned, 3 runs at ROT_TD 1.5 Tm
+#define ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM  76.0f // Same as right; untested
+#define ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM 76.0f // ToF-tuned at 300 mm/s, 3 runs: exit -2.7 mm
 #define ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM 80.0f // mazerunner-core (Orion) SS90E exit
+// Encoder arc size. Tyre scrub at 300 mm/s turns the body ~4 deg less than
+// the wheels; 95 lands it on 90 (+0.7 deg mean over 3 runs).
+#define ROBOT_SMOOTH_TURN_ANGLE_RIGHT_DEG 95.0f
+#define ROBOT_SMOOTH_TURN_ANGLE_LEFT_DEG  95.0f // Same as right; untested
 // Smooth-turn arcs feed encoder yaw to the rotation PD: the BNO085 lags ~40 ms,
 // enough to reverse the inside wheel and overshoot the arc. Encoder yaw stays
 // on this long after the arc ends so the IMU lag has drained before it takes over.

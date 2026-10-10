@@ -2028,10 +2028,14 @@ void Mouse::print_turn_trace(float target_yaw_deg)
     // The SS90E line reads yaw while the IMU still lags the arc by ~40 ms.
     // Score the turn 100 ms after the rotation profile reaches its target,
     // once that lag has drained. A NaN target (CLI TRACE) has no turn.
-    constexpr uint16_t kSettleSamples = 100 / (2 * Motion::TRACE_DECIMATION);
+    constexpr uint16_t kSettleSamples   = 100 / (2 * Motion::TRACE_DECIMATION);
+    float              final_target_deg = 0.0f;
+    for (uint16_t i = 0; i < count; ++i)
+        final_target_deg =
+            std::max(final_target_deg, std::fabs(motion_->traceSample(i).target_deg));
     for (uint16_t i = 0; i < count && !std::isnan(target_yaw_deg); ++i)
     {
-        if (std::fabs(motion_->traceSample(i).target_deg) < 89.8f)
+        if (std::fabs(motion_->traceSample(i).target_deg) < final_target_deg - 0.2f)
             continue;
         const uint16_t j = i + kSettleSamples;
         if (j < count)

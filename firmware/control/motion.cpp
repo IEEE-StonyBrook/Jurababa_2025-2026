@@ -520,7 +520,8 @@ float Motion::start_smooth_turn_entry(bool turn_left, float turn_centre_ahead_mm
 void Motion::start_smooth_turn_arc(bool turn_left)
 {
     // mazerunner-core: motion.turn(params.angle, params.omega, 0, params.alpha).
-    start_turn(turn_left ? 90.0f : -90.0f, smooth_turn_.omega_degps, 0.0f,
+    const float angle_deg = smooth_turn_.side(turn_left).angle_deg;
+    start_turn(turn_left ? angle_deg : -angle_deg, smooth_turn_.omega_degps, 0.0f,
                smooth_turn_.alpha_degps2);
     encoder_rotation_ticks_ = UINT16_MAX;
 }
