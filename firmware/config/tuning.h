@@ -23,8 +23,8 @@
 #define MOTOR_TM 0.080f  // seconds        (time constant)
 
 // Rotational motor model — from TURN-OL + TURN-STEP trials.
-#define ROT_KM 244.58f // deg/s per volt of differential drive
-#define ROT_TM 0.128f  // seconds, rotational time constant
+#define ROT_KM 385.0f // deg/s per volt of differential drive (encoder TURNOL, no-slip range)
+#define ROT_TM 0.097f // seconds (encoder TURNSTEP; the IMU fit adds its ~16 ms lag)
 
 // ================ Feedforward (per motor) ============== //
 // V = kV * speed + kS + kA * accel (per wheel; characterized independently).
@@ -64,7 +64,7 @@
 // plant. DriverLab TURN uses the same 500 Hz PID convention as the forward
 // loop: kD is multiplied by LOOP_FREQUENCY inside PID::update().
 #define ROT_ZETA 0.707f
-#define ROT_TD   0.400f
+#define ROT_TD   0.200f
 #define ROT_KP   (16.0f * ROT_TM / (ROT_KM * ROT_ZETA * ROT_ZETA * ROT_TD * ROT_TD))
 #define ROT_KD   ((8.0f * ROT_TM - ROT_TD) / (ROT_KM * ROT_TD))
 

@@ -59,7 +59,7 @@
 // through wall steering. 0: IMU inner loop, encoder yaw only for arcs.
 // Re-measure ROT_KM/ROT_TM in DriverLab after changing it: the IMU fit
 // counts the BNO085's ~40 ms lag as part of ROT_TM.
-#define ROT_FEEDBACK_ENCODER 0
+#define ROT_FEEDBACK_ENCODER 1
 
 // ================ Maze Heading Hold =================== //
 // Competition maze-running can use the logical maze heading as a gentle
