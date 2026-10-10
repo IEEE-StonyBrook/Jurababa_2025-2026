@@ -50,8 +50,8 @@ constexpr uint32_t STOP_AT_CENTRE_PROFILE_TIMEOUT_MS = 1000; // UKMARS no-wall t
 //      reaches SENSING_POSITION_MM without a lateral step.
 //   4. Tune left and right independently.
 //
-// Not yet implemented: mazerunner's front-sensor early trigger
-// (front_sum > trigger, +EXTRA_WALL_ADJUST per side wall). It needs a measured
-// Jurababa ToF mm threshold.
+// mazerunner's front-sensor trigger: with a wall ahead the arc starts once the
+// front ToF reads FRONT_TRIG_L/R mm, if that comes before the odometry turn
+// point (see ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM). ANGLE_L/R sets the arc size.
 
 #endif // CONFIG_SMOOTH_TURN_H
