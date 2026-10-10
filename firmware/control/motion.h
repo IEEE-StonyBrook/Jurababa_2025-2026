@@ -182,7 +182,8 @@ class Motion
     // Starts the lead-in; returns its length (position() reaches it at the
     // turn point). A turn point already behind gives 0: turn now.
     float start_smooth_turn_entry(bool turn_left, float turn_centre_ahead_mm);
-    void  start_smooth_turn_arc(bool turn_left);
+    // heading_error_deg (+ = CCW) is added so the arc ends on the intended heading.
+    void start_smooth_turn_arc(bool turn_left, float heading_error_deg = 0.0f);
 
     // === Control Loop ===
     // Caller must invoke update() exactly once per tick from a deterministic

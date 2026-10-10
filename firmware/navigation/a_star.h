@@ -43,6 +43,8 @@ class AStar
                                 bool pass_goals = false);
 
     float lastPathCost() const { return total_cost_; }
+    // Extra cost per explored cell, to prefer unexplored routes. 0 = shortest.
+    void set_explored_cell_cost(float cost) { explored_cell_cost_ = cost; }
 
   private:
     std::vector<Cell*> findBestPath(std::vector<std::array<int, 2>> goals, bool diagonals,
@@ -55,6 +57,8 @@ class AStar
 
     MazeMouse* mouse_;
     float      total_cost_ = 0.0f;
+
+    float explored_cell_cost_ = 0.0f;
 };
 
 #endif

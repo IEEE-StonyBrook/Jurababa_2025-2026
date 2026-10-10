@@ -96,6 +96,8 @@ std::vector<Cell*> AStar::findPathTo(Cell* end, bool diagonals, bool pass_goals)
             float new_g = current.g_cost + heuristic(current.cell, neighbor);
             int   nx    = neighbor->x();
             int   ny    = neighbor->y();
+            if (neighbor->explored())
+                new_g += explored_cell_cost_;
 
             if (new_g < g_costs[nx][ny])
             {

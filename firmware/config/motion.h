@@ -39,8 +39,8 @@
 // Jurababa-validated IMU spin-turn defaults. These are deliberately gentler
 // than Orion-class UKMARS values because our rotation feedback comes from the
 // BNO085 RVC stream rather than 500 Hz encoder yaw.
-#define ROBOT_MAX_TURN_SPEED_DEGPS       360.0f  // Orion OMEGA_SPIN_TURN
-#define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2  1800.0f // Maze-floor slip sweep: ~1 deg short per 90
+#define ROBOT_MAX_TURN_SPEED_DEGPS       270.0f  // 360 slipped 1-8.6 deg short per 180 in search
+#define ROBOT_BASE_ANGULAR_ACCEL_DEGPS2  1200.0f // 1800 slipped on the maze floor (2026-10-10)
 #define ROBOT_MAX_SMOOTH_TURN_SPEED_MMPS 250.0f  // Linear speed during smooth turns
 #define ROBOT_SMOOTH_TURN_OMEGA_DEGPS    280.0f  // Orion SS90E omega; ~61 mm radius
 #define ROBOT_SMOOTH_TURN_ALPHA_DEGPS2   4000.0f // mazerunner-core (Orion) SS90E alpha
