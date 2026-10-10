@@ -65,10 +65,10 @@ class Motion
         float          speed_mmps   = ROBOT_SEARCH_TURN_SPEED_MMPS;
         float          omega_degps  = ROBOT_SMOOTH_TURN_OMEGA_DEGPS;
         float          alpha_degps2 = ROBOT_SMOOTH_TURN_ALPHA_DEGPS2;
-        SmoothTurnSide left{ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM, ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM, 0.0f,
-                            ROBOT_SMOOTH_TURN_ANGLE_LEFT_DEG};
+        SmoothTurnSide left{ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM, ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM,
+                            ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM, ROBOT_SMOOTH_TURN_ANGLE_LEFT_DEG};
         SmoothTurnSide right{ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM, ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM,
-                             0.0f, ROBOT_SMOOTH_TURN_ANGLE_RIGHT_DEG};
+                             ROBOT_SMOOTH_TURN_FRONT_TRIGGER_MM, ROBOT_SMOOTH_TURN_ANGLE_RIGHT_DEG};
         // mazerunner EXTRA_WALL_ADJUST: front trigger shift per side wall seen.
         float extra_wall_adjust_mm = 0.0f;
 
