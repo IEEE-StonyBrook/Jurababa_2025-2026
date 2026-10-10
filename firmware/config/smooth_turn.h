@@ -15,8 +15,10 @@
 // config/motion.h) rather than a constexpr table here.
 
 constexpr float SENSING_POSITION_MM = CELL_SIZE_MM - 10.0f; // Osmium SENSING_POSITION = 170
-constexpr float FRONT_REFERENCE_MM =
-    45.0f; // Measured on Jurababa: front ToF reads ~16-26 mm at true cell centre after stopAtCentre
+// Filtered front ToF at the true cell centre (CENTER + wall ahead, S snapshot):
+// 27-28 mm typical, rare 34 mm. Near the VL53L0X low limit but repeatable; the
+// chip offset is uncalibrated, so this is a matched reading, not true mm.
+constexpr float FRONT_REFERENCE_MM              = 28.0f;
 constexpr float FRONT_CORRECTION_TOLERANCE_MM   = 15.0f; // UKMARS adjustPosition tolerance = 50 raw
 constexpr float FRONT_CORRECTION_STEP_MM        = 20.0f; // UKMARS correction step = 10 mm
 constexpr float FRONT_CORRECTION_SPEED_MMPS     = 100.0f;  // UKMARS adj_speed = 100 mm/s

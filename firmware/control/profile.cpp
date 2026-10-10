@@ -124,7 +124,9 @@ void Profile::update()
 
     if (state_ != State::Finished && (remaining() < 0.125f || crossed_target))
     {
-        current_position_     = target_distance_;
+        // No position snap, as in mazerunner-core: the robot covered this
+        // tick's full step, so clamping to the target would under-report the
+        // distance and every later position check would land long.
         current_velocity_     = direction_ * final_speed_;
         current_acceleration_ = 0.0f;
         target_speed_         = direction_ * final_speed_;

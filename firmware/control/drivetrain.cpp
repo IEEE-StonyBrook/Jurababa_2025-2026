@@ -58,7 +58,7 @@ float Drivetrain::position(WheelSide side)
     Encoder* enc     = is_left ? left_encoder_ : right_encoder_;
     if (!enc)
         return 0.0f;
-    return enc->ticks() * MM_PER_TICK;
+    return enc->ticks() * (is_left ? MM_PER_TICK_LEFT : MM_PER_TICK_RIGHT);
 }
 
 int32_t Drivetrain::ticks(WheelSide side) const
@@ -128,8 +128,8 @@ void Drivetrain::update()
     averager_index_                 = (averager_index_ + 1) % ENCODER_AVERAGER_LENGTH;
 
     constexpr float inv_avg      = 1.0f / static_cast<float>(ENCODER_AVERAGER_LENGTH);
-    const float     left_change  = static_cast<float>(left_history_total_) * inv_avg * MM_PER_TICK;
-    const float     right_change = static_cast<float>(right_history_total_) * inv_avg * MM_PER_TICK;
+    const float     left_change  = static_cast<float>(left_history_total_) * inv_avg * MM_PER_TICK_LEFT;
+    const float     right_change = static_cast<float>(right_history_total_) * inv_avg * MM_PER_TICK_RIGHT;
 
     left_velocity_mmps_  = left_change / LOOP_INTERVAL_S;
     right_velocity_mmps_ = right_change / LOOP_INTERVAL_S;

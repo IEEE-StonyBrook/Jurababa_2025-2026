@@ -99,7 +99,9 @@ class Mouse
     void turn_left();
     void turn_right();
     void turn_back();
-    void turn_smooth(bool turn_left);
+    // mazerunner-core turn_smooth(): shared by search, SMOOTH RUN and PATH.
+    bool smooth_turn(bool turn_left, float centre_ahead_mm, float end_after_centre_mm);
+    bool smooth_turn_step(bool turn_left);
     bool turn_IP180();
     bool turn_IP90R();
     bool turn_IP90L();
@@ -190,6 +192,9 @@ class Mouse
     // Sensor service keeps ToF caches fresh during synchronous SEARCH waits.
     // 2 ms sleep matches mazerunner-core's `delay(2)` cadence.
     bool waitForMotion();
+    // Shared wait loop behind every busy-wait: until done() returns true,
+    // service sensors every 2 ms; halt or timeout emergency-stops and fails.
+    template <typename Done> bool pollUntil(Done done, uint32_t timeout_ms, const char* what);
 
     MazeMouse*    maze_mouse_        = nullptr;
     Motion*       motion_            = nullptr;
@@ -204,6 +209,9 @@ class Mouse
     std::vector<std::array<int, 2>> goal_cells_ = {};
 
   private:
+    void        turn_side(bool turn_left);
+    void        stationary_turn(const std::string& target_heading, int half_steps);
+    bool        frontWallInThisCell(float centre_ahead_mm);
     bool        turn_to_cardinal_yaw(const std::string& target_heading);
     void        apply_maze_heading_hold();
     void        apply_maze_heading_hold_for_heading(const std::string& heading);

@@ -128,6 +128,7 @@ class CommandLineInterface
     void printLineSnapshot();
     void printMazeView(char mode);
     void printEncoderSnapshot();
+    void handle_calibrate_encoders_command();
     bool needsTof(const char* what);
     bool startWithGesture(bool tof_available, bool preserve_yaw = false);
     bool startCenter();

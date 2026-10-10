@@ -14,8 +14,19 @@
 #define GEAR_RATIO  29.86f // Motor revolutions per wheel revolution
 
 // Derived
-#define TICKS_PER_REVOLUTION  (ENCODER_CPR * GEAR_RATIO) // 358.32
-#define MM_PER_TICK           ((WHEEL_DIAMETER_MM * 3.14159265f) / TICKS_PER_REVOLUTION)
+#define TICKS_PER_REVOLUTION (ENCODER_CPR * GEAR_RATIO) // 358.32
+#define MM_PER_TICK_NOMINAL  ((WHEEL_DIAMETER_MM * 3.14159265f) / TICKS_PER_REVOLUTION)
+
+// Per-wheel distance per encoder tick, calibrated the mazerunner-core way:
+// run `Q` in the CLI, push the robot by hand in a straight line through
+// exactly 500 mm (only enough downward pressure to stop the wheels slipping),
+// press a key, and paste the printed `500.0f / counts` values here. Repeat a
+// few runs and average; a longer push is more accurate. It is normal for the
+// two wheels to differ. Until calibrated both use the tyre-diameter estimate.
+#define MM_PER_TICK_LEFT  MM_PER_TICK_NOMINAL
+#define MM_PER_TICK_RIGHT MM_PER_TICK_NOMINAL
+// Mean of the two, for logs and printouts only.
+#define MM_PER_TICK           ((MM_PER_TICK_LEFT + MM_PER_TICK_RIGHT) / 2.0f)
 #define DEG_PER_MM_DIFFERENCE (180.0f / (3.14159265f * WHEEL_BASE_MM))
 
 // ===================== Maze ===================== //

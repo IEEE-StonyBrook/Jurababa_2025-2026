@@ -214,6 +214,35 @@ bool parseFloatArg(const Args& args, int index, float min_value, float max_value
 }
 
 // Turn segments carry a signed angle in degrees; positive turns left.
+// One CLI-editable smooth turn knob. The ranges are deliberately narrow: a
+// bad value drives the robot into a wall, and entry/exit are distances from
+// the turn cell centre, so anything past HALF_CELL_MM leaves the cell.
+struct SmoothTurnField
+{
+    const char* name;
+    float& (*ref)(Motion::SmoothTurnTuning&);
+    float min_value;
+    float max_value;
+};
+
+constexpr SmoothTurnField SMOOTH_TURN_FIELDS[] = {
+    {"SPEED", [](Motion::SmoothTurnTuning& t) -> float& { return t.speed_mmps; }, 50.0f, 600.0f},
+    {"OMEGA", [](Motion::SmoothTurnTuning& t) -> float& { return t.omega_degps; }, 30.0f, 600.0f},
+    {"ALPHA", [](Motion::SmoothTurnTuning& t) -> float& { return t.alpha_degps2; }, 100.0f,
+     5000.0f},
+    {"ENTRY_L", [](Motion::SmoothTurnTuning& t) -> float& { return t.left.entry_mm; }, 0.0f, 90.0f},
+    {"EXIT_L", [](Motion::SmoothTurnTuning& t) -> float& { return t.left.exit_mm; }, 0.0f, 90.0f},
+    {"ENTRY_R", [](Motion::SmoothTurnTuning& t) -> float& { return t.right.entry_mm; }, 0.0f,
+     90.0f},
+    {"EXIT_R", [](Motion::SmoothTurnTuning& t) -> float& { return t.right.exit_mm; }, 0.0f, 90.0f},
+    {"FRONT_TRIG_L", [](Motion::SmoothTurnTuning& t) -> float& { return t.left.front_trigger_mm; },
+     0.0f, 250.0f},
+    {"FRONT_TRIG_R", [](Motion::SmoothTurnTuning& t) -> float& { return t.right.front_trigger_mm; },
+     0.0f, 250.0f},
+    {"EXTRA_WALL_ADJ", [](Motion::SmoothTurnTuning& t) -> float& { return t.extra_wall_adjust_mm; },
+     0.0f, 30.0f},
+};
+
 bool turnsLeft(float angle_deg)
 {
     return angle_deg >= 0.0f;
@@ -587,7 +616,7 @@ void CommandLineInterface::run_short_cmd(const Args& args)
             printEncoderSnapshot();
             break;
         case 'Q':
-            printEncoderSnapshot();
+            handle_calibrate_encoders_command();
             break;
         case 'F':
         {
@@ -1182,20 +1211,6 @@ bool CommandLineInterface::resolve_path_segments(std::vector<PathSegment>& segme
     {
         PathSegment& segment = segments[i];
 
-        if (segment.type == PathSegmentType::SmoothTurn)
-        {
-            // Every turn is armed HALF_CELL_MM before its centre, so the arc
-            // start must not lie behind that point.
-            if (deps_.motion->smoothTurnLeadMm(turnsLeft(segment.value), HALF_CELL_MM) < 0.0f)
-            {
-                printFormat("PATH rejected: segment %lu smooth turn ENTRY exceeds %.1f mm. "
-                            "Run SMOOTH to inspect.\n",
-                            static_cast<unsigned long>(i + 1), static_cast<double>(HALF_CELL_MM));
-                return false;
-            }
-            continue;
-        }
-
         if (segment.type != PathSegmentType::Forward)
             continue;
 
@@ -1285,34 +1300,18 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
         }
         else if (segment.type == PathSegmentType::SmoothTurn)
         {
-            // Heading hold stays off across the whole turn: the exit straight
-            // runs with rotation idle on the NEW heading, so a stale target
-            // would steer the robot back out of the corner.
-            if (!raw_mode)
-                deps_.motion->clear_heading_hold();
             const bool                      turn_left = turnsLeft(segment.value);
             const float                     angle_deg = turn_left ? 90.0f : -90.0f;
             const Motion::SmoothTurnTuning& tune      = deps_.motion->smoothTurnTuning();
-            const float lead_mm = deps_.motion->smoothTurnLeadMm(turn_left, HALF_CELL_MM);
-            const float exit_mm = deps_.motion->smoothTurnExitMm(turn_left, HALF_CELL_MM);
-            printFormat("PATH %lu/%lu: SMOOTH %+.1f deg speed=%.1f omega=%.1f alpha=%.1f "
-                        "lead=%.1f exit=%.1f\n",
+            printFormat("PATH %lu/%lu: SMOOTH %+.1f deg speed=%.1f omega=%.1f alpha=%.1f\n",
                         static_cast<unsigned long>(i + 1),
                         static_cast<unsigned long>(segments.size()), static_cast<double>(angle_deg),
                         static_cast<double>(tune.speed_mmps), static_cast<double>(tune.omega_degps),
-                        static_cast<double>(tune.alpha_degps2), static_cast<double>(lead_mm),
-                        static_cast<double>(exit_mm));
-            // mazerunner-core turn_smooth(): lead-in and arc, then the exit leg
-            // to HALF_CELL_MM past the centre. Lead validated in the pre-pass.
-            ok = deps_.motion->start_smooth_turn(turn_left, HALF_CELL_MM) &&
-                 wait_path_segment_motion();
-            if (ok)
-            {
-                const float exit_final_mmps = (i + 1 < segments.size()) ? tune.speed_mmps : 0.0f;
-                deps_.motion->start_move(exit_mm, tune.speed_mmps, exit_final_mmps,
-                                         ROBOT_SEARCH_ACCEL_MMPS2);
-                ok = wait_path_segment_motion();
-            }
+                        static_cast<double>(tune.alpha_degps2));
+            // The same turn search drives (Mouse::smooth_turn). A straight
+            // into a turn ends HALF_CELL_MM before the turn cell centre, and the
+            // turn ends HALF_CELL_MM past it.
+            ok = deps_.mouse->smooth_turn(turn_left, HALF_CELL_MM, HALF_CELL_MM);
             // The arc's path length is shorter than the cell it crosses; count
             // the cell so the summary's cell total stays truthful.
             total_forward_mm += CELL_SIZE_MM;
@@ -1376,6 +1375,9 @@ bool CommandLineInterface::run_path_segments(std::vector<PathSegment>& segments,
         }
     }
 
+    // Brake to rest: a path can end on a smooth turn, which exits still at
+    // turn speed (as search needs).
+    deps_.motion->stop_forward(accel_mmps2, STOP_AT_CENTRE_PROFILE_TIMEOUT_MS);
     deps_.motion->stop();
     const float final_yaw   = deps_.motion->yaw_deg();
     const float final_error = normalizeYawDelta(expected_yaw_deg - final_yaw);
@@ -1414,27 +1416,24 @@ void CommandLineInterface::printSmoothTuning()
     if (deps_.motion == nullptr)
         return;
 
-    const Motion::SmoothTurnTuning& tune = deps_.motion->smoothTurnTuning();
+    Motion::SmoothTurnTuning tune = deps_.motion->smoothTurnTuning();
     printFormat("SMOOTH_TUNE\n");
-    for (const Motion::SmoothTurnField& field : Motion::SMOOTH_TURN_FIELDS)
-        printFormat("%s = %.6f\n", field.name, static_cast<double>(tune.*field.member));
+    for (const SmoothTurnField& field : SMOOTH_TURN_FIELDS)
+        printFormat("%s = %.6f\n", field.name, static_cast<double>(field.ref(tune)));
 
-    // The straights actually driven around the arc, for a turn armed
-    // HALF_CELL_MM before the centre (PATH) and one ending at the search
-    // sensing point. A clamped exit means the arc already reaches past where
-    // the robot should end up: shorten EXIT or tighten the arc (ALPHA/OMEGA).
+    // The straights driven around the arc: PATH turns run HALF_CELL_MM in and
+    // out, search turns end at the sensing point. A clamped exit means the arc
+    // already reaches past where the robot should end up: shorten EXIT or
+    // tighten the arc (ALPHA/OMEGA).
+    const float search_end_mm = SENSING_POSITION_MM - HALF_CELL_MM;
     for (const bool turn_left : {true, false})
     {
-        const float lead_mm   = deps_.motion->smoothTurnLeadMm(turn_left, HALF_CELL_MM);
-        const float exit_path = deps_.motion->smoothTurnExitMm(turn_left, HALF_CELL_MM);
-        const float exit_search =
-            deps_.motion->smoothTurnExitMm(turn_left, SENSING_POSITION_MM - HALF_CELL_MM);
-        const float exit_room_mm = SENSING_POSITION_MM - HALF_CELL_MM;
-        const float exit_offset  = turn_left ? tune.exit_offset_left_mm : tune.exit_offset_right_mm;
-        printFormat("%s lead=%.1f exit_path=%.1f exit_search=%.1f%s\n",
-                    turn_left ? "LEFT " : "RIGHT", static_cast<double>(lead_mm),
-                    static_cast<double>(exit_path), static_cast<double>(exit_search),
-                    exit_offset > exit_room_mm ? " EXIT LEG CLAMPED (search)" : "");
+        printFormat(
+            "%s lead=%.1f exit_path=%.1f exit_search=%.1f%s\n", turn_left ? "LEFT " : "RIGHT",
+            static_cast<double>(deps_.motion->smoothTurnLeadMm(turn_left, HALF_CELL_MM)),
+            static_cast<double>(deps_.motion->smoothTurnExitMm(turn_left, HALF_CELL_MM)),
+            static_cast<double>(deps_.motion->smoothTurnExitMm(turn_left, search_end_mm)),
+            tune.side(turn_left).exit_mm > search_end_mm ? " EXIT LEG CLAMPED (search)" : "");
     }
 }
 
@@ -1449,12 +1448,11 @@ bool CommandLineInterface::run_smooth_turn_trial(bool turn_left)
     }
 
     const Motion::SmoothTurnTuning& tune = deps_.motion->smoothTurnTuning();
-    printFormat(
-        "SMOOTH RUN %s speed=%.1f omega=%.1f alpha=%.1f entry=%.1f exit=%.1f\n",
-        turn_left ? "L" : "R", static_cast<double>(tune.speed_mmps),
-        static_cast<double>(tune.omega_degps), static_cast<double>(tune.alpha_degps2),
-        static_cast<double>(turn_left ? tune.entry_offset_left_mm : tune.entry_offset_right_mm),
-        static_cast<double>(turn_left ? tune.exit_offset_left_mm : tune.exit_offset_right_mm));
+    printFormat("SMOOTH RUN %s speed=%.1f omega=%.1f alpha=%.1f entry=%.1f exit=%.1f\n",
+                turn_left ? "L" : "R", static_cast<double>(tune.speed_mmps),
+                static_cast<double>(tune.omega_degps), static_cast<double>(tune.alpha_degps2),
+                static_cast<double>(tune.side(turn_left).entry_mm),
+                static_cast<double>(tune.side(turn_left).exit_mm));
 
     // mazerunner-core test_SS90E through the search loop's own turn code, so
     // a turn tuned here is the turn search drives. The mouse starts with its
@@ -1506,15 +1504,25 @@ void CommandLineInterface::handle_smooth_command(const Args& args)
             return;
         }
 
-        if (!deps_.motion->set_smooth_turn_value(args.argv[2], value))
+        Motion::SmoothTurnTuning tune  = deps_.motion->smoothTurnTuning();
+        const SmoothTurnField*   field = nullptr;
+        for (const SmoothTurnField& candidate : SMOOTH_TURN_FIELDS)
+        {
+            if (std::strcmp(args.argv[2], candidate.name) == 0)
+                field = &candidate;
+        }
+        if (field == nullptr || value < field->min_value || value > field->max_value)
         {
             printFormat("SMOOTH SET invalid name/range. Editable:");
-            for (const Motion::SmoothTurnField& field : Motion::SMOOTH_TURN_FIELDS)
-                printFormat(" %s[%.1f..%.1f]", field.name, static_cast<double>(field.min_value),
-                            static_cast<double>(field.max_value));
+            for (const SmoothTurnField& editable : SMOOTH_TURN_FIELDS)
+                printFormat(" %s[%.1f..%.1f]", editable.name,
+                            static_cast<double>(editable.min_value),
+                            static_cast<double>(editable.max_value));
             printFormat("\n");
             return;
         }
+        field->ref(tune) = value;
+        deps_.motion->set_smooth_turn_tuning(tune);
 
         printFormat("SMOOTH SET OK %s=%.6f\n", args.argv[2], static_cast<double>(value));
         printSmoothTuning();
@@ -2499,6 +2507,55 @@ void CommandLineInterface::printMazeView(char mode)
     print(out);
 }
 
+void CommandLineInterface::handle_calibrate_encoders_command()
+{
+    // mazerunner-core cli.h handle_calibrate_encoders_command(): drive off,
+    // stream encoder counts while the robot is pushed by hand, stop on a key.
+    // Push in a straight line through exactly 500 mm, then use the printed
+    // 500.0f / counts as MM_PER_TICK_LEFT/RIGHT in config/geometry.h. Turning
+    // the robot by hand through 360 deg checks WHEEL_BASE_MM via A.
+    Motion* r = deps_.motion;
+    if (r == nullptr)
+    {
+        printFormat("Motion not initialized.\n");
+        return;
+    }
+    r->emergency_stop();
+    const int32_t left_start  = r->encoder_ticks(WheelSide::LEFT);
+    const int32_t right_start = r->encoder_ticks(WheelSide::RIGHT);
+    printFormat("Q: push the robot exactly 500 mm by hand, then press any key.\n");
+
+    long left_counts  = 0;
+    long right_counts = 0;
+    halted_           = false;
+    while (true)
+    {
+        if (getchar_timeout_us(0) >= 0)
+            break;
+        pollHaltOnly(); // BT HALT / BOOTSEL also end the stream
+        if (halted_)
+            break;
+
+        left_counts          = static_cast<long>(r->encoder_ticks(WheelSide::LEFT) - left_start);
+        right_counts         = static_cast<long>(r->encoder_ticks(WheelSide::RIGHT) - right_start);
+        const float left_mm  = static_cast<float>(left_counts) * MM_PER_TICK_LEFT;
+        const float right_mm = static_cast<float>(right_counts) * MM_PER_TICK_RIGHT;
+        const float position = 0.5f * (left_mm + right_mm);
+        const float angle    = (right_mm - left_mm) * DEG_PER_MM_DIFFERENCE;
+        printFormat("L:%5ld R:%5ld P:%7.2f A:%7.2f\n", left_counts, right_counts,
+                    static_cast<double>(position), static_cast<double>(angle));
+        sleep_ms(10);
+    }
+    halted_ = false;
+
+    if (left_counts != 0 && right_counts != 0)
+    {
+        printFormat("For a 500 mm push, in config/geometry.h:\n");
+        printFormat("#define MM_PER_TICK_LEFT  (500.0f / %ld.0f)\n", left_counts);
+        printFormat("#define MM_PER_TICK_RIGHT (500.0f / %ld.0f)\n", right_counts);
+    }
+}
+
 void CommandLineInterface::printEncoderSnapshot()
 {
     Motion* r = deps_.motion;
@@ -2657,7 +2714,7 @@ void CommandLineInterface::help()
     printFormat("B : show battery voltage\n");
     printFormat("S : show sensor readings\n");
     printFormat("E : show encoder readings\n");
-    printFormat("Q : show encoder readings\n");
+    printFormat("Q : wheel calibration - push 500 mm by hand, any key stops\n");
     printFormat("F n : Run user function n\n");
     printFormat(" 0 = ---\n");
     printFormat(" 1 = Sensor Static Calibration\n");

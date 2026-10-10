@@ -181,10 +181,11 @@ void DriverLab::sampleEncoders()
     dl_right_history_[dl_averager_index_] = static_cast<int8_t>(d_right);
     dl_averager_index_                    = (dl_averager_index_ + 1) % ENCODER_AVERAGER_LENGTH;
 
-    constexpr float inv_avg    = 1.0f / static_cast<float>(ENCODER_AVERAGER_LENGTH);
-    const float left_change_mm = static_cast<float>(dl_left_history_total_) * inv_avg * MM_PER_TICK;
+    constexpr float inv_avg = 1.0f / static_cast<float>(ENCODER_AVERAGER_LENGTH);
+    const float     left_change_mm =
+        static_cast<float>(dl_left_history_total_) * inv_avg * MM_PER_TICK_LEFT;
     const float right_change_mm =
-        static_cast<float>(dl_right_history_total_) * inv_avg * MM_PER_TICK;
+        static_cast<float>(dl_right_history_total_) * inv_avg * MM_PER_TICK_RIGHT;
 
     // Deterministic dt: the main loop paces with sleep_until(next_tick), so
     // multiplying by the compile-time LOOP_FREQUENCY_HZ is exact. (See
@@ -2035,7 +2036,7 @@ void DriverLab::cmdEncoders()
     printf("Position:\n");
     if (left_encoder_)
     {
-        const float left_mm = left_encoder_->ticks() * MM_PER_TICK;
+        const float left_mm = left_encoder_->ticks() * MM_PER_TICK_LEFT;
         printf("  Left:  %ld ticks = %.1f mm\n", static_cast<long>(left_encoder_->ticks()),
                left_mm);
     }
@@ -2045,7 +2046,7 @@ void DriverLab::cmdEncoders()
     }
     if (right_encoder_)
     {
-        const float right_mm = right_encoder_->ticks() * MM_PER_TICK;
+        const float right_mm = right_encoder_->ticks() * MM_PER_TICK_RIGHT;
         printf("  Right: %ld ticks = %.1f mm\n", static_cast<long>(right_encoder_->ticks()),
                right_mm);
     }
@@ -2185,7 +2186,7 @@ void DriverLab::cmdLeftEncoder()
         printf("Left encoder not connected\n");
         return;
     }
-    const float left_mm = left_encoder_->ticks() * MM_PER_TICK;
+    const float left_mm = left_encoder_->ticks() * MM_PER_TICK_LEFT;
     printf("Left: %.2f mm (%ld ticks)\n", left_mm, static_cast<long>(left_encoder_->ticks()));
 }
 
@@ -2196,7 +2197,7 @@ void DriverLab::cmdRightEncoder()
         printf("Right encoder not connected\n");
         return;
     }
-    const float right_mm = right_encoder_->ticks() * MM_PER_TICK;
+    const float right_mm = right_encoder_->ticks() * MM_PER_TICK_RIGHT;
     printf("Right: %.2f mm (%ld ticks)\n", right_mm, static_cast<long>(right_encoder_->ticks()));
 }
 
@@ -2243,8 +2244,8 @@ void DriverLab::cmdEncoderContinuous(const DriverLabArgs& args)
             return;
         }
         elapsed              = to_ms_since_boot(get_absolute_time()) - start_time;
-        const float left_mm  = left_encoder_ ? left_encoder_->ticks() * MM_PER_TICK : 0.0f;
-        const float right_mm = right_encoder_ ? right_encoder_->ticks() * MM_PER_TICK : 0.0f;
+        const float left_mm  = left_encoder_ ? left_encoder_->ticks() * MM_PER_TICK_LEFT : 0.0f;
+        const float right_mm = right_encoder_ ? right_encoder_->ticks() * MM_PER_TICK_RIGHT : 0.0f;
         printf("%7lu  %8.2f  %8.2f\n", static_cast<unsigned long>(elapsed), left_mm, right_mm);
         sleep_ms(interval_ms);
     }

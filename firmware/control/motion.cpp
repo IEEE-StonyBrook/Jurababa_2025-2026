@@ -1,7 +1,6 @@
 #include "control/motion.h"
 
 #include <cmath>
-#include <cstring>
 
 #include "common/log.h"
 #include "common/utils.h"
@@ -41,11 +40,6 @@ void Motion::reset()
 
 void Motion::reset_drive_system()
 {
-    // Disarm first: update() runs in the 500 Hz timer ISR and can fire a
-    // pending arc. Disarming after rotation_.reset() would let an ISR tick in
-    // between start a turn that nothing then cancels — the robot would keep
-    // rotating through an emergency stop.
-    pending_arc_            = {};
     motion_sequence_active_ = false;
     clear_heading_hold();
     drivetrain_->stop();
@@ -59,7 +53,6 @@ void Motion::reset_drive_system()
 
 void Motion::reset_drive_control()
 {
-    pending_arc_ = {}; // Disarm before the profiles — see reset_drive_system().
     drivetrain_->stop();
     drivetrain_->reset();
     forward_.reset();
@@ -422,9 +415,7 @@ void Motion::start_turn(float degrees, float top_speed_degps, float final_speed_
 
 bool Motion::turn_finished() const
 {
-    // A pending smooth turn arc has not started yet, so the turn is not done —
-    // without this a caller's wait loop exits during the entry straight.
-    return !rotation_.active() && !pending_arc_.armed;
+    return !rotation_.active();
 }
 
 void Motion::turn(float degrees, float top_speed_degps, float final_speed_degps, float accel_degps2)
@@ -491,37 +482,10 @@ void Motion::adjust_forward_position(float delta_mm)
     forward_.adjustPosition(delta_mm);
 }
 
-bool Motion::set_smooth_turn_value(const char* name, float value)
-{
-    if (name == nullptr)
-        return false;
-
-    // Ranges are deliberately narrow: a bad value here drives the robot into a
-    // wall. Entry/exit are distances from the turn cell centre, so anything
-    // past HALF_CELL_MM would start or end the arc outside the cell.
-    for (const SmoothTurnField& field : SMOOTH_TURN_FIELDS)
-    {
-        if (std::strcmp(name, field.name) != 0)
-            continue;
-        if (value < field.min_value || value > field.max_value)
-            return false;
-        smooth_turn_.*field.member = value;
-        return true;
-    }
-
-    return false;
-}
-
-void Motion::reset_smooth_turn_tuning()
-{
-    smooth_turn_ = SmoothTurnTuning{};
-}
-
 float Motion::smoothTurnLeadMm(bool turn_left, float turn_centre_ahead_mm) const
 {
     // mazerunner-core: turn_point = FULL_CELL + HALF_CELL - entry_offset.
-    return turn_centre_ahead_mm -
-           (turn_left ? smooth_turn_.entry_offset_left_mm : smooth_turn_.entry_offset_right_mm);
+    return turn_centre_ahead_mm - smooth_turn_.side(turn_left).entry_mm;
 }
 
 float Motion::smoothTurnExitMm(bool turn_left, float end_after_centre_mm) const
@@ -529,12 +493,11 @@ float Motion::smoothTurnExitMm(bool turn_left, float end_after_centre_mm) const
     // mazerunner-core: move(SENSING_POSITION - (HALF_CELL + exit_offset)).
     // Clamp so an exit offset larger than the room left never reverses the
     // robot; that case means the turn is too wide for the cell (raise ALPHA).
-    const float exit_mm = end_after_centre_mm - (turn_left ? smooth_turn_.exit_offset_left_mm
-                                                           : smooth_turn_.exit_offset_right_mm);
+    const float exit_mm = end_after_centre_mm - smooth_turn_.side(turn_left).exit_mm;
     return (exit_mm > 0.0f) ? exit_mm : 0.0f;
 }
 
-bool Motion::start_smooth_turn(bool turn_left, float turn_centre_ahead_mm)
+float Motion::start_smooth_turn_entry(bool turn_left, float turn_centre_ahead_mm)
 {
     float lead_mm = smoothTurnLeadMm(turn_left, turn_centre_ahead_mm);
     if (lead_mm < 0.0f)
@@ -545,19 +508,19 @@ bool Motion::start_smooth_turn(bool turn_left, float turn_centre_ahead_mm)
         LOG_WARNING("Motion: smooth turn late by " << -lead_mm << " mm; turning now");
         lead_mm = 0.0f;
     }
-
-    // Lead-in to the turn point with final_speed == top_speed, so the profile
-    // finishes still rolling at the turn speed and carries it through the arc
-    // (mazerunner sets target velocity to SEARCH_TURN_SPEED and keeps rolling).
-    // start_move() carries the current velocity in as start_speed.
+    // final_speed == top_speed: the profile reaches the turn point still
+    // rolling at turn speed and carries it through the arc (mazerunner sets
+    // target velocity to SEARCH_TURN_SPEED). start_move() carries the current
+    // velocity in as start_speed.
     start_move(lead_mm, smooth_turn_.speed_mmps, smooth_turn_.speed_mmps, ROBOT_SEARCH_ACCEL_MMPS2);
+    return lead_mm;
+}
 
-    pending_arc_.trigger_mm   = lead_mm;
-    pending_arc_.angle_deg    = turn_left ? 90.0f : -90.0f;
-    pending_arc_.omega_degps  = smooth_turn_.omega_degps;
-    pending_arc_.alpha_degps2 = smooth_turn_.alpha_degps2;
-    pending_arc_.armed        = true; // Last: update() may fire on the next tick.
-    return true;
+void Motion::start_smooth_turn_arc(bool turn_left)
+{
+    // mazerunner-core: motion.turn(params.angle, params.omega, 0, params.alpha).
+    start_turn(turn_left ? 90.0f : -90.0f, smooth_turn_.omega_degps, 0.0f,
+               smooth_turn_.alpha_degps2);
 }
 
 void Motion::update()
@@ -569,16 +532,6 @@ void Motion::update()
     drivetrain_->update();
     imu_->update();
     forward_.update();
-
-    // Smooth turn: release the arc once the single forward profile has covered
-    // the entry straight. Placed before rotation_.update() so the arc starts
-    // on this same tick.
-    if (pending_arc_.armed && forward_.position() >= pending_arc_.trigger_mm)
-    {
-        start_turn(pending_arc_.angle_deg, pending_arc_.omega_degps, 0.0f,
-                   pending_arc_.alpha_degps2);
-        pending_arc_.armed = false;
-    }
 
     rotation_.update();
 

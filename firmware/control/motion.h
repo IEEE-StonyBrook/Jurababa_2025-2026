@@ -34,50 +34,41 @@ class Motion
     };
 
     /**
-     * @brief Live, CLI-editable smooth turn parameters.
+     * @brief Per-side smooth turn shape: mazerunner-core TurnParameters.
      *
-     * RAM shadow of the config/motion.h defaults so a corner can be tuned over
-     * serial without a rebuild, same pattern as LineFollower::RuntimeTuning.
-     * Left and right offsets stay independent: tire loading and motor
-     * asymmetry make the two sides differ.
-     *
-     * Offsets follow mazerunner-core's TurnParameters: entry is the distance
-     * before the turn cell centre at which the arc starts, exit is the distance
-     * past the centre at which it ends. Both are measured from the robot.
+     * entry_mm: how far before the turn cell centre the arc starts.
+     * exit_mm: how far past the centre (on the new heading) the arc ends.
+     * front_trigger_mm: front ToF distance that starts the arc early when a
+     * wall is ahead (mazerunner's sensor trigger); 0 = distance only.
+     * Left and right stay independent: tyre loading and motor asymmetry make
+     * the two sides differ (Orion: entry 70 L / 55 R).
      */
-    struct SmoothTurnTuning
+    struct SmoothTurnSide
     {
-        float speed_mmps            = ROBOT_SEARCH_TURN_SPEED_MMPS;
-        float omega_degps           = ROBOT_SMOOTH_TURN_OMEGA_DEGPS;
-        float alpha_degps2          = ROBOT_SMOOTH_TURN_ALPHA_DEGPS2;
-        float entry_offset_left_mm  = ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM;
-        float exit_offset_left_mm   = ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM;
-        float entry_offset_right_mm = ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM;
-        float exit_offset_right_mm  = ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM;
+        float entry_mm;
+        float exit_mm;
+        float front_trigger_mm;
     };
 
     /**
-     * @brief One editable smooth turn knob, named as the CLI spells it.
+     * @brief Live smooth turn parameters, seeded from config/motion.h.
      *
-     * Single source of truth: the setter validates against this table and the
-     * CLI prints and lists it. Adding a knob means adding one row here.
+     * A RAM shadow so a corner can be tuned over serial without a rebuild, same
+     * pattern as LineFollower::RuntimeTuning.
      */
-    struct SmoothTurnField
+    struct SmoothTurnTuning
     {
-        const char* name;
-        float SmoothTurnTuning::* member;
-        float                     min_value;
-        float                     max_value;
-    };
+        float          speed_mmps   = ROBOT_SEARCH_TURN_SPEED_MMPS;
+        float          omega_degps  = ROBOT_SMOOTH_TURN_OMEGA_DEGPS;
+        float          alpha_degps2 = ROBOT_SMOOTH_TURN_ALPHA_DEGPS2;
+        SmoothTurnSide left{ROBOT_SMOOTH_TURN_ENTRY_LEFT_MM, ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM,
+                            0.0f};
+        SmoothTurnSide right{ROBOT_SMOOTH_TURN_ENTRY_RIGHT_MM, ROBOT_SMOOTH_TURN_EXIT_OFFSET_MM,
+                             0.0f};
+        // mazerunner EXTRA_WALL_ADJUST: front trigger shift per side wall seen.
+        float extra_wall_adjust_mm = 0.0f;
 
-    static constexpr SmoothTurnField SMOOTH_TURN_FIELDS[] = {
-        {"SPEED", &SmoothTurnTuning::speed_mmps, 50.0f, 600.0f},
-        {"OMEGA", &SmoothTurnTuning::omega_degps, 30.0f, 600.0f},
-        {"ALPHA", &SmoothTurnTuning::alpha_degps2, 100.0f, 5000.0f},
-        {"ENTRY_L", &SmoothTurnTuning::entry_offset_left_mm, 0.0f, 90.0f},
-        {"EXIT_L", &SmoothTurnTuning::exit_offset_left_mm, 0.0f, 90.0f},
-        {"ENTRY_R", &SmoothTurnTuning::entry_offset_right_mm, 0.0f, 90.0f},
-        {"EXIT_R", &SmoothTurnTuning::exit_offset_right_mm, 0.0f, 90.0f},
+        const SmoothTurnSide& side(bool turn_left) const { return turn_left ? left : right; }
     };
 
     Motion(Drivetrain* drivetrain, IMU* imu);
@@ -168,25 +159,26 @@ class Motion
     void wait_until_distance(float distance_mm);
 
     // === Smooth (arc) turns ===
-    // Same shape as mazerunner-core Mouse::turn_smooth(): roll at the turn
-    // speed to entry_offset before the turn cell centre, arc, then the caller
-    // drives the exit leg with smoothTurnExitMm() and a normal move().
-    //
-    // Caller contract: clear heading hold and wall steering for the whole turn
-    // — the exit leg runs on the NEW heading, so a stale hold target would
-    // steer the robot back out of the corner.
+    // The motion half of mazerunner-core Mouse::turn_smooth(); the caller
+    // (Mouse::smooth_turn) owns the wait between the two steps, exactly as
+    // mazerunner's wait loop does:
+    //   1. start_smooth_turn_entry(): roll at turn speed to the turn point,
+    //      ENTRY mm before the turn cell centre.
+    //   2. start_smooth_turn_arc(): the 90 deg arc, still rolling.
+    // then drive smoothTurnExitMm() with a normal move().
     const SmoothTurnTuning& smoothTurnTuning() const { return smooth_turn_; }
-    bool                    set_smooth_turn_value(const char* name, float value);
-    void                    reset_smooth_turn_tuning();
-    // Forward distance from now to the arc start, given the distance from now
+    void set_smooth_turn_tuning(const SmoothTurnTuning& tuning) { smooth_turn_ = tuning; }
+    void reset_smooth_turn_tuning() { smooth_turn_ = SmoothTurnTuning{}; }
+    // Forward distance from now to the turn point, given the distance from now
     // to the turn cell centre. Negative means the turn point is already behind.
     float smoothTurnLeadMm(bool turn_left, float turn_centre_ahead_mm) const;
     // Exit leg length so the robot ends end_after_centre_mm past the turn cell
     // centre on the new heading. Clamped at 0: a negative leg would reverse.
     float smoothTurnExitMm(bool turn_left, float end_after_centre_mm) const;
-    // Starts the lead-in and arms the arc. If the turn point is already
-    // behind the robot the arc starts immediately. Always returns true.
-    bool start_smooth_turn(bool turn_left, float turn_centre_ahead_mm);
+    // Starts the lead-in; returns its length (position() reaches it at the
+    // turn point). A turn point already behind gives 0: turn now.
+    float start_smooth_turn_entry(bool turn_left, float turn_centre_ahead_mm);
+    void  start_smooth_turn_arc(bool turn_left);
 
     // === Control Loop ===
     // Caller must invoke update() exactly once per tick from a deterministic
@@ -224,27 +216,6 @@ class Motion
     bool  motion_sequence_active_  = false;
 
     SmoothTurnTuning smooth_turn_{};
-
-    /**
-     * @brief An arc armed by start_smooth_turn(), fired later by update().
-     *
-     * Everything the arc needs is snapshotted at arm time, so it stays
-     * consistent with the forward distance start_smooth_turn() has already
-     * committed even if the tuning changes in between. update() runs in the
-     * 500 Hz timer ISR, so it must never read live tuning here.
-     *
-     * The forward profile ends at the arc start with final speed = turn
-     * speed, so it keeps rolling through the arc exactly like mazerunner's.
-     */
-    struct PendingArc
-    {
-        float trigger_mm   = 0.0f; // Forward profile position at which the arc starts.
-        float angle_deg    = 0.0f;
-        float omega_degps  = 0.0f;
-        float alpha_degps2 = 0.0f;
-        bool  armed        = false;
-    };
-    PendingArc pending_arc_{};
 
     // ToFs are physically read and filtered outside Motion. Filtered values
     // feed wall detection/steering; raw values are kept only for diagnostics.
