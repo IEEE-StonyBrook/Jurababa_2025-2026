@@ -1182,6 +1182,18 @@ void Mouse::update_map()
                 << " latchF=" << (search_front_wall_latched_ ? 1 : 0);
         if (search_front_wall_latched_)
             map_log << " latch_mm=" << fixed1(search_front_latch_mm_);
+        if (instant_front_wall)
+        {
+            // Odometry check: the wall seen is the far side of the cell being
+            // entered. err > 0 means the robot is short of where it thinks.
+            const float wall_ahead_mm =
+                2.0f * CELL_SIZE_MM - WALL_THICKNESS_MM / 2.0f - motion_->position();
+            const float expected_mm =
+                wall_ahead_mm - FRONT_TOF_AXLE_OFFSET_MM + motion_->velocity() * FRONT_TOF_LAG_S;
+            map_log << " fwd[exp=" << fixed1(expected_mm)
+                    << " err=" << signedFixed1(motion_->frontDistance() - expected_mm)
+                    << " v=" << fixed1(motion_->velocity()) << "]";
+        }
         map_log << "]";
     }
 #endif

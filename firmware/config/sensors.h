@@ -56,6 +56,13 @@
 // the wall. 250 is the midpoint, tolerant of +-40 mm of position error.
 #define TOF_FRONT_WALL_THRESHOLD_MM 250.0f
 
+// Front ToF model for the search's odometry check (SEARCH MAP fwd[...]):
+// reading = (wall face - position) - FRONT_TOF_AXLE_OFFSET_MM + v * FRONT_TOF_LAG_S,
+// with position in the cell frame (axle reference). Stationary after PATH FFFFF,
+// ruler nose gap + axle-to-nose 74.2 mm minus the reading: 38.2 and 41.2.
+#define FRONT_TOF_AXLE_OFFSET_MM 40.0f
+#define FRONT_TOF_LAG_S          0.04f // ~12 mm at 300 mm/s
+
 // UKMARS-style wall steering. Wall detection remains enabled regardless of
 // this switch; TOF_STEERING_ENABLE only controls whether side-wall error is
 // injected into the rotation PID. Search also keeps IMU heading hold active,

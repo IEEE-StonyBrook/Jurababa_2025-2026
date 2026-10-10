@@ -212,8 +212,8 @@ class Motion
         float right_tof_mm;
         float pos_mm; // forward profile position (the search's cell frame)
     };
-    static constexpr uint16_t TRACE_CAPACITY   = 600;
-    static constexpr uint16_t TRACE_DECIMATION = 2; // default: 4 ms between samples at 500 Hz
+    static constexpr uint16_t TRACE_CAPACITY   = 1500; // ~108 KB RAM
+    static constexpr uint16_t TRACE_DECIMATION = 2;    // default: 4 ms between samples at 500 Hz
 
     void               start_trace(uint16_t decimation = TRACE_DECIMATION);
     void               stop_trace();
@@ -288,6 +288,7 @@ class Motion
 
     TraceSample       trace_[TRACE_CAPACITY] = {};
     volatile uint16_t trace_count_           = 0;
+    uint16_t          trace_next_            = 0; // ring write index
     uint16_t          trace_tick_            = 0;
     uint16_t          trace_decimation_      = TRACE_DECIMATION;
     volatile bool     trace_active_          = false;
